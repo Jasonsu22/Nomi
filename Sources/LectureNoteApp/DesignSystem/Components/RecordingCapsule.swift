@@ -36,19 +36,19 @@ struct SessionControl: View {
         switch session.phase {
         case .idle:
             Button(action: onStart) {
-                label(title: "开始转录", pulsing: false)
+                label(title: tr("开始转录"), pulsing: false)
             }
             .buttonStyle(.plain)
             .disabled(!canStart)
             .opacity(canStart ? 1 : 0.4)
-            .accessibilityLabel("开始转录")
+            .accessibilityLabel(tr("开始转录"))
         case .preparing:
-            label(title: "准备中", pulsing: true)
-                .accessibilityLabel("准备中")
+            label(title: tr("准备中"), pulsing: true)
+                .accessibilityLabel(tr("准备中"))
         case .listening:
             listeningControl
         case .stopping:
-            Text("正在保存")
+            Text(tr("正在保存"))
                 .font(AppFont.secondary.weight(.semibold))
                 .foregroundStyle(ink)
                 .padding(.horizontal, 16)
@@ -81,11 +81,11 @@ struct SessionControl: View {
             }
             iconButton(
                 systemName: session.isPaused ? "play.fill" : "pause.fill",
-                label: session.isPaused ? "继续" : "暂停",
+                label: session.isPaused ? tr("继续") : tr("暂停"),
                 filled: false,
                 action: onTogglePause
             )
-            iconButton(systemName: "stop.fill", label: "停止", filled: true, action: onStop)
+            iconButton(systemName: "stop.fill", label: tr("停止"), filled: true, action: onStop)
         }
         .padding(.leading, 14)
         .padding(.trailing, 8)

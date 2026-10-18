@@ -6,8 +6,8 @@ enum CaptureSource: String, Equatable {
 
     var title: String {
         switch self {
-        case .microphone: "麦克风"
-        case .system: "系统声音"
+        case .microphone: tr("麦克风")
+        case .system: tr("系统声音")
         }
     }
 }
@@ -23,6 +23,9 @@ struct Meeting: Identifiable, Equatable {
     var categoryID: UUID?
     var paragraphs: [Paragraph]
     var isLive: Bool
+    var inputDeviceName: String? = nil
+
+    var inputTitle: String { inputDeviceName ?? source.title }
 
     var characterCount: Int {
         paragraphs.reduce(0) { $0 + $1.renderedSource(language: sourceLanguage).count }
@@ -30,12 +33,12 @@ struct Meeting: Identifiable, Equatable {
 
     func markdown(categoryName: String?) -> String {
         var lines = ["# \(title)", ""]
-        lines.append("- 时间：\(formatMeetingTime(startedAt))")
-        lines.append("- 时长：\(formatDuration(duration))")
+        lines.append(trf("- 时间：%@", formatMeetingTime(startedAt)))
+        lines.append(trf("- 时长：%@", formatDuration(duration)))
         if let categoryName {
-            lines.append("- 分类：\(categoryName)")
+            lines.append(trf("- 分类：%@", categoryName))
         }
-        lines.append("- 输入：\(source.title) · \(languageName(sourceLanguage)) → \(languageName(targetLanguage))")
+        lines.append(trf("- 输入：%@ · %@ → %@", inputTitle, languageName(sourceLanguage), languageName(targetLanguage)))
         lines.append("")
         for paragraph in paragraphs {
             let source = paragraph.renderedSource(language: sourceLanguage)
@@ -53,18 +56,20 @@ struct Meeting: Identifiable, Equatable {
         return lines.joined(separator: "\n")
     }
 
-    static func live() -> Meeting {
-        Meeting(
+    static func live(sourceLanguage: String? = nil, targetLanguage: String? = nil, inputDeviceName: String? = nil) -> Meeting {
+        let pair = LectureLanguages.currentPair()
+        return Meeting(
             id: UUID(),
-            title: "未命名会议",
+            title: tr("未命名会议"),
             startedAt: .now,
             duration: 0,
             source: .microphone,
-            sourceLanguage: "zh",
-            targetLanguage: "en",
+            sourceLanguage: sourceLanguage ?? pair.source,
+            targetLanguage: targetLanguage ?? pair.target,
             categoryID: nil,
             paragraphs: [],
-            isLive: true
+            isLive: true,
+            inputDeviceName: inputDeviceName
         )
     }
 }

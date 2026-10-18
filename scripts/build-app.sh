@@ -36,7 +36,7 @@ done
 if [[ -f "$engine_dir/mlx.metallib" ]]; then
     cp "$engine_dir/mlx.metallib" "$app/Contents/MacOS/mlx.metallib"
 fi
-cp "$root/Design/brand-final-v1/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+cp "$root/Design/Brand/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 
 cat > "$app/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -60,7 +60,7 @@ cat > "$app/Contents/Info.plist" <<'EOF'
     <key>CFBundleShortVersionString</key>
     <string>0.1</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>3</string>
     <key>LSMinimumSystemVersion</key>
     <string>26.0</string>
     <key>NSHighResolutionCapable</key>
@@ -71,4 +71,5 @@ cat > "$app/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 
+touch "$app"
 echo "$app"

@@ -34,7 +34,7 @@ struct TranscriptCard: View {
 
     private var toolbar: some View {
         HStack(spacing: Space.s2) {
-            Text("转写")
+            Text(tr("转写"))
                 .font(AppFont.sectionTitle)
                 .foregroundStyle(AppColor.textPrimary)
             Spacer(minLength: Space.s2)
@@ -44,7 +44,7 @@ struct TranscriptCard: View {
                 Button {
                     compare.toggle()
                 } label: {
-                    Text(compare ? "对照" : "段内")
+                    Text(compare ? tr("对照") : tr("段内"))
                         .font(AppFont.caption)
                         .foregroundStyle(AppColor.textSecondary)
                         .padding(.horizontal, 8)
@@ -60,7 +60,7 @@ struct TranscriptCard: View {
                     copied = false
                 }
             } label: {
-                Text(copied ? "已复制" : "复制全文")
+                Text(copied ? tr("已复制") : tr("复制全文"))
                     .font(AppFont.caption)
                     .foregroundStyle(AppColor.textSecondary)
             }
@@ -87,7 +87,7 @@ struct TranscriptCard: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     if paragraphs.isEmpty {
-                        Text(meeting.isLive ? "正在听…" : "这场还没有转写。")
+                        Text(meeting.isLive ? tr("正在听…") : tr("这场还没有转写。"))
                             .font(AppFont.body)
                             .foregroundStyle(AppColor.textSecondary)
                             .padding(Space.s5)

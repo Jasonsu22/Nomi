@@ -40,7 +40,7 @@ struct MeetingListView: View {
                 SearchField(text: $model.query, isFocused: $searchFocused)
                 chips
                 if visible.isEmpty {
-                    Text("没有匹配的会议")
+                    Text(tr("没有匹配的会议"))
                         .font(AppFont.secondary)
                         .foregroundStyle(AppColor.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -56,59 +56,59 @@ struct MeetingListView: View {
         .onChange(of: model.searchRequest) { _, _ in
             searchFocused = true
         }
-        .alert("重命名", isPresented: renamingPresented) {
-            TextField("名称", text: $renameDraft)
-            Button("确定") {
+        .alert(tr("重命名"), isPresented: renamingPresented) {
+            TextField(tr("名称"), text: $renameDraft)
+            Button(tr("确定")) {
                 if let renaming {
                     model.rename(id: renaming.id, to: renameDraft)
                 }
             }
-            Button("取消", role: .cancel) {}
+            Button(tr("取消"), role: .cancel) {}
         }
-        .alert("删除这场会议？", isPresented: deletingMeetingPresented) {
-            Button("删除", role: .destructive) {
+        .alert(tr("删除这场会议？"), isPresented: deletingMeetingPresented) {
+            Button(tr("删除"), role: .destructive) {
                 if let deletingMeeting {
                     model.deleteMeeting(deletingMeeting.id)
                 }
             }
-            Button("取消", role: .cancel) {}
+            Button(tr("取消"), role: .cancel) {}
         } message: {
-            Text("转写会一起删掉。")
+            Text(tr("转写会一起删掉。"))
         }
         .confirmationDialog(
-            "删除分类「\(deletingCategory?.name ?? "")」？",
+            trf("删除分类「%@」？", deletingCategory?.name ?? ""),
             isPresented: deletingCategoryPresented,
             titleVisibility: .visible
         ) {
-            Button("删除分类", role: .destructive) {
+            Button(tr("删除分类"), role: .destructive) {
                 if let deletingCategory {
                     model.deleteCategory(deletingCategory.id)
                 }
             }
-            Button("取消", role: .cancel) {}
+            Button(tr("取消"), role: .cancel) {}
         } message: {
-            Text("这个分类下的会议会变成未分类。")
+            Text(tr("这个分类下的会议会变成未分类。"))
         }
     }
 
     private var header: some View {
         HStack(alignment: .center, spacing: Space.s3) {
-            Text("会议")
+            Text(tr("会议"))
                 .font(AppFont.pageTitle)
                 .foregroundStyle(AppColor.textPrimary)
             Spacer(minLength: Space.s3)
-            PillButton(title: "导出") {
+            PillButton(title: tr("导出")) {
                 model.export(model.visibleMeetings)
             }
-            .help("把当前筛选出的会议存成 Markdown")
+            .help(tr("把当前筛选出的会议存成 Markdown"))
             groupingToggle
         }
     }
 
     private var groupingToggle: some View {
         HStack(spacing: 2) {
-            groupingButton(.time, "时间")
-            groupingButton(.category, "分类")
+            groupingButton(.time, tr("时间"))
+            groupingButton(.category, tr("分类"))
         }
         .padding(3)
         .background(AppColor.surface, in: Capsule())
@@ -134,7 +134,7 @@ struct MeetingListView: View {
     private var chips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Space.s2) {
-                chip(title: "全部 \(model.count(in: .all))", dot: nil, filter: .all)
+                chip(title: trf("全部 %d", model.count(in: .all)), dot: nil, filter: .all)
                 ForEach(model.categories.sorted { $0.sortOrder < $1.sortOrder }) { category in
                     chip(
                         title: "\(category.name) \(model.count(in: .category(category.id)))",
@@ -142,23 +142,23 @@ struct MeetingListView: View {
                         filter: .category(category.id)
                     )
                     .contextMenu {
-                        Button("编辑") {
+                        Button(tr("编辑")) {
                             draft = CategoryDraft(name: category.name, colorIndex: category.colorIndex, symbol: category.symbol)
                             editing = category
                         }
-                        Button("删除", role: .destructive) {
+                        Button(tr("删除"), role: .destructive) {
                             deletingCategory = category
                         }
                     }
                     .popover(isPresented: editingPresented(category), arrowEdge: .bottom) {
-                        CategoryEditor(title: "编辑分类", draft: $draft) {
+                        CategoryEditor(title: tr("编辑分类"), draft: $draft) {
                             model.updateCategory(category.id, name: draft.name, colorIndex: draft.colorIndex, symbol: draft.symbol)
                             editing = nil
                         }
                     }
                 }
                 chip(
-                    title: "未分类 \(model.count(in: .uncategorized))",
+                    title: trf("未分类 %d", model.count(in: .uncategorized)),
                     dot: CategoryPalette.ink(CategoryPalette.uncategorizedIndex),
                     filter: .uncategorized
                 )
@@ -204,7 +204,7 @@ struct MeetingListView: View {
             )
             creating = true
         } label: {
-            Text("＋ 新建分类")
+            Text(tr("＋ 新建分类"))
                 .font(AppFont.secondary.weight(.medium))
                 .foregroundStyle(AppColor.textSecondary)
                 .padding(.horizontal, 12)
@@ -215,7 +215,7 @@ struct MeetingListView: View {
         }
         .buttonStyle(.plain)
         .popover(isPresented: $creating, arrowEdge: .bottom) {
-            CategoryEditor(title: "新建分类", draft: $draft) {
+            CategoryEditor(title: tr("新建分类"), draft: $draft) {
                 model.addCategory(name: draft.name, colorIndex: draft.colorIndex, symbol: draft.symbol)
                 creating = false
             }
@@ -264,17 +264,17 @@ struct MeetingListView: View {
             }
         }
         .contextMenu {
-            Button("打开") {
+            Button(tr("打开")) {
                 withAnimation(Motion.layout(reduceMotion)) {
                     model.openMeeting(meeting.id)
                 }
             }
-            Button("重命名") {
+            Button(tr("重命名")) {
                 renameDraft = meeting.title
                 renaming = meeting
             }
-            Menu("移到分类") {
-                Button("未分类") {
+            Menu(tr("移到分类")) {
+                Button(tr("未分类")) {
                     model.assign(meeting: meeting.id, category: nil)
                 }
                 ForEach(model.categories) { category in
@@ -283,11 +283,11 @@ struct MeetingListView: View {
                     }
                 }
             }
-            Button("导出") {
+            Button(tr("导出")) {
                 model.export([meeting])
             }
             if !meeting.isLive {
-                Button("删除", role: .destructive) {
+                Button(tr("删除"), role: .destructive) {
                     deletingMeeting = meeting
                 }
             }
@@ -310,10 +310,10 @@ struct MeetingListView: View {
         let searching = !model.appliedQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         var sections: [MeetingSection] = []
         if !today.isEmpty {
-            sections.append(MeetingSection(id: "today", title: "今天", colorIndex: nil, meetings: today, showsNow: !searching))
+            sections.append(MeetingSection(id: "today", title: tr("今天"), colorIndex: nil, meetings: today, showsNow: !searching))
         }
         if !earlier.isEmpty {
-            sections.append(MeetingSection(id: "earlier", title: "更早", colorIndex: nil, meetings: earlier, showsNow: false))
+            sections.append(MeetingSection(id: "earlier", title: tr("更早"), colorIndex: nil, meetings: earlier, showsNow: false))
         }
         return sections
     }
@@ -327,7 +327,7 @@ struct MeetingListView: View {
         }
         let loose = meetings.filter { $0.categoryID == nil }.sorted(by: sortMeetings)
         if !loose.isEmpty {
-            sections.append(MeetingSection(id: "none", title: "未分类", colorIndex: CategoryPalette.uncategorizedIndex, meetings: loose, showsNow: false))
+            sections.append(MeetingSection(id: "none", title: tr("未分类"), colorIndex: CategoryPalette.uncategorizedIndex, meetings: loose, showsNow: false))
         }
         return sections
     }

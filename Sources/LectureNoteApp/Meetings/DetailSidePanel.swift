@@ -26,7 +26,7 @@ struct DetailSidePanel: View {
                             tab = item
                         }
                     } label: {
-                        Text(item.rawValue)
+                        Text(tr(item.rawValue))
                             .font(AppFont.caption.weight(.medium))
                             .foregroundStyle(tab == item ? AppColor.onSelection : AppColor.textSecondary)
                             .padding(.horizontal, 10)
@@ -50,7 +50,7 @@ struct DetailSidePanel: View {
                         .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("关闭侧栏")
+                .accessibilityLabel(tr("关闭侧栏"))
             }
             .padding(.horizontal, Space.s4)
             .padding(.top, Space.s4)
@@ -61,9 +61,9 @@ struct DetailSidePanel: View {
                 case .info:
                     info
                 case .ask:
-                    placeholder("提问会在接上 Qwen3.5-2B 之后可用。回答会附上这段话的时间。")
+                    placeholder(tr("提问会在接上 Qwen3.5-2B 之后可用。回答会附上这段话的时间。"))
                 case .summary:
-                    placeholder("摘要会在接上模型之后可用。")
+                    placeholder(tr("摘要会在接上模型之后可用。"))
                 }
             }
             .id(tab)
@@ -72,13 +72,13 @@ struct DetailSidePanel: View {
         }
         .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .clipped()
-        .alert("删除这场会议？", isPresented: $confirmingDelete) {
-            Button("删除", role: .destructive) {
+        .alert(tr("删除这场会议？"), isPresented: $confirmingDelete) {
+            Button(tr("删除"), role: .destructive) {
                 model.deleteMeeting(meeting.id)
             }
-            Button("取消", role: .cancel) {}
+            Button(tr("取消"), role: .cancel) {}
         } message: {
-            Text("转写会一起删掉。")
+            Text(tr("转写会一起删掉。"))
         }
     }
 
@@ -87,20 +87,20 @@ struct DetailSidePanel: View {
             VStack(spacing: 0) {
                 categoryRow
                 hairline
-                infoRow("输入源", meeting.source.title)
+                infoRow(tr("输入源"), meeting.inputTitle)
                 hairline
-                infoRow("语言", "\(languageName(meeting.sourceLanguage)) → \(languageName(meeting.targetLanguage))")
+                infoRow(tr("语言"), "\(languageName(meeting.sourceLanguage)) → \(languageName(meeting.targetLanguage))")
                 hairline
                 durationRow
                 hairline
-                infoRow("字数", "\(meeting.characterCount)")
+                infoRow(tr("字数"), "\(meeting.characterCount)")
             }
             .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
 
             Button {
                 model.export([meeting])
             } label: {
-                Text("导出 Markdown")
+                Text(tr("导出 Markdown"))
                     .font(AppFont.secondary.weight(.medium))
                     .foregroundStyle(AppColor.textPrimary)
                     .frame(maxWidth: .infinity)
@@ -113,7 +113,7 @@ struct DetailSidePanel: View {
                 Button {
                     confirmingDelete = true
                 } label: {
-                    Text("删除会议")
+                    Text(tr("删除会议"))
                         .font(AppFont.secondary.weight(.medium))
                         .foregroundStyle(.red)
                         .frame(maxWidth: .infinity)
@@ -128,7 +128,7 @@ struct DetailSidePanel: View {
 
     private var categoryRow: some View {
         HStack {
-            Text("分类")
+            Text(tr("分类"))
                 .font(AppFont.body)
                 .foregroundStyle(AppColor.textPrimary)
             Spacer()
@@ -140,7 +140,7 @@ struct DetailSidePanel: View {
 
     private var categoryMenu: some View {
         Menu {
-            Button("未分类") {
+            Button(tr("未分类")) {
                 model.assign(meeting: meeting.id, category: nil)
             }
             ForEach(model.categories) { category in
@@ -149,7 +149,7 @@ struct DetailSidePanel: View {
                 }
             }
         } label: {
-            Text(model.categoryName(for: meeting) ?? "未分类")
+            Text(model.categoryName(for: meeting) ?? tr("未分类"))
                 .font(AppFont.secondary)
                 .foregroundStyle(AppColor.textSecondary)
         }
@@ -161,10 +161,10 @@ struct DetailSidePanel: View {
         Group {
             if meeting.isLive {
                 TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                    infoRow("时长", formatClock(model.engine.session.elapsed))
+                    infoRow(tr("时长"), formatClock(model.engine.session.elapsed))
                 }
             } else {
-                infoRow("时长", formatDuration(meeting.duration))
+                infoRow(tr("时长"), formatDuration(meeting.duration))
             }
         }
     }

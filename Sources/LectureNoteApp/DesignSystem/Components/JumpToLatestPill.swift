@@ -7,7 +7,7 @@ struct JumpToLatestPill: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.down")
-                Text("回到最新")
+                Text(tr("回到最新"))
             }
             .font(AppFont.caption)
             .foregroundStyle(AppColor.textPrimary)
@@ -16,6 +16,6 @@ struct JumpToLatestPill: View {
             .glassEffect(.regular.interactive(), in: Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("回到最新")
+        .accessibilityLabel(tr("回到最新"))
     }
 }

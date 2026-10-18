@@ -4,12 +4,18 @@ import SwiftUI
 @main
 struct LectureNoteApp: App {
     @State private var model = AppModel()
+    @AppStorage(InterfaceLanguage.key) private var interfaceLanguage = InterfaceLanguage.system.rawValue
+    @AppStorage(InterfaceAppearance.key) private var appearance = InterfaceAppearance.system.rawValue
 
     var body: some Scene {
         WindowGroup {
             root
                 .onAppear {
                     NSApplication.shared.setActivationPolicy(.regular)
+                    if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+                       let image = NSImage(contentsOf: url) {
+                        NSApplication.shared.applicationIconImage = image
+                    }
                     NSApplication.shared.activate()
                     #if DEBUG
                     applyPreview(ProcessInfo.processInfo.environment["LECTURE_PREVIEW"])
@@ -21,20 +27,20 @@ struct LectureNoteApp: App {
         .defaultSize(width: 1180, height: 780)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("开始转录") {
-                    model.startTranscription()
+                Button(tr("开始转录")) {
+                    model.prepareRecording()
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(!model.canStart)
 
-                Button("停止转录") {
+                Button(tr("停止转录")) {
                     model.stopTranscription()
                 }
                 .keyboardShortcut(".", modifiers: .command)
                 .disabled(model.engine.session.phase == .idle || model.engine.session.phase == .stopping)
             }
             CommandGroup(after: .sidebar) {
-                Button("搜索会议") {
+                Button(tr("搜索会议")) {
                     model.requestSearch()
                 }
                 .keyboardShortcut("f", modifiers: .command)
@@ -44,6 +50,8 @@ struct LectureNoteApp: App {
 
     private var root: some View {
         AppShell(model: model)
+            .id(interfaceLanguage)
+            .environment(\.locale, InterfaceLanguage.resolved(interfaceLanguage).locale)
             .frame(minWidth: 960, minHeight: 640)
             .modifier(ReduceMotionBridge())
             .modifier(ForcedColorScheme(scheme: forcedScheme))
@@ -68,14 +76,12 @@ struct LectureNoteApp: App {
 
     private var forcedScheme: ColorScheme? {
         #if DEBUG
-        switch ProcessInfo.processInfo.environment["LECTURE_COLOR_SCHEME"] {
-        case "dark": .dark
-        case "light": .light
-        default: nil
+        if let value = ProcessInfo.processInfo.environment["LECTURE_COLOR_SCHEME"] {
+            if value == "dark" { return .dark }
+            if value == "light" { return .light }
         }
-        #else
-        nil
         #endif
+        return (InterfaceAppearance(rawValue: appearance) ?? .system).colorScheme
     }
 }
 
@@ -83,10 +89,6 @@ private struct ForcedColorScheme: ViewModifier {
     var scheme: ColorScheme?
 
     func body(content: Content) -> some View {
-        if let scheme {
-            content.preferredColorScheme(scheme)
-        } else {
-            content
-        }
+        content.preferredColorScheme(scheme)
     }
 }

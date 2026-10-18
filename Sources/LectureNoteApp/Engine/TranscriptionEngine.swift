@@ -19,6 +19,7 @@ protocol TranscriptionEngine: AnyObject {
     var canStart: Bool { get }
     var sourceLanguage: String { get set }
     var targetLanguage: String { get set }
+    var inputDeviceUID: String? { get set }
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)? { get set }
     func start()
     func stop()

@@ -4,10 +4,10 @@ struct SourcesView: View {
     var model: AppModel
 
     var body: some View {
-        PageScaffold(title: "资料") {
+        PageScaffold(title: tr("资料")) {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s3) {
-                    Text("课件导入还没做。下面是每场会议的音频和转写，录音接上之后可以在这里播放。")
+                    Text(tr("课件导入还没做。下面是每场会议的音频和转写，录音接上之后可以在这里播放。"))
                         .font(AppFont.secondary)
                         .foregroundStyle(AppColor.textSecondary)
                         .padding(.bottom, Space.s2)
@@ -48,7 +48,7 @@ struct SourcesView: View {
     }
 
     private func detail(_ meeting: Meeting) -> String {
-        let category = model.categoryName(for: meeting) ?? "未分类"
-        return "\(category) · 转写 \(meeting.paragraphs.count) 段 · 音频尚未录制"
+        let category = model.categoryName(for: meeting) ?? tr("未分类")
+        return trf("%@ · 转写 %d 段 · 音频尚未录制", category, meeting.paragraphs.count)
     }
 }

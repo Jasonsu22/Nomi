@@ -6,9 +6,10 @@ struct TopBar: View {
 
     var body: some View {
         HStack(spacing: Space.s3) {
-            BrandLogo(side: 20)
+            BrandLogo(side: 32)
+                .frame(width: Rail.width)
             Text("Nomi")
-                .font(AppFont.secondary.weight(.semibold))
+                .font(.system(size: 19, weight: .semibold))
                 .foregroundStyle(AppColor.textPrimary)
             StatusChip(title: model.statusTitle, live: model.statusIsLive)
             Spacer(minLength: Space.s3)
@@ -19,7 +20,7 @@ struct TopBar: View {
                 reduceMotion: reduceMotion,
                 onStart: {
                     withAnimation(Motion.morph(reduceMotion)) {
-                        model.startTranscription()
+                        model.prepareRecording()
                     }
                 },
                 onStop: {
@@ -30,7 +31,7 @@ struct TopBar: View {
                 onTogglePause: model.togglePause
             )
         }
-        .padding(.horizontal, Space.s4)
+        .padding(.trailing, Space.s4)
         .frame(height: 52)
         .background {
             AppColor.canvas

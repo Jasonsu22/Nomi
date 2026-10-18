@@ -9,8 +9,9 @@ struct BrandLogo: View {
             if let image = Self.image {
                 Image(nsImage: image)
                     .resizable()
+                    .renderingMode(.original)
                     .interpolation(.high)
-                    .clipShape(RoundedRectangle(cornerRadius: side * 0.22, style: .continuous))
+                    .scaledToFit()
             }
         }
         .frame(width: side, height: side)

@@ -18,10 +18,10 @@ struct CategoryEditor: View {
             Text(title)
                 .font(AppFont.sectionTitle)
                 .foregroundStyle(AppColor.textPrimary)
-            TextField("分类名称", text: $draft.name)
+            TextField(tr("分类名称"), text: $draft.name)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(submit)
-            Text("颜色")
+            Text(tr("颜色"))
                 .font(AppFont.caption)
                 .foregroundStyle(AppColor.textSecondary)
             HStack(spacing: 8) {
@@ -40,10 +40,10 @@ struct CategoryEditor: View {
                             }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("颜色 \(index + 1)")
+                    .accessibilityLabel(trf("颜色 %d", index + 1))
                 }
             }
-            Text("图标")
+            Text(tr("图标"))
                 .font(AppFont.caption)
                 .foregroundStyle(AppColor.textSecondary)
             LazyVGrid(columns: columns, spacing: 8) {
@@ -66,7 +66,7 @@ struct CategoryEditor: View {
                 }
             }
             Button(action: submit) {
-                Text("完成")
+                Text(tr("完成"))
                     .font(AppFont.secondary.weight(.semibold))
                     .foregroundStyle(AppColor.onAccent)
                     .frame(maxWidth: .infinity)

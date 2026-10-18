@@ -13,11 +13,11 @@ enum AppPage: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .meetings: "会议"
-        case .ask: "提问"
-        case .sources: "资料"
-        case .help: "帮助"
-        case .settings: "设置"
+        case .meetings: tr("会议")
+        case .ask: tr("提问")
+        case .sources: tr("资料")
+        case .help: tr("帮助")
+        case .settings: tr("设置")
         }
     }
 
@@ -52,6 +52,14 @@ final class AppModel {
     var searchRequest = 0
     private(set) var appliedQuery = ""
     let engine: any TranscriptionEngine
+    let audioInputs = AudioInputs()
+    var recordingSetupPresented = false
+    var recordingSourceLanguage: String {
+        didSet { UserDefaults.standard.set(recordingSourceLanguage, forKey: LectureLanguages.sourceKey) }
+    }
+    var recordingTargetLanguage: String {
+        didSet { UserDefaults.standard.set(recordingTargetLanguage, forKey: LectureLanguages.targetKey) }
+    }
 
     private var liveMeetingID: UUID?
     private var searchTask: Task<Void, Never>?
@@ -59,6 +67,9 @@ final class AppModel {
     init(engine: (any TranscriptionEngine)? = nil, meetings: [Meeting]? = nil, categories: [MeetingCategory]? = nil) {
         let engine = engine ?? LocalEngine.launchIfAvailable() ?? ReplayEngine()
         self.engine = engine
+        let pair = LectureLanguages.currentPair()
+        recordingSourceLanguage = pair.source
+        recordingTargetLanguage = pair.target
         self.meetings = meetings ?? SampleMeetings.make()
         self.categories = categories ?? SampleMeetings.categories()
         self.filter = CategoryFilter.load()
@@ -76,19 +87,19 @@ final class AppModel {
 
     var statusTitle: String {
         switch engine.session.phase {
-        case .preparing: return "准备中"
-        case .listening: return engine.session.isPaused ? "已暂停" : "正在转录"
-        case .stopping: return "正在保存"
+        case .preparing: return tr("准备中")
+        case .listening: return engine.session.isPaused ? tr("已暂停") : tr("正在转录")
+        case .stopping: return tr("正在保存")
         case .idle:
-            if engine.readiness == .preview, engine.loadError != nil { return "示例加载失败" }
+            if engine.readiness == .preview, engine.loadError != nil { return tr("示例加载失败") }
             if let loadError = engine.loadError, engine.readiness != .preview { return loadError }
             switch engine.readiness {
-            case .preview: return "预览 · 示例回放"
-            case .preparing: return "准备中"
-            case .ready: return "本机 · 模型就绪"
-            case .sourceOnly: return "本机 · 只出原文"
-            case .asrMissing: return "缺少识别模型"
-            case .unavailable: return "引擎未启动"
+            case .preview: return tr("预览 · 示例回放")
+            case .preparing: return tr("准备中")
+            case .ready: return tr("本机 · 模型就绪")
+            case .sourceOnly: return tr("本机 · 只出原文")
+            case .asrMissing: return tr("缺少识别模型")
+            case .unavailable: return tr("引擎未启动")
             }
         }
     }
@@ -121,14 +132,27 @@ final class AppModel {
         self.page = page
     }
 
+    func prepareRecording() {
+        guard engine.session.phase == .idle else { return }
+        audioInputs.refresh()
+        recordingSetupPresented = true
+    }
+
+    var canRecord: Bool {
+        canStart && (engine.readiness == .preview || audioInputs.selectedDevice != nil)
+    }
+
     func startTranscription() {
-        guard engine.canStart else { return }
-        var meeting = Meeting.live()
+        guard canRecord else { return }
+        let device = audioInputs.selectedDevice
+        var meeting = Meeting.live(sourceLanguage: recordingSourceLanguage, targetLanguage: recordingTargetLanguage, inputDeviceName: device?.name)
         if case .category(let id) = activeFilter {
             meeting.categoryID = id
         }
         engine.sourceLanguage = meeting.sourceLanguage
         engine.targetLanguage = meeting.targetLanguage
+        engine.inputDeviceUID = device?.id
+        recordingSetupPresented = false
         meetings.insert(meeting, at: 0)
         liveMeetingID = meeting.id
         openMeetingID = meeting.id
@@ -228,7 +252,7 @@ final class AppModel {
         guard !items.isEmpty else { return }
         let markdown = items.map { $0.markdown(categoryName: categoryName(for: $0)) }.joined(separator: "\n")
         guard let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible) else {
-            exportError = "找不到窗口，无法打开保存面板。"
+            exportError = tr("找不到窗口，无法打开保存面板。")
             return
         }
         let panel = NSSavePanel()
@@ -298,10 +322,10 @@ final class AppModel {
         } else if case .category(let id) = activeFilter, let name = category(for: id)?.name {
             raw = name
         } else {
-            raw = "会议记录"
+            raw = tr("会议记录")
         }
         let cleaned = raw.replacingOccurrences(of: "/", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        return (cleaned.isEmpty ? "会议记录" : cleaned) + ".md"
+        return (cleaned.isEmpty ? tr("会议记录") : cleaned) + ".md"
     }
 
     private func finishLiveMeeting(paragraphs: [Paragraph], duration: TimeInterval) {

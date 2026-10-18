@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "LectureNoteApp",
+    defaultLocalization: "en",
     platforms: [.macOS(.v26)],
     products: [
         .executable(name: "LectureNoteApp", targets: ["LectureNoteApp"])

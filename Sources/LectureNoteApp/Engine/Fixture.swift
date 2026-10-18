@@ -17,9 +17,9 @@ enum FixtureError: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .missing:
-            "找不到示例回放。"
+            tr("找不到示例回放。")
         case .invalidLine(let line):
-            "示例回放第 \(line) 行无法读取。"
+            trf("示例回放第 %d 行无法读取。", line)
         }
     }
 }

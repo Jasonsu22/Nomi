@@ -2,8 +2,8 @@
 
 The approved full green leaf has a rounded lower-left corner and a flat mint highlight. Body: `#20B68A`; highlight: `#8EDDBA`.
 
-- `AppIcon.icns`: white-background macOS application icon, used by `scripts/build-app.sh`.
-- `logo-white.svg` and `logo-white-4096.png`: white-background master artwork.
+- `AppIcon.icns`: rounded white-tile macOS application icon with transparent corners, used by `scripts/build-app.sh`.
+- `logo-white.svg` and `logo-white-4096.png`: rounded white-tile master artwork; pixels outside the rounded tile are transparent.
 - `logo-transparent.svg` and `logo-transparent-4096.png`: transparent master artwork with the original presentation margins.
 - `logo-in-app.svg`: transparent artwork with tighter framing for in-app use. It renders into `Sources/LectureNoteApp/Resources/AppLogo.png` at 1024 × 1024 pixels.
 

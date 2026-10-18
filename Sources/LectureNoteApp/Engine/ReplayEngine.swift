@@ -13,6 +13,7 @@ final class ReplayEngine: TranscriptionEngine {
     var canStart: Bool { loadError == nil && session.phase == .idle }
     var sourceLanguage = "zh"
     var targetLanguage = "en"
+    var inputDeviceUID: String?
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
 
     private var events: [FixtureEvent] = []

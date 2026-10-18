@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct Rail: View {
+    static let width: CGFloat = 72
+
     var model: AppModel
     var reduceMotion: Bool
     @Namespace private var namespace
@@ -19,7 +21,7 @@ struct Rail: View {
         .padding(.top, Space.s2)
         .padding(.bottom, Space.s4)
         .frame(maxHeight: .infinity)
-        .frame(width: 72)
+        .frame(width: Self.width)
     }
 
     private func item(_ page: AppPage) -> some View {

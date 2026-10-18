@@ -18,8 +18,11 @@ struct AppShell: View {
         }
         .background(AppColor.canvas.ignoresSafeArea())
         .containerBackground(AppColor.canvas, for: .window)
-        .alert("导出失败", isPresented: exportFailed) {
-            Button("好", role: .cancel) {}
+        .sheet(isPresented: $model.recordingSetupPresented) {
+            RecordingSetupView(model: model)
+        }
+        .alert(tr("导出失败"), isPresented: exportFailed) {
+            Button(tr("好"), role: .cancel) {}
         } message: {
             Text(model.exportError ?? "")
         }
@@ -46,7 +49,7 @@ struct AppShell: View {
         case .help:
             HelpView()
         case .settings:
-            SettingsView()
+            SettingsView(model: model)
         }
     }
 }

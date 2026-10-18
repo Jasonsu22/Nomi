@@ -26,7 +26,7 @@ struct MeetingCard: View {
                 if meeting.isLive {
                     HStack(spacing: 6) {
                         LiveDot(reduceMotion: reduceMotion)
-                        Text("进行中")
+                        Text(tr("进行中"))
                     }
                     .font(AppFont.caption)
                     .foregroundStyle(AppColor.accent)
@@ -49,7 +49,7 @@ struct MeetingCard: View {
     }
 
     private var subtitle: String {
-        let length = meeting.isLive ? "进行中" : formatDuration(meeting.duration)
+        let length = meeting.isLive ? tr("进行中") : formatDuration(meeting.duration)
         let languages = "\(languageName(meeting.sourceLanguage)) → \(languageName(meeting.targetLanguage))"
         return "\(formatClockTime(meeting.startedAt)) · \(length) · \(languages)"
     }
@@ -70,6 +70,6 @@ private struct LiveDot: View {
                     dimmed = true
                 }
             }
-            .accessibilityLabel("进行中")
+            .accessibilityLabel(tr("进行中"))
     }
 }

@@ -6,6 +6,7 @@ struct MeetingDetailView: View {
     var reduceMotion: Bool
     @State private var titleDraft = ""
     @State private var sidePreference: Bool?
+    @State private var showingLanguages = false
 
     var body: some View {
         Group {
@@ -68,14 +69,14 @@ struct MeetingDetailView: View {
                         .background(AppColor.surface, in: Circle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("返回会议列表")
+                .accessibilityLabel(tr("返回会议列表"))
 
                 CategoryIcon(
                     symbol: model.category(for: meeting.categoryID)?.symbol ?? CategoryPalette.uncategorizedSymbol,
                     colorIndex: model.category(for: meeting.categoryID)?.colorIndex ?? CategoryPalette.uncategorizedIndex
                 )
 
-                TextField("未命名会议", text: $titleDraft)
+                TextField(tr("未命名会议"), text: $titleDraft)
                     .textFieldStyle(.plain)
                     .font(AppFont.detailTitle)
                     .foregroundStyle(AppColor.textPrimary)
@@ -97,8 +98,8 @@ struct MeetingDetailView: View {
                             .background(AppColor.surface, in: Circle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("打开侧栏")
-                    .help(width < 760 ? "窗口再宽一点才能打开侧栏" : "打开侧栏")
+                    .accessibilityLabel(tr("打开侧栏"))
+                    .help(width < 760 ? tr("窗口再宽一点才能打开侧栏") : tr("打开侧栏"))
                     .disabled(width < 760)
                 }
             }
@@ -107,7 +108,34 @@ struct MeetingDetailView: View {
                 metaChip("\(formatMonthDay(meeting.startedAt)) \(formatWeekday(meeting.startedAt))")
                 timeChip(meeting)
                 categoryChip(meeting)
-                metaChip("\(languageName(meeting.sourceLanguage)) → \(languageName(meeting.targetLanguage))")
+                Button {
+                    showingLanguages = true
+                } label: {
+                    metaChip("\(languageName(meeting.sourceLanguage)) → \(languageName(meeting.targetLanguage))")
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showingLanguages) {
+                    VStack(alignment: .leading, spacing: Space.s4) {
+                        Text(tr("录制语言")).font(AppFont.sectionTitle)
+                        LabeledContent(tr("识别语言"), value: languageName(meeting.sourceLanguage))
+                        LabeledContent(tr("翻译为"), value: languageName(meeting.targetLanguage))
+                        if model.engine.session.phase == .idle {
+                            Divider()
+                            Text(tr("下一场录制")).font(AppFont.caption)
+                            RecordingLanguagePicker(source: $model.recordingSourceLanguage, target: $model.recordingTargetLanguage)
+                        }
+                        Text(tr("语言在录制开始前选择，不会修改已有转写。"))
+                            .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                        if model.engine.session.phase == .idle {
+                            Button(tr("录制新会议")) {
+                                showingLanguages = false
+                                model.prepareRecording()
+                            }
+                        }
+                    }
+                    .padding(Space.s4)
+                    .frame(width: 300)
+                }
             }
         }
     }
@@ -126,7 +154,7 @@ struct MeetingDetailView: View {
 
     private func categoryChip(_ meeting: Meeting) -> some View {
         Menu {
-            Button("未分类") {
+            Button(tr("未分类")) {
                 model.assign(meeting: meeting.id, category: nil)
             }
             ForEach(model.categories) { category in
@@ -135,7 +163,7 @@ struct MeetingDetailView: View {
                 }
             }
         } label: {
-            Text(model.categoryName(for: meeting) ?? "未分类")
+            Text(model.categoryName(for: meeting) ?? tr("未分类"))
                 .font(AppFont.caption)
                 .monospacedDigit()
                 .foregroundStyle(AppColor.textSecondary)

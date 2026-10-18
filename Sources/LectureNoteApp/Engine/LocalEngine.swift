@@ -1,4 +1,6 @@
 import AVFoundation
+import AudioToolbox
+import CoreAudio
 import Foundation
 import SwiftUI
 
@@ -13,6 +15,7 @@ final class LocalEngine: TranscriptionEngine {
     private(set) var readiness: EngineReadiness = .preparing
     var sourceLanguage = "zh"
     var targetLanguage = "en"
+    var inputDeviceUID: String?
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
 
     var canStart: Bool {
@@ -111,7 +114,7 @@ final class LocalEngine: TranscriptionEngine {
             self.process = process
         } catch {
             readiness = .unavailable
-            loadError = "引擎没有启动"
+            loadError = tr("引擎没有启动")
         }
     }
 
@@ -146,7 +149,7 @@ final class LocalEngine: TranscriptionEngine {
     private func apply(_ status: EngineStatus) {
         guard status.asr.loaded else {
             readiness = status.asr.files == "missing" ? .asrMissing : .unavailable
-            if readiness == .unavailable { loadError = "识别模型没有加载" }
+            if readiness == .unavailable { loadError = tr("识别模型没有加载") }
             return
         }
         loadError = nil
@@ -157,14 +160,14 @@ final class LocalEngine: TranscriptionEngine {
         let allowed = await Self.requestMicrophone()
         guard session.phase == .preparing else { return }
         guard allowed else {
-            loadError = "没有麦克风权限"
+            loadError = tr("没有麦克风权限")
             session.markIdle()
             onFinished?([], 0)
             return
         }
         guard let port, let token,
               let url = URL(string: "ws://127.0.0.1:\(port)/v1/session") else {
-            failStart("引擎还没准备好")
+            failStart(tr("引擎还没准备好"))
             return
         }
         var request = URLRequest(url: url)
@@ -178,7 +181,7 @@ final class LocalEngine: TranscriptionEngine {
         do {
             try await socket.send(.string(start))
         } catch {
-            failStart("连接转录服务失败")
+            failStart(tr("连接转录服务失败"))
             return
         }
         receive()
@@ -188,10 +191,10 @@ final class LocalEngine: TranscriptionEngine {
             }
         }
         do {
-            try microphone.start()
+            try microphone.start(deviceUID: inputDeviceUID)
             sendGate.openGate()
         } catch {
-            failStart("打不开麦克风")
+            failStart(tr("打不开麦克风"))
         }
     }
 
@@ -253,7 +256,7 @@ final class LocalEngine: TranscriptionEngine {
         case "error":
             if event.code == "asr_missing" {
                 readiness = .asrMissing
-                failStart("缺少识别模型")
+                failStart(tr("缺少识别模型"))
             }
         default:
             break
@@ -370,8 +373,14 @@ private final class MicrophoneCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private var converter: AVAudioConverter?
 
-    func start() throws {
+    func start(deviceUID: String?) throws {
         let input = engine.inputNode
+        if let deviceUID {
+            guard var device = AudioHardware.inputs().first(where: { $0.id == deviceUID })?.deviceID,
+                  let unit = input.audioUnit else { throw MicrophoneError.unavailable }
+            let result = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &device, UInt32(MemoryLayout<AudioDeviceID>.size))
+            guard result == noErr else { throw MicrophoneError.unavailable }
+        }
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0,
               let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false),
