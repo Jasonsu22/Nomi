@@ -11,7 +11,7 @@ struct LectureNoteApp: App {
         WindowGroup {
             root
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-                    (model.engine as? LocalEngine)?.shutdown()
+                    model.shutdown()
                 }
                 .onAppear {
                     NSApplication.shared.setActivationPolicy(.regular)

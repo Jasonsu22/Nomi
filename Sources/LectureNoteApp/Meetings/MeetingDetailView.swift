@@ -7,6 +7,7 @@ struct MeetingDetailView: View {
     @State private var titleDraft = ""
     @State private var sidePreference: Bool?
     @State private var showingLanguages = false
+    @State private var showingStartTime = false
     @State private var creatingCategory = false
     @State private var categoryDraft = CategoryDraft()
     @FocusState private var titleFocused: Bool
@@ -114,8 +115,32 @@ struct MeetingDetailView: View {
             }
 
             HStack(spacing: Space.s2) {
-                metaChip("\(formatMonthDay(meeting.startedAt)) \(formatWeekday(meeting.startedAt))")
-                timeChip(meeting)
+                Button {
+                    showingStartTime = true
+                } label: {
+                    HStack(spacing: Space.s2) {
+                        metaChip("\(formatMonthDay(meeting.startedAt)) \(formatWeekday(meeting.startedAt))")
+                        metaChip(formatClockTime(meeting.startedAt))
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(tr("修改开始时间"))
+                .popover(isPresented: $showingStartTime, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: Space.s4) {
+                        Text(tr("开始时间")).font(AppFont.sectionTitle)
+                        DatePicker(tr("开始时间"), selection: Binding(
+                            get: { model.meetings.first { $0.id == meeting.id }?.startedAt ?? meeting.startedAt },
+                            set: { model.setStartTime(meeting: meeting.id, to: $0) }
+                        ), displayedComponents: [.date, .hourAndMinute])
+                        .datePickerStyle(.field)
+                        .labelsHidden()
+                        HStack {
+                            Spacer()
+                            Button(tr("完成")) { showingStartTime = false }
+                        }
+                    }
+                    .padding(Space.s4)
+                }
                 categoryChip(meeting)
                 Button {
                     showingLanguages = true
@@ -132,18 +157,6 @@ struct MeetingDetailView: View {
                     .frame(width: 300)
                 }
                 audioInputChip
-            }
-        }
-    }
-
-    private func timeChip(_ meeting: Meeting) -> some View {
-        Group {
-            if meeting.isLive {
-                TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                    metaChip(formatTimeRange(start: meeting.startedAt, duration: meeting.duration, liveElapsed: model.engine.session.elapsed))
-                }
-            } else {
-                metaChip(formatTimeRange(start: meeting.startedAt, duration: meeting.duration, liveElapsed: nil))
             }
         }
     }
@@ -169,16 +182,15 @@ struct MeetingDetailView: View {
             }
         } label: {
             Text(model.categoryName(for: meeting) ?? tr("未分类"))
-                .font(AppFont.caption)
-                .monospacedDigit()
-                .foregroundStyle(AppColor.textSecondary)
-                .lineLimit(1)
-                .padding(.horizontal, 10)
-                .frame(height: 26)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .font(AppFont.caption)
+        .foregroundStyle(AppColor.textSecondary)
+        .lineLimit(1)
         .fixedSize()
+        .padding(.horizontal, 10)
+        .frame(height: 26)
         .background(AppColor.surface, in: Capsule())
         .popover(isPresented: $creatingCategory, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
             CategoryEditor(title: tr("新建分类"), draft: $categoryDraft) {

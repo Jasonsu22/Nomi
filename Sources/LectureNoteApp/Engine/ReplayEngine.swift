@@ -31,14 +31,14 @@ final class ReplayEngine: TranscriptionEngine {
         }
     }
 
-    func start() {
+    func start(resuming paragraphs: [Paragraph] = [], at offset: TimeInterval = 0) {
         guard session.phase == .idle else { return }
         guard loadError == nil else { return }
         cursor = 0
         playback = 0
         transcript.setSourceLanguage(sourceLanguage)
-        transcript.reset()
-        session.begin()
+        transcript.reset(keeping: paragraphs, at: offset)
+        session.begin(at: offset)
         startLevel()
         playTask = Task {
             try? await Task.sleep(for: .milliseconds(780))

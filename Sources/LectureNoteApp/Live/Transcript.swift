@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-struct Commit: Identifiable, Equatable {
+struct Commit: Identifiable, Equatable, Codable {
     var id: Int
     var source: String
     var translation: String
@@ -9,19 +9,21 @@ struct Commit: Identifiable, Equatable {
     var end: TimeInterval
 }
 
-struct Paragraph: Identifiable, Equatable {
+struct Paragraph: Identifiable, Equatable, Codable {
     var id: Int
     var openedAt: TimeInterval
     var commits: [Commit]
     var tail: String
     var closed: Bool
+    var sourceLanguage: String? = nil
+    var targetLanguage: String? = nil
 
     func renderedSource(language: String) -> String {
-        TranscriptText.join(commits.map(\.source), language: language)
+        TranscriptText.join(commits.map(\.source), language: sourceLanguage ?? language)
     }
 
     func renderedTranslation(language: String) -> String {
-        TranscriptText.join(commits.map(\.translation), language: language)
+        TranscriptText.join(commits.map(\.translation), language: targetLanguage ?? language)
     }
 
     var isLive: Bool { !closed }
@@ -81,6 +83,17 @@ struct TranscriptBuilder {
     var sourceLanguage = "zh"
     private(set) var paragraphs: [Paragraph] = []
     private var nextParagraphID = 1
+
+    init(sourceLanguage: String = "zh", paragraphs: [Paragraph] = []) {
+        self.sourceLanguage = sourceLanguage
+        self.paragraphs = paragraphs.map { paragraph in
+            var saved = paragraph
+            saved.closed = true
+            saved.tail = ""
+            return saved
+        }
+        nextParagraphID = (paragraphs.map(\.id).max() ?? 0) + 1
+    }
 
     @discardableResult
     mutating func applyTail(text: String, start: TimeInterval) -> TranscriptChange {
@@ -146,7 +159,8 @@ struct TranscriptBuilder {
             openedAt: start,
             commits: [],
             tail: "",
-            closed: false
+            closed: false,
+            sourceLanguage: sourceLanguage
         )
         nextParagraphID += 1
         paragraphs.append(paragraph)
@@ -168,29 +182,42 @@ final class LiveTranscript {
     var paragraphs: [Paragraph] = []
     private var builder = TranscriptBuilder()
     private var sourceLanguage = "zh"
+    private var timeOffset: TimeInterval = 0
+    private var commitIDOffset = 0
 
     func setSourceLanguage(_ code: String) {
         sourceLanguage = code
         builder.sourceLanguage = code
     }
 
-    func reset() {
-        builder = TranscriptBuilder()
-        builder.sourceLanguage = sourceLanguage
-        paragraphs = []
+    func reset(keeping existing: [Paragraph] = [], at offset: TimeInterval = 0) {
+        timeOffset = max(0, offset)
+        commitIDOffset = existing.flatMap(\.commits).map(\.id).max() ?? 0
+        builder = TranscriptBuilder(sourceLanguage: sourceLanguage, paragraphs: existing)
+        paragraphs = builder.paragraphs
     }
 
     func applyTail(text: String, start: TimeInterval, reduceMotion: Bool) {
-        publish(builder.applyTail(text: text, start: start), reduceMotion: reduceMotion)
+        publish(builder.applyTail(text: text, start: start + timeOffset), reduceMotion: reduceMotion)
     }
 
     func applyCommit(_ commit: Commit, tail: String, reduceMotion: Bool) {
-        publish(builder.applyCommit(commit, tail: tail), reduceMotion: reduceMotion)
+        var continued = commit
+        continued.id += commitIDOffset
+        continued.start += timeOffset
+        continued.end += timeOffset
+        publish(builder.applyCommit(continued, tail: tail), reduceMotion: reduceMotion)
     }
 
     func flush(at end: TimeInterval, reduceMotion: Bool) {
         builder.flush(at: end)
         publish(.committed, reduceMotion: reduceMotion)
+    }
+
+    func snapshot(at end: TimeInterval) -> [Paragraph] {
+        var saved = builder
+        saved.flush(at: end)
+        return saved.paragraphs
     }
 
     private func publish(_ change: TranscriptChange, reduceMotion: Bool) {

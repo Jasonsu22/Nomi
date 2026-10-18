@@ -32,10 +32,11 @@ struct RecordingSetupView: View {
     @Bindable var model: AppModel
     @State private var title = tr("未命名会议")
     @State private var categoryID: UUID?
+    @State private var startedAt = Date()
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s5) {
-            Text(tr("录制会议"))
+            Text(model.recordingResumeID == nil ? tr("录制会议") : tr("继续录制"))
                 .font(AppFont.detailTitle)
             VStack(spacing: 0) {
                 settingRow(tr("会议标题")) {
@@ -45,6 +46,12 @@ struct RecordingSetupView: View {
                         .padding(.vertical, 6)
                         .frame(maxWidth: 240)
                         .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.tag, style: .continuous))
+                }
+                divider
+                settingRow(tr("开始时间")) {
+                    DatePicker(tr("开始时间"), selection: $startedAt, displayedComponents: [.date, .hourAndMinute])
+                        .datePickerStyle(.field)
+                        .labelsHidden()
                 }
                 divider
                 settingRow(tr("分类")) {
@@ -83,9 +90,11 @@ struct RecordingSetupView: View {
             }
             HStack {
                 Spacer()
-                Button(tr("取消")) { model.recordingSetupPresented = false }
+                Button(tr("取消")) { model.cancelRecordingSetup() }
                     .keyboardShortcut(.cancelAction)
-                Button(tr("开始录制")) { model.startTranscription(title: title, categoryID: categoryID) }
+                Button(model.recordingResumeID == nil ? tr("开始录制") : tr("继续录制")) {
+                    model.startTranscription(title: title, categoryID: categoryID, startedAt: startedAt)
+                }
                     .buttonStyle(.borderedProminent)
                     .disabled(!model.canRecord)
                     .keyboardShortcut(.defaultAction)
@@ -95,6 +104,13 @@ struct RecordingSetupView: View {
         .frame(width: 440)
         .foregroundStyle(AppColor.textPrimary)
         .background(AppColor.canvas)
+        .onAppear {
+            if let meeting = model.recordingSetupMeeting {
+                title = meeting.title
+                categoryID = meeting.categoryID
+                startedAt = meeting.startedAt
+            }
+        }
     }
 
     private var languages: RecordingLanguagePicker {

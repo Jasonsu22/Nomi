@@ -27,3 +27,5 @@ bash scripts/build-app.sh
 应用退出或被强制关闭后，其后端进程组会退出。后端意外退出时会取消就绪状态并尝试重启一次；持续失败时显示引擎错误。启动日志：`~/Library/Logs/Nomi/engine.log`。
 
 模型管理与 API 配置说明见 [docs/local-models.md](docs/local-models.md)。
+
+会议、分类、标题和开始时间保存到 `~/Library/Application Support/Nomi/meetings.json`。详情页点击日期/时间可以修改开始时间。列表页的「开始转录」创建新会议；进入已有会议后，右上角变为「继续录制 / Resume」，内容和段落时间追加到原会议。结束会保存，切换页面不会结束正在进行的录音。

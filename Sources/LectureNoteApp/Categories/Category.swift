@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-struct MeetingCategory: Identifiable, Equatable {
+struct MeetingCategory: Identifiable, Equatable, Codable {
     var id: UUID
     var name: String
     var colorIndex: Int

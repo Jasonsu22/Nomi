@@ -72,7 +72,7 @@ private final class RecordingTestEngine: TranscriptionEngine {
     var inputDeviceUID: String?
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
     var starts = 0
-    func start() { starts += 1; session.begin() }
+    func start(resuming paragraphs: [Paragraph], at offset: TimeInterval) { starts += 1; session.begin(at: offset) }
     func stop() { session.markIdle() }
     func togglePause() {}
 }

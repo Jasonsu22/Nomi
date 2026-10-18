@@ -80,6 +80,15 @@
 "未分类 %d" = "Uncategorized %d";
 "未命名会议" = "Untitled Meeting";
 "会议标题" = "Meeting Title";
+"开始时间" = "Start Time";
+"修改开始时间" = "Edit Start Time";
+"继续录制" = "Resume";
+"会议存储" = "Meeting Storage";
+"无法读取本地会议记录，原文件已保留。" = "Could not read saved meetings. The original file has been preserved.";
+"会议保存失败，请导出备份后重试。" = "Could not save meetings. Export a backup and try again.";
+"音频设备连接已改变，请重新选择输入源。" = "The audio device connection changed. Select an input device again.";
+"麦克风未收到音频数据，请重新选择输入源。" = "No audio data was received from the microphone. Select an input device again.";
+"音频格式转换失败，请重新开始录音。" = "Audio format conversion failed. Restart the recording.";
 "本机 · 只出原文" = "On Device · Transcription Only";
 "本机 · 模型就绪" = "On Device · Models Ready";
 "本机讲座笔记" = "Local Lecture Notes";

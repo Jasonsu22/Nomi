@@ -4,6 +4,7 @@ struct SessionControl: View {
     var session: SessionState
     var meter: LevelMeter
     var canStart: Bool
+    var startTitle: String
     var reduceMotion: Bool
     var onStart: () -> Void
     var onStop: () -> Void
@@ -36,12 +37,12 @@ struct SessionControl: View {
         switch session.phase {
         case .idle:
             Button(action: onStart) {
-                label(title: tr("开始转录"), pulsing: false)
+                label(title: startTitle, pulsing: false)
             }
             .buttonStyle(.plain)
             .disabled(!canStart)
             .opacity(canStart ? 1 : 0.4)
-            .accessibilityLabel(tr("开始转录"))
+            .accessibilityLabel(startTitle)
         case .preparing:
             label(title: tr("准备中"), pulsing: true)
                 .accessibilityLabel(tr("准备中"))

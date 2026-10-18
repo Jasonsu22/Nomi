@@ -26,6 +26,14 @@ struct AppShell: View {
         } message: {
             Text(model.exportError ?? "")
         }
+        .alert(tr("会议存储"), isPresented: Binding(
+            get: { model.storageError != nil },
+            set: { if !$0 { model.storageError = nil } }
+        )) {
+            Button(tr("好"), role: .cancel) {}
+        } message: {
+            Text(model.storageError ?? "")
+        }
     }
 
     private var exportFailed: Binding<Bool> {

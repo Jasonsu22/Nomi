@@ -20,10 +20,10 @@ final class SessionState {
         return accumulated + Date().timeIntervalSince(runningSince)
     }
 
-    func begin() {
+    func begin(at offset: TimeInterval = 0) {
         phase = .preparing
         isPaused = false
-        accumulated = 0
+        accumulated = max(0, offset)
         runningSince = nil
     }
 

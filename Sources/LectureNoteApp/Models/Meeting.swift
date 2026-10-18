@@ -1,6 +1,6 @@
 import Foundation
 
-enum CaptureSource: String, Equatable {
+enum CaptureSource: String, Equatable, Codable {
     case microphone
     case system
 
@@ -12,7 +12,7 @@ enum CaptureSource: String, Equatable {
     }
 }
 
-struct Meeting: Identifiable, Equatable {
+struct Meeting: Identifiable, Equatable, Codable {
     var id: UUID
     var title: String
     var startedAt: Date

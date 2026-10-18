@@ -21,7 +21,11 @@ protocol TranscriptionEngine: AnyObject {
     var targetLanguage: String { get set }
     var inputDeviceUID: String? { get set }
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)? { get set }
-    func start()
+    func start(resuming paragraphs: [Paragraph], at offset: TimeInterval)
     func stop()
     func togglePause()
+}
+
+extension TranscriptionEngine {
+    func start() { start(resuming: [], at: 0) }
 }

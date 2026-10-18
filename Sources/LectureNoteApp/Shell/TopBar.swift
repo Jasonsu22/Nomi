@@ -32,10 +32,11 @@ struct TopBar: View {
                 session: model.engine.session,
                 meter: model.engine.level,
                 canStart: model.canStart,
+                startTitle: model.recordingActionTitle,
                 reduceMotion: reduceMotion,
                 onStart: {
                     withAnimation(Motion.morph(reduceMotion)) {
-                        model.prepareRecording()
+                        model.performRecordingAction()
                     }
                 },
                 onStop: {

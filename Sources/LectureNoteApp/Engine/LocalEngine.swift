@@ -39,6 +39,8 @@ final class LocalEngine: TranscriptionEngine {
     @ObservationIgnored private var socket: URLSessionWebSocketTask?
     @ObservationIgnored private var receiveTask: Task<Void, Never>?
     @ObservationIgnored private var stopTask: Task<Void, Never>?
+    @ObservationIgnored private var openTask: Task<Void, Never>?
+    @ObservationIgnored private var recordingID = UUID()
     @ObservationIgnored private let microphone = MicrophoneCapture()
     @ObservationIgnored private let sendGate = SendGate()
 
@@ -49,18 +51,22 @@ final class LocalEngine: TranscriptionEngine {
         return engine
     }
 
-    func start() {
+    func start(resuming paragraphs: [Paragraph] = [], at offset: TimeInterval = 0) {
         guard canStart else { return }
         loadError = nil
         transcript.setSourceLanguage(sourceLanguage)
-        transcript.reset()
-        session.begin()
-        Task { await openSession() }
+        transcript.reset(keeping: paragraphs, at: offset)
+        session.begin(at: offset)
+        recordingID = UUID()
+        let id = recordingID
+        openTask?.cancel()
+        openTask = Task { await openSession(id: id) }
     }
 
     func stop() {
         guard session.phase == .preparing || session.phase == .listening else { return }
         sendGate.closeGate()
+        openTask?.cancel()
         microphone.stop()
         let duration = session.beginStopping()
         level.rms = 0
@@ -94,6 +100,7 @@ final class LocalEngine: TranscriptionEngine {
     func shutdown() {
         shuttingDown = true
         restartTask?.cancel()
+        openTask?.cancel()
         stopTask?.cancel()
         receiveTask?.cancel()
         sendGate.closeGate()
@@ -298,9 +305,9 @@ final class LocalEngine: TranscriptionEngine {
         return data
     }
 
-    private func openSession() async {
+    private func openSession(id: UUID) async {
         let allowed = await Self.requestMicrophone()
-        guard session.phase == .preparing else { return }
+        guard !Task.isCancelled, recordingID == id, session.phase == .preparing else { return }
         guard allowed else {
             loadError = tr("没有麦克风权限")
             session.markIdle()
@@ -323,18 +330,24 @@ final class LocalEngine: TranscriptionEngine {
         do {
             try await socket.send(.string(start))
         } catch {
+            guard recordingID == id, !Task.isCancelled else { return }
             failStart(tr("连接转录服务失败"))
+            return
+        }
+        guard !Task.isCancelled, recordingID == id, session.phase == .preparing else {
+            socket.cancel(with: .goingAway, reason: nil)
             return
         }
         receive()
         microphone.onSamples = { [weak self] data, rms in
             Task { @MainActor in
-                self?.forward(data, rms: rms)
+                guard let self, self.recordingID == id else { return }
+                self.forward(data, rms: rms)
             }
         }
         microphone.onFailure = { [weak self] message in
             Task { @MainActor in
-                guard let self, self.session.phase == .listening || self.session.phase == .preparing else { return }
+                guard let self, self.recordingID == id, self.session.phase == .listening || self.session.phase == .preparing else { return }
                 self.loadError = message
                 self.stop()
             }
@@ -418,6 +431,7 @@ final class LocalEngine: TranscriptionEngine {
 
     private func finish(duration: TimeInterval) {
         guard session.phase != .idle else { return }
+        openTask?.cancel()
         stopTask?.cancel()
         sendGate.closeGate()
         microphone.stop()
@@ -432,6 +446,8 @@ final class LocalEngine: TranscriptionEngine {
     }
 
     private func failStart(_ message: String) {
+        openTask?.cancel()
+        receiveTask?.cancel()
         loadError = message
         sendGate.closeGate()
         microphone.stop()
