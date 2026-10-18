@@ -35,11 +35,11 @@ struct SettingsView: View {
                             AudioInputPicker(inputs: model.audioInputs, enabled: model.engine.session.phase == .idle)
                         }
                         divider
-                        row(tr("模型目录"), "~/.OminiX/models")
-                        divider
                         row(tr("麦克风权限"), microphone)
                     }
                     .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+
+                    LocalModelsSection(model: model)
 
                     HStack(spacing: Space.s3) {
                         BrandLogo(side: 64)

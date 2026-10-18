@@ -13,13 +13,15 @@ final class LocalEngine: TranscriptionEngine {
 
     private(set) var loadError: String?
     private(set) var readiness: EngineReadiness = .preparing
+    private(set) var modelStatus: LocalModelRuntimeStatus?
+    private(set) var isChangingModel = false
     var sourceLanguage = "zh"
     var targetLanguage = "en"
     var inputDeviceUID: String?
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
 
     var canStart: Bool {
-        session.phase == .idle && loadError == nil && (readiness == .ready || readiness == .sourceOnly)
+        session.phase == .idle && !isChangingModel && loadError == nil && (readiness == .ready || readiness == .sourceOnly)
     }
 
     @ObservationIgnored private var process: Process?
@@ -88,7 +90,11 @@ final class LocalEngine: TranscriptionEngine {
         }
         let process = Process()
         process.executableURL = url
-        process.arguments = ["--port", "0"]
+        process.arguments = [
+            "--port", "0",
+            "--asr-model", LocalModelDefinition.selected(for: .asr).directory.path,
+            "--llm-model", LocalModelDefinition.selected(for: .translator).directory.path,
+        ]
         let output = Pipe()
         let errors = Pipe()
         process.standardOutput = output
@@ -139,14 +145,15 @@ final class LocalEngine: TranscriptionEngine {
                 readiness = .unavailable
                 return
             }
-            let status = try JSONDecoder().decode(EngineStatus.self, from: data)
+            let status = try JSONDecoder().decode(LocalModelRuntimeStatus.self, from: data)
             apply(status)
         } catch {
             readiness = .unavailable
         }
     }
 
-    private func apply(_ status: EngineStatus) {
+    private func apply(_ status: LocalModelRuntimeStatus) {
+        modelStatus = status
         guard status.asr.loaded else {
             readiness = status.asr.files == "missing" ? .asrMissing : .unavailable
             if readiness == .unavailable { loadError = tr("识别模型没有加载") }
@@ -154,6 +161,34 @@ final class LocalEngine: TranscriptionEngine {
         }
         loadError = nil
         readiness = status.translator.loaded ? .ready : .sourceOnly
+    }
+
+    func selectModel(_ model: LocalModelDefinition) async throws {
+        guard session.phase == .idle, !isChangingModel, let port, let token else {
+            throw NSError(domain: "Nomi.Models", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("引擎还没准备好")])
+        }
+        isChangingModel = true
+        defer { isChangingModel = false }
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/models/select")!, timeoutInterval: 300)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["role": model.role.rawValue, "path": model.directory.path])
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                let message = String(data: data, encoding: .utf8) ?? tr("模型加载失败，请重试。")
+                throw NSError(domain: "Nomi.Models", code: 2, userInfo: [NSLocalizedDescriptionKey: message])
+            }
+            let status = try JSONDecoder().decode(LocalModelRuntimeStatus.self, from: data)
+            apply(status)
+            guard status.model(for: model.role).loaded else {
+                throw NSError(domain: "Nomi.Models", code: 3, userInfo: [NSLocalizedDescriptionKey: tr("模型加载失败，请重试。")])
+            }
+        } catch {
+            await refreshStatus()
+            throw error
+        }
     }
 
     private func openSession() async {
@@ -319,16 +354,6 @@ final class LocalEngine: TranscriptionEngine {
         ]
         return candidates.compactMap { $0 }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
-}
-
-private struct EngineStatus: Decodable {
-    struct Model: Decodable {
-        var files: String
-        var loaded: Bool
-    }
-
-    var asr: Model
-    var translator: Model
 }
 
 private struct EngineEvent: Decodable {

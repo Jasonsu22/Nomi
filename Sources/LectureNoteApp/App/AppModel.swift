@@ -53,6 +53,7 @@ final class AppModel {
     private(set) var appliedQuery = ""
     let engine: any TranscriptionEngine
     let audioInputs = AudioInputs()
+    let localModels = LocalModelLibrary()
     var recordingSetupPresented = false
     var recordingSourceLanguage: String {
         didSet { UserDefaults.standard.set(recordingSourceLanguage, forKey: LectureLanguages.sourceKey) }
@@ -84,6 +85,29 @@ final class AppModel {
     }
 
     var canStart: Bool { engine.canStart }
+
+    var canSwitchModels: Bool {
+        engine.session.phase == .idle && localModels.switchingID == nil
+            && engine.readiness != .preparing && engine is LocalEngine
+    }
+
+    func selectLocalModel(_ model: LocalModelDefinition) async {
+        guard canSwitchModels, let engine = engine as? LocalEngine else { return }
+        guard LocalModelFiles.isComplete(model) else {
+            localModels.refresh()
+            localModels.errors[model.id] = tr("模型文件不完整，请重新下载。")
+            return
+        }
+        localModels.switchingID = model.id
+        localModels.errors[model.id] = nil
+        defer { localModels.switchingID = nil }
+        do {
+            try await engine.selectModel(model)
+            localModels.rememberSelection(model)
+        } catch {
+            localModels.errors[model.id] = error.localizedDescription
+        }
+    }
 
     var statusTitle: String {
         switch engine.session.phase {
