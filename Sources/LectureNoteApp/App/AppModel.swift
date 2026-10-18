@@ -57,7 +57,7 @@ final class AppModel {
     private var searchTask: Task<Void, Never>?
 
     init(engine: (any TranscriptionEngine)? = nil, meetings: [Meeting]? = nil, categories: [MeetingCategory]? = nil) {
-        let engine = engine ?? ReplayEngine()
+        let engine = engine ?? LocalEngine.launchIfAvailable() ?? ReplayEngine()
         self.engine = engine
         self.meetings = meetings ?? SampleMeetings.make()
         self.categories = categories ?? SampleMeetings.categories()
@@ -72,13 +72,24 @@ final class AppModel {
         }
     }
 
+    var canStart: Bool { engine.canStart }
+
     var statusTitle: String {
-        if engine.loadError != nil { return "示例加载失败" }
         switch engine.session.phase {
-        case .idle: return "预览 · 示例回放"
         case .preparing: return "准备中"
         case .listening: return engine.session.isPaused ? "已暂停" : "正在转录"
         case .stopping: return "正在保存"
+        case .idle:
+            if engine.readiness == .preview, engine.loadError != nil { return "示例加载失败" }
+            if let loadError = engine.loadError, engine.readiness != .preview { return loadError }
+            switch engine.readiness {
+            case .preview: return "预览 · 示例回放"
+            case .preparing: return "准备中"
+            case .ready: return "本机 · 模型就绪"
+            case .sourceOnly: return "本机 · 只出原文"
+            case .asrMissing: return "缺少识别模型"
+            case .unavailable: return "引擎未启动"
+            }
         }
     }
 
@@ -111,12 +122,13 @@ final class AppModel {
     }
 
     func startTranscription() {
-        guard engine.session.phase == .idle, engine.loadError == nil else { return }
+        guard engine.canStart else { return }
         var meeting = Meeting.live()
         if case .category(let id) = activeFilter {
             meeting.categoryID = id
         }
         engine.sourceLanguage = meeting.sourceLanguage
+        engine.targetLanguage = meeting.targetLanguage
         meetings.insert(meeting, at: 0)
         liveMeetingID = meeting.id
         openMeetingID = meeting.id

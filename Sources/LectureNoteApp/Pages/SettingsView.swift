@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 struct SettingsView: View {
@@ -16,14 +17,14 @@ struct SettingsView: View {
                         divider
                         row("模型目录", "~/.OminiX/models")
                         divider
-                        row("麦克风权限", "预览中，尚未申请")
+                        row("麦克风权限", microphone)
                     }
                     .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
 
                     HStack(spacing: Space.s3) {
                         BrandLogo(side: 64)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("LectureNote")
+                            Text("Nomi")
                                 .font(AppFont.sectionTitle)
                                 .foregroundStyle(AppColor.textPrimary)
                             Text("本机讲座笔记")
@@ -32,7 +33,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    Text("这一步只回放示例讲座，用来看界面。识别、翻译和录音还没接上。")
+                    Text("识别和翻译都在这台 Mac 上运行。按下开始转录后，Nomi 使用麦克风，原文和译文一起出现。")
                         .font(AppFont.secondary)
                         .foregroundStyle(AppColor.textSecondary)
                 }
@@ -56,6 +57,14 @@ struct SettingsView: View {
         .padding(.vertical, 14)
     }
 
+    private var microphone: String {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted: "已允许"
+        case .denied: "已拒绝"
+        default: "开始时询问"
+        }
+    }
+
     private var divider: some View {
         Rectangle()
             .fill(AppColor.separator)
@@ -68,7 +77,7 @@ struct HelpView: View {
     var body: some View {
         PageScaffold(title: "帮助") {
             VStack(alignment: .leading, spacing: Space.s4) {
-                note("按下右上角的「开始转录」，会回放一场示例讲座，方便先看动画。")
+                note("按下右上角的「开始转录」，Nomi 会听麦克风，在本机识别，并翻译成目标语言。")
                 note("正在说的字是浅色，提交之后在原位变深，译文接在这一段下面。")
                 note("往上翻之后，右下角会出现「回到最新」。")
             }

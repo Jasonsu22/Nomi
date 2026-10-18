@@ -10,6 +10,7 @@ struct BrandLogo: View {
                 Image(nsImage: image)
                     .resizable()
                     .interpolation(.high)
+                    .clipShape(RoundedRectangle(cornerRadius: side * 0.22, style: .continuous))
             }
         }
         .frame(width: side, height: side)

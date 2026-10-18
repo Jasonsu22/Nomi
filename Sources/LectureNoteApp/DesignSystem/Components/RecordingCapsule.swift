@@ -3,6 +3,7 @@ import SwiftUI
 struct SessionControl: View {
     var session: SessionState
     var meter: LevelMeter
+    var canStart: Bool
     var reduceMotion: Bool
     var onStart: () -> Void
     var onStop: () -> Void
@@ -38,6 +39,8 @@ struct SessionControl: View {
                 label(title: "开始转录", pulsing: false)
             }
             .buttonStyle(.plain)
+            .disabled(!canStart)
+            .opacity(canStart ? 1 : 0.4)
             .accessibilityLabel("开始转录")
         case .preparing:
             label(title: "准备中", pulsing: true)

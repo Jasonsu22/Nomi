@@ -21,27 +21,22 @@ if [[ ! -x "$binary" || -z "$resource_bundle" ]]; then
     exit 1
 fi
 
-app="$root/build/LectureNote.app"
-rm -rf "$app"
+app="$root/build/Nomi.app"
+rm -rf "$app" "$root/build/LectureNote.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 
-cp "$binary" "$app/Contents/MacOS/LectureNote"
+cp "$binary" "$app/Contents/MacOS/Nomi"
 cp -R "$resource_bundle" "$app/Contents/Resources/"
-
-iconset="$(mktemp -d)/AppIcon.iconset"
-mkdir -p "$iconset"
-logo="$root/Design/logo.png"
-sips -z 16 16 "$logo" --out "$iconset/icon_16x16.png" >/dev/null
-sips -z 32 32 "$logo" --out "$iconset/icon_16x16@2x.png" >/dev/null
-sips -z 32 32 "$logo" --out "$iconset/icon_32x32.png" >/dev/null
-sips -z 64 64 "$logo" --out "$iconset/icon_32x32@2x.png" >/dev/null
-sips -z 128 128 "$logo" --out "$iconset/icon_128x128.png" >/dev/null
-sips -z 256 256 "$logo" --out "$iconset/icon_128x128@2x.png" >/dev/null
-sips -z 256 256 "$logo" --out "$iconset/icon_256x256.png" >/dev/null
-sips -z 512 512 "$logo" --out "$iconset/icon_256x256@2x.png" >/dev/null
-sips -z 512 512 "$logo" --out "$iconset/icon_512x512.png" >/dev/null
-cp "$logo" "$iconset/icon_512x512@2x.png"
-iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
+engine_dir="$root/../Moxin-Voice/target/debug"
+for name in moxin-engine asr-worker llm-worker; do
+    if [[ -x "$engine_dir/$name" ]]; then
+        cp "$engine_dir/$name" "$app/Contents/MacOS/$name"
+    fi
+done
+if [[ -f "$engine_dir/mlx.metallib" ]]; then
+    cp "$engine_dir/mlx.metallib" "$app/Contents/MacOS/mlx.metallib"
+fi
+cp "$root/Design/brand-final-v1/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 
 cat > "$app/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -49,13 +44,15 @@ cat > "$app/Contents/Info.plist" <<'EOF'
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>LectureNote</string>
+    <string>Nomi</string>
     <key>CFBundleDisplayName</key>
-    <string>LectureNote</string>
+    <string>Nomi</string>
     <key>CFBundleIdentifier</key>
-    <string>local.lecturenote.preview</string>
+    <string>local.nomi.preview</string>
     <key>CFBundleExecutable</key>
-    <string>LectureNote</string>
+    <string>Nomi</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Nomi 需要使用麦克风，把听到的讲座转写成文字。</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>

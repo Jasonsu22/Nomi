@@ -7,7 +7,7 @@ struct TopBar: View {
     var body: some View {
         HStack(spacing: Space.s3) {
             BrandLogo(side: 20)
-            Text("LectureNote")
+            Text("Nomi")
                 .font(AppFont.secondary.weight(.semibold))
                 .foregroundStyle(AppColor.textPrimary)
             StatusChip(title: model.statusTitle, live: model.statusIsLive)
@@ -15,6 +15,7 @@ struct TopBar: View {
             SessionControl(
                 session: model.engine.session,
                 meter: model.engine.level,
+                canStart: model.canStart,
                 reduceMotion: reduceMotion,
                 onStart: {
                     withAnimation(Motion.morph(reduceMotion)) {

@@ -25,7 +25,7 @@ struct LectureNoteApp: App {
                     model.startTranscription()
                 }
                 .keyboardShortcut("n", modifiers: .command)
-                .disabled(model.engine.session.phase != .idle)
+                .disabled(!model.canStart)
 
                 Button("停止转录") {
                     model.stopTranscription()

@@ -9,7 +9,10 @@ final class ReplayEngine: TranscriptionEngine {
     let session = SessionState()
 
     var loadError: String?
+    var readiness: EngineReadiness { .preview }
+    var canStart: Bool { loadError == nil && session.phase == .idle }
     var sourceLanguage = "zh"
+    var targetLanguage = "en"
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
 
     private var events: [FixtureEvent] = []
