@@ -1,11 +1,23 @@
 import Foundation
 
 enum LocalModelRole: String, Codable, CaseIterable, Sendable, Identifiable {
-    case asr, translator
+    case asr, translator, assistant
 
     var id: String { rawValue }
-    var title: String { self == .asr ? tr("语音识别模型") : tr("翻译模型") }
-    var modelType: String { self == .asr ? "qwen3_asr" : "qwen3_5" }
+    var title: String {
+        switch self {
+        case .asr: tr("语音识别模型")
+        case .translator: tr("翻译模型")
+        case .assistant: tr("本地大模型")
+        }
+    }
+    var modelType: String {
+        switch self {
+        case .asr: "qwen3_asr"
+        case .translator: "qwen3_5"
+        case .assistant: "qwen3"
+        }
+    }
     var preferenceKey: String { "nomi.model.\(rawValue)" }
     var defaultID: String { self == .asr ? "qwen3-asr-1.7b" : "Qwen3.5-2B-MLX-4bit" }
 }
@@ -21,12 +33,15 @@ struct LocalModelDefinition: Identifiable, Sendable {
 
     var directory: URL { Self.root.appendingPathComponent(id, isDirectory: true) }
     var sizeLabel: String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
+    func supports(_ role: LocalModelRole) -> Bool { self.role == role || (role == .assistant && self.role == .translator) }
 
     static var root: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".OminiX/models", isDirectory: true)
     }
 
     static let catalog: [Self] = [
+        .init(id: "qwen3-0.6b-4bit", role: .assistant, name: "Qwen3 0.6B", repository: "mlx-community/Qwen3-0.6B-4bit", revision: "73e3e38d981303bc594367cd910ea6eb48349da8", bytes: 351_386_061, quantization: "4-bit MLX"),
+        .init(id: "qwen3-4b-4bit", role: .assistant, name: "Qwen3 4B", repository: "mlx-community/Qwen3-4B-4bit", revision: "4dcb3d101c2a062e5c1d4bb173588c54ea6c4d25", bytes: 2_278_972_183, quantization: "4-bit MLX"),
         .init(id: "qwen3-asr-0.6b", role: .asr, name: "Qwen3-ASR 0.6B", repository: "mlx-community/Qwen3-ASR-0.6B-8bit", revision: "89e96d92ba34aca20b3e29fb10cc284097d1219f", bytes: 1_010_773_761, quantization: "8-bit MLX"),
         .init(id: "qwen3-asr-1.7b", role: .asr, name: "Qwen3-ASR 1.7B", repository: "mlx-community/Qwen3-ASR-1.7B-8bit", revision: "a8379a2e2f9e313c9292cdf1af4055ab56d50d55", bytes: 2_467_859_030, quantization: "8-bit MLX"),
         .init(id: "Qwen3.5-0.8B-MLX-4bit", role: .translator, name: "Qwen3.5 0.8B", repository: "mlx-community/Qwen3.5-0.8B-MLX-4bit", revision: "5d894f8cc4ef3e6c88537bf3746ed262f549da6a", bytes: 652_031_020, quantization: "4-bit MLX"),
@@ -36,7 +51,7 @@ struct LocalModelDefinition: Identifiable, Sendable {
 
     static func selected(for role: LocalModelRole) -> Self {
         let id = UserDefaults.standard.string(forKey: role.preferenceKey) ?? role.defaultID
-        return catalog.first { $0.role == role && $0.id == id }
+        return catalog.first { $0.supports(role) && $0.id == id }
             ?? catalog.first { $0.id == role.defaultID }!
     }
 }
@@ -50,8 +65,15 @@ struct LocalModelRuntimeStatus: Decodable {
     }
     var asr: Model
     var translator: Model
+    var assistant: Model?
 
-    func model(for role: LocalModelRole) -> Model { role == .asr ? asr : translator }
+    func model(for role: LocalModelRole) -> Model? {
+        switch role {
+        case .asr: asr
+        case .translator: translator
+        case .assistant: assistant
+        }
+    }
 }
 
 enum LocalModelFiles {
@@ -75,7 +97,7 @@ enum LocalModelFiles {
                   let weights = object["weight_map"] as? [String: String], !weights.isEmpty,
                   Set(weights.values).allSatisfy(nonempty) else { return false }
         } else if !nonempty("model.safetensors") { return false }
-        if model.role == .translator {
+        if model.role != .asr {
             guard let data = try? Data(contentsOf: directory.appendingPathComponent("tokenizer_config.json")),
                   let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   config["chat_template"] != nil || nonempty("chat_template.jinja") else { return false }

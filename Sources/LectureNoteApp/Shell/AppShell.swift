@@ -43,7 +43,7 @@ struct AppShell: View {
         case .meetings:
             MeetingsPage(model: model, reduceMotion: reduce)
         case .ask:
-            AskView()
+            AskView(model: model)
         case .sources:
             SourcesView(model: model)
         case .help:

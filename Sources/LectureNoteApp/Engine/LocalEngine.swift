@@ -15,13 +15,14 @@ final class LocalEngine: TranscriptionEngine {
     private(set) var readiness: EngineReadiness = .preparing
     private(set) var modelStatus: LocalModelRuntimeStatus?
     private(set) var isChangingModel = false
+    private(set) var isGenerating = false
     var sourceLanguage = "zh"
     var targetLanguage = "en"
     var inputDeviceUID: String?
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
 
     var canStart: Bool {
-        session.phase == .idle && !isChangingModel && loadError == nil && (readiness == .ready || readiness == .sourceOnly)
+        session.phase == .idle && !isChangingModel && !isGenerating && loadError == nil && (readiness == .ready || readiness == .sourceOnly)
     }
 
     @ObservationIgnored private var process: Process?
@@ -94,6 +95,7 @@ final class LocalEngine: TranscriptionEngine {
             "--port", "0",
             "--asr-model", LocalModelDefinition.selected(for: .asr).directory.path,
             "--llm-model", LocalModelDefinition.selected(for: .translator).directory.path,
+            "--assistant-model", LocalModelDefinition.selected(for: .assistant).directory.path,
         ]
         let output = Pipe()
         let errors = Pipe()
@@ -163,7 +165,7 @@ final class LocalEngine: TranscriptionEngine {
         readiness = status.translator.loaded ? .ready : .sourceOnly
     }
 
-    func selectModel(_ model: LocalModelDefinition) async throws {
+    func selectModel(_ model: LocalModelDefinition, for role: LocalModelRole) async throws {
         guard session.phase == .idle, !isChangingModel, let port, let token else {
             throw NSError(domain: "Nomi.Models", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("引擎还没准备好")])
         }
@@ -173,7 +175,7 @@ final class LocalEngine: TranscriptionEngine {
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["role": model.role.rawValue, "path": model.directory.path])
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["role": role.rawValue, "path": model.directory.path])
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
@@ -182,13 +184,44 @@ final class LocalEngine: TranscriptionEngine {
             }
             let status = try JSONDecoder().decode(LocalModelRuntimeStatus.self, from: data)
             apply(status)
-            guard status.model(for: model.role).loaded else {
+            guard status.model(for: role)?.loaded == true else {
                 throw NSError(domain: "Nomi.Models", code: 3, userInfo: [NSLocalizedDescriptionKey: tr("模型加载失败，请重试。")])
             }
         } catch {
             await refreshStatus()
             throw error
         }
+    }
+
+    func unloadModel(at path: URL) async throws {
+        let data = try await modelRequest(path: "models/unload-path", body: ["path": path.path])
+        apply(try JSONDecoder().decode(LocalModelRuntimeStatus.self, from: data))
+    }
+
+    func generate(system: String, prompt: String) async throws -> String {
+        guard session.phase == .idle, !isGenerating, !isChangingModel else { throw llmError(tr("请等待录制或本地模型操作结束。")) }
+        isGenerating = true
+        defer { isGenerating = false }
+        let data = try await modelRequest(path: "assistant/generate", body: ["system": system, "prompt": prompt, "max_tokens": 2048])
+        struct Reply: Decodable { var text: String; var status: LocalModelRuntimeStatus }
+        let reply = try JSONDecoder().decode(Reply.self, from: data)
+        apply(reply.status)
+        guard !reply.text.isEmpty else { throw llmError(tr("模型未返回文字，请重试。")) }
+        return reply.text
+    }
+
+    private func modelRequest(path: String, body: [String: Any]) async throws -> Data {
+        guard let port, let token else { throw llmError(tr("引擎还没准备好")) }
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/\(path)")!, timeoutInterval: 300)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw llmError(String(data: data, encoding: .utf8) ?? tr("本地模型请求失败。"))
+        }
+        return data
     }
 
     private func openSession() async {

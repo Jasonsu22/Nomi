@@ -1,0 +1,161 @@
+import Foundation
+import Observation
+import Security
+
+enum LLMMode: String, CaseIterable, Identifiable {
+    case local, api
+    var id: String { rawValue }
+    var title: String { self == .local ? tr("本地模型") : "API" }
+}
+
+enum LLMAPIFormat: String, Codable, CaseIterable, Identifiable, Sendable {
+    case openAI, anthropic
+    var id: String { rawValue }
+    var title: String { self == .openAI ? tr("OpenAI 兼容") : "Anthropic Messages" }
+}
+
+struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
+    var id = UUID()
+    var providerID = "custom"
+    var name = ""
+    var baseURL = ""
+    var modelID = ""
+    var format = LLMAPIFormat.openAI
+
+    var isLoopback: Bool {
+        guard let host = URL(string: baseURL)?.host?.lowercased() else { return false }
+        return ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host)
+    }
+
+    func validated(requireModel: Bool = true) throws -> Self {
+        var value = self
+        value.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        value.baseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        value.modelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.name.isEmpty, let url = URL(string: value.baseURL),
+              ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
+              url.host != nil, url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
+            throw llmError(tr("请填写名称和有效的 API 地址。"))
+        }
+        guard !requireModel || !value.modelID.isEmpty else { throw llmError(tr("请选择或填写模型 ID。")) }
+        return value
+    }
+}
+
+struct LLMProviderPreset: Identifiable {
+    var id: String
+    var name: String
+    var baseURL: String
+    var format: LLMAPIFormat = .openAI
+    static let all: [Self] = [
+        .init(id: "openai", name: "OpenAI", baseURL: "https://api.openai.com/v1"),
+        .init(id: "anthropic", name: "Anthropic", baseURL: "https://api.anthropic.com/v1", format: .anthropic),
+        .init(id: "gemini", name: "Google Gemini", baseURL: "https://generativelanguage.googleapis.com/v1beta/openai"),
+        .init(id: "deepseek", name: "DeepSeek", baseURL: "https://api.deepseek.com/v1"),
+        .init(id: "kimi", name: "Kimi", baseURL: "https://api.moonshot.ai/v1"),
+        .init(id: "groq", name: "Groq", baseURL: "https://api.groq.com/openai/v1"),
+        .init(id: "nvidia", name: "NVIDIA", baseURL: "https://integrate.api.nvidia.com/v1"),
+        .init(id: "zhipu", name: "Zhipu AI", baseURL: "https://api.z.ai/api/paas/v4"),
+        .init(id: "ollama", name: "Ollama", baseURL: "http://localhost:11434/v1"),
+        .init(id: "custom", name: "自定义", baseURL: ""),
+    ]
+}
+
+@MainActor
+@Observable
+final class LLMConfiguration {
+    private(set) var mode: LLMMode
+    private(set) var profiles: [LLMAPIProfile]
+    private(set) var activeID: UUID?
+    var activeProfile: LLMAPIProfile? { profiles.first { $0.id == activeID } }
+
+    init() {
+        let defaults = UserDefaults.standard
+        mode = LLMMode(rawValue: defaults.string(forKey: "nomi.llm.mode") ?? "local") ?? .local
+        profiles = defaults.data(forKey: "nomi.llm.profiles").flatMap { try? JSONDecoder().decode([LLMAPIProfile].self, from: $0) } ?? []
+        activeID = defaults.string(forKey: "nomi.llm.active").flatMap(UUID.init(uuidString:))
+    }
+
+    func setMode(_ value: LLMMode) {
+        mode = value
+        UserDefaults.standard.set(value.rawValue, forKey: "nomi.llm.mode")
+    }
+
+    func activate(_ id: UUID) {
+        guard profiles.contains(where: { $0.id == id }) else { return }
+        activeID = id
+        UserDefaults.standard.set(id.uuidString, forKey: "nomi.llm.active")
+    }
+
+    func save(_ draft: LLMAPIProfile, key: String) throws {
+        let value = try draft.validated()
+        let existing = profiles.first { $0.id == value.id }
+        let replacement = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !value.isLoopback && replacement.isEmpty {
+            guard existing?.baseURL == value.baseURL, !(try LLMKeychain.read(value)).isEmpty else {
+                throw llmError(tr("请输入 API 密钥。修改地址后需要重新输入密钥。"))
+            }
+        }
+        if !replacement.isEmpty { try LLMKeychain.save(replacement, profile: value) }
+        if let existing, existing.baseURL != value.baseURL { try LLMKeychain.delete(existing) }
+        if let index = profiles.firstIndex(where: { $0.id == value.id }) { profiles[index] = value }
+        else { profiles.append(value) }
+        persist()
+        if activeID == nil { activate(value.id) }
+    }
+
+    func delete(_ profile: LLMAPIProfile) throws {
+        try LLMKeychain.delete(profile)
+        profiles.removeAll { $0.id == profile.id }
+        if activeID == profile.id {
+            activeID = nil
+            UserDefaults.standard.removeObject(forKey: "nomi.llm.active")
+        }
+        persist()
+    }
+
+    private func persist() {
+        if let data = try? JSONEncoder().encode(profiles) { UserDefaults.standard.set(data, forKey: "nomi.llm.profiles") }
+    }
+}
+
+enum LLMKeychain {
+    private static func query(_ profile: LLMAPIProfile) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: "local.nomi.llm-api",
+         kSecAttrAccount as String: "\(profile.id.uuidString)|\(profile.baseURL)"]
+    }
+
+    static func read(_ profile: LLMAPIProfile) throws -> String {
+        var request = query(profile)
+        request[kSecReturnData as String] = true
+        request[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(request as CFDictionary, &result)
+        if status == errSecItemNotFound { return "" }
+        guard status == errSecSuccess, let data = result as? Data, let key = String(data: data, encoding: .utf8) else {
+            throw llmError(tr("无法读取钥匙串中的 API 密钥。"))
+        }
+        return key
+    }
+
+    static func save(_ key: String, profile: LLMAPIProfile) throws {
+        let values = [kSecValueData as String: Data(key.utf8)]
+        let status = SecItemUpdate(query(profile) as CFDictionary, values as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query(profile)
+            item[kSecValueData as String] = Data(key.utf8)
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { throw llmError(tr("无法保存 API 密钥到钥匙串。")) }
+        } else if status != errSecSuccess { throw llmError(tr("无法保存 API 密钥到钥匙串。")) }
+    }
+
+    static func delete(_ profile: LLMAPIProfile) throws {
+        let status = SecItemDelete(query(profile) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw llmError(tr("无法删除钥匙串中的 API 密钥。")) }
+    }
+}
+
+func llmError(_ message: String) -> NSError {
+    NSError(domain: "Nomi.LLM", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+}

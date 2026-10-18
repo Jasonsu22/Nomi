@@ -8,6 +8,8 @@ final class LocalModelLibrary {
     private(set) var downloads: [String: ModelDownloadProgress] = [:]
     var errors: [String: String] = [:]
     var switchingID: String?
+    var switchingRole: LocalModelRole?
+    var deletingID: String?
     @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
 
     init() { refresh() }
@@ -44,7 +46,16 @@ final class LocalModelLibrary {
         tasks[model.id]?.cancel()
     }
 
-    func rememberSelection(_ model: LocalModelDefinition) {
-        UserDefaults.standard.set(model.id, forKey: model.role.preferenceKey)
+    func rememberSelection(_ model: LocalModelDefinition, for role: LocalModelRole) {
+        UserDefaults.standard.set(model.id, forKey: role.preferenceKey)
+    }
+
+    func trash(_ model: LocalModelDefinition) throws {
+        guard tasks[model.id] == nil,
+              model.directory.deletingLastPathComponent().resolvingSymlinksInPath() == LocalModelDefinition.root.resolvingSymlinksInPath() else {
+            throw llmError(tr("模型正在下载，暂时无法删除。"))
+        }
+        try FileManager.default.trashItem(at: model.directory, resultingItemURL: nil)
+        refresh()
     }
 }

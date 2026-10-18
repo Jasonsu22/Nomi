@@ -36,10 +36,11 @@ struct LocalModelsSection: View {
     }
 }
 
-private struct LocalModelPicker: View {
+struct LocalModelPicker: View {
     var model: AppModel
     var role: LocalModelRole
     @State private var showingModels = false
+    @State private var deletingModel: LocalModelDefinition?
 
     private var runtime: LocalModelRuntimeStatus.Model? {
         (model.engine as? LocalEngine)?.modelStatus?.model(for: role)
@@ -47,11 +48,12 @@ private struct LocalModelPicker: View {
 
     private var current: LocalModelDefinition {
         LocalModelDefinition.catalog.first { item in
-            item.role == role && item.directory.path == runtime?.path
+            item.supports(role) && item.directory.path == runtime?.path
         } ?? LocalModelDefinition.selected(for: role)
     }
 
     private var status: String {
+        if model.localModels.deletingID == current.id { return tr("正在删除…") }
         if isSwitchingRole {
             return tr("正在加载…")
         }
@@ -62,8 +64,7 @@ private struct LocalModelPicker: View {
     }
 
     private var isSwitchingRole: Bool {
-        guard let id = model.localModels.switchingID else { return false }
-        return LocalModelDefinition.catalog.first(where: { $0.id == id })?.role == role
+        model.localModels.switchingID != nil && model.localModels.switchingRole == role
     }
 
     var body: some View {
@@ -90,9 +91,12 @@ private struct LocalModelPicker: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(role.title)
                         .font(AppFont.sectionTitle).padding(Space.s4)
-                    ForEach(LocalModelDefinition.catalog.filter { $0.role == role }) { item in
-                        option(item)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(LocalModelDefinition.catalog.filter { $0.supports(role) }) { item in option(item) }
+                        }
                     }
+                    .frame(height: min(400, CGFloat(LocalModelDefinition.catalog.filter { $0.supports(role) }.count) * 130))
                     Text(tr("来源：Hugging Face。下载完成后点击「使用」切换。"))
                         .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
                         .padding(Space.s4)
@@ -102,6 +106,12 @@ private struct LocalModelPicker: View {
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, 14)
+        .alert(tr("删除本地模型？"), isPresented: Binding(get: { deletingModel != nil }, set: { if !$0 { deletingModel = nil } }), presenting: deletingModel) { item in
+            Button(tr("删除"), role: .destructive) { Task { await model.deleteLocalModel(item) } }
+            Button(tr("取消"), role: .cancel) {}
+        } message: { item in
+            Text(trf("将卸载 %@ 并移到废纸篓。使用此模型的功能会暂停，可重新下载或从废纸篓恢复。", item.name))
+        }
     }
 
     private func option(_ item: LocalModelDefinition) -> some View {
@@ -126,7 +136,7 @@ private struct LocalModelPicker: View {
                     Label(tr("使用中"), systemImage: "checkmark.circle.fill")
                         .font(AppFont.secondary).foregroundStyle(AppColor.accent)
                 } else if installed {
-                    Button(tr("使用")) { Task { await model.selectLocalModel(item) } }
+                    Button(tr("使用")) { Task { await model.selectLocalModel(item, for: role) } }
                         .disabled(!model.canSwitchModels)
                 } else {
                     Button {
@@ -153,8 +163,18 @@ private struct LocalModelPicker: View {
             if let error = model.localModels.errors[item.id] ?? (runtime?.path == item.directory.path ? runtime?.error : nil) {
                 Text(error).font(AppFont.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
-            Link(tr("查看模型"), destination: URL(string: "https://huggingface.co/\(item.repository)")!)
-                .font(AppFont.caption)
+            HStack {
+                Link(tr("查看模型"), destination: URL(string: "https://huggingface.co/\(item.repository)")!)
+                Spacer()
+                if installed {
+                    Button(role: .destructive) {
+                        showingModels = false
+                        deletingModel = item
+                    } label: { Label(tr("删除"), systemImage: "trash") }
+                    .disabled(!model.canSwitchModels)
+                }
+            }
+            .font(AppFont.caption)
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, Space.s3)

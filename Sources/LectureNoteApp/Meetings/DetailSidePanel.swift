@@ -61,9 +61,9 @@ struct DetailSidePanel: View {
                 case .info:
                     info
                 case .ask:
-                    placeholder(tr("提问会在接上 Qwen3.5-2B 之后可用。回答会附上这段话的时间。"))
+                    MeetingAssistantPanel(model: model, meeting: meeting)
                 case .summary:
-                    placeholder(tr("摘要会在接上模型之后可用。"))
+                    MeetingAssistantPanel(model: model, meeting: meeting, summary: true)
                 }
             }
             .id(tab)
@@ -120,6 +120,7 @@ struct DetailSidePanel: View {
                         .frame(height: 34)
                 }
                 .buttonStyle(.plain)
+                .disabled(model.assistantStates[meeting.id]?.isGenerating == true)
             }
             Spacer(minLength: 0)
         }
@@ -190,12 +191,4 @@ struct DetailSidePanel: View {
             .padding(.leading, Space.s4)
     }
 
-    private func placeholder(_ text: String) -> some View {
-        Text(text)
-            .font(AppFont.secondary)
-            .foregroundStyle(AppColor.textSecondary)
-            .lineSpacing(4)
-            .padding(Space.s5)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
 }

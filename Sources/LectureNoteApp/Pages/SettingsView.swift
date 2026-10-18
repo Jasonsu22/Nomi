@@ -40,6 +40,7 @@ struct SettingsView: View {
                     .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
 
                     LocalModelsSection(model: model)
+                    LLMSettingsSection(model: model)
 
                     HStack(spacing: Space.s3) {
                         BrandLogo(side: 64)
@@ -53,7 +54,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    Text(tr("识别和翻译都在这台 Mac 上运行。录制会议时选择识别和翻译语言。"))
+                    Text(tr("识别和翻译在本机运行。提问和摘要可选择本地模型或 API。"))
                         .font(AppFont.secondary)
                         .foregroundStyle(AppColor.textSecondary)
                 }

@@ -54,6 +54,8 @@ final class AppModel {
     let engine: any TranscriptionEngine
     let audioInputs = AudioInputs()
     let localModels = LocalModelLibrary()
+    let llmConfiguration = LLMConfiguration()
+    var assistantStates: [UUID: MeetingAssistantState] = [:]
     var recordingSetupPresented = false
     var recordingSourceLanguage: String {
         didSet { UserDefaults.standard.set(recordingSourceLanguage, forKey: LectureLanguages.sourceKey) }
@@ -84,14 +86,16 @@ final class AppModel {
         }
     }
 
-    var canStart: Bool { engine.canStart }
+    var canStart: Bool { engine.canStart && localModels.deletingID == nil && !assistantIsBusy }
 
     var canSwitchModels: Bool {
         engine.session.phase == .idle && localModels.switchingID == nil
+            && localModels.deletingID == nil && !assistantIsBusy
             && engine.readiness != .preparing && engine is LocalEngine
     }
 
-    func selectLocalModel(_ model: LocalModelDefinition) async {
+    func selectLocalModel(_ model: LocalModelDefinition, for requestedRole: LocalModelRole? = nil) async {
+        let role = requestedRole ?? model.role
         guard canSwitchModels, let engine = engine as? LocalEngine else { return }
         guard LocalModelFiles.isComplete(model) else {
             localModels.refresh()
@@ -99,14 +103,26 @@ final class AppModel {
             return
         }
         localModels.switchingID = model.id
+        localModels.switchingRole = role
         localModels.errors[model.id] = nil
-        defer { localModels.switchingID = nil }
+        defer { localModels.switchingID = nil; localModels.switchingRole = nil }
         do {
-            try await engine.selectModel(model)
-            localModels.rememberSelection(model)
+            try await engine.selectModel(model, for: role)
+            localModels.rememberSelection(model, for: role)
         } catch {
             localModels.errors[model.id] = error.localizedDescription
         }
+    }
+
+    func deleteLocalModel(_ model: LocalModelDefinition) async {
+        guard canSwitchModels, let engine = engine as? LocalEngine else { return }
+        localModels.deletingID = model.id
+        localModels.errors[model.id] = nil
+        defer { localModels.deletingID = nil }
+        do {
+            try await engine.unloadModel(at: model.directory)
+            try localModels.trash(model)
+        } catch { localModels.errors[model.id] = error.localizedDescription }
     }
 
     var statusTitle: String {
@@ -212,8 +228,9 @@ final class AppModel {
     }
 
     func deleteMeeting(_ id: UUID) {
-        guard id != liveMeetingID else { return }
+        guard id != liveMeetingID, assistantStates[id]?.isGenerating != true else { return }
         meetings.removeAll { $0.id == id }
+        assistantStates[id] = nil
         if openMeetingID == id {
             openMeetingID = nil
         }
