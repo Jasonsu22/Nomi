@@ -116,16 +116,8 @@ struct MeetingDetailView: View {
                 .buttonStyle(.plain)
                 .popover(isPresented: $showingLanguages) {
                     VStack(alignment: .leading, spacing: Space.s4) {
-                        Text(tr("录制语言")).font(AppFont.sectionTitle)
-                        LabeledContent(tr("识别语言"), value: languageName(meeting.sourceLanguage))
-                        LabeledContent(tr("翻译为"), value: languageName(meeting.targetLanguage))
-                        if model.engine.session.phase == .idle {
-                            Divider()
-                            Text(tr("下一场录制")).font(AppFont.caption)
-                            RecordingLanguagePicker(source: $model.recordingSourceLanguage, target: $model.recordingTargetLanguage)
-                        }
-                        Text(tr("语言在录制开始前选择，不会修改已有转写。"))
-                            .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                        RecordingLanguagePicker(source: $model.recordingSourceLanguage, target: $model.recordingTargetLanguage)
+                            .disabled(model.engine.session.phase != .idle)
                     }
                     .padding(Space.s4)
                     .frame(width: 300)

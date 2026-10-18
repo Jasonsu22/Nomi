@@ -114,6 +114,8 @@
 "识别和翻译都在这台 Mac 上运行。录制会议时选择识别和翻译语言。" = "Speech recognition and translation run on this Mac. Choose recognition and translation languages when recording a meeting.";
 "识别模型没有加载" = "The recognition model is not loaded";
 "识别语言" = "Recognition Language";
+"输入语言" = "Input Language";
+"目标翻译语言" = "Translation Language";
 "语言" = "Languages";
 "语言在录制开始前选择，不会修改已有转写。" = "Languages are selected before recording. Existing transcripts are unchanged.";
 "请选择可用的音频输入设备。" = "Choose an available audio input device.";

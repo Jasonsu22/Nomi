@@ -5,12 +5,12 @@ struct RecordingLanguagePicker: View {
     @Binding var target: String
 
     var body: some View {
-        Picker(tr("识别语言"), selection: $source) {
+        Picker(tr("输入语言"), selection: $source) {
             ForEach(LectureLanguages.supported, id: \.self) { code in
                 Text(languageName(code)).tag(code)
             }
         }
-        Picker(tr("翻译为"), selection: $target) {
+        Picker(tr("目标翻译语言"), selection: $target) {
             Text(tr("不翻译")).tag("none")
             ForEach(LectureLanguages.supported, id: \.self) { code in
                 Text(languageName(code)).tag(code)
