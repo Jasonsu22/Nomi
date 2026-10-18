@@ -114,7 +114,7 @@ struct MeetingDetailView: View {
                     metaChip("\(languageName(meeting.sourceLanguage)) → \(languageName(meeting.targetLanguage))")
                 }
                 .buttonStyle(.plain)
-                .popover(isPresented: $showingLanguages) {
+                .popover(isPresented: $showingLanguages, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
                     VStack(alignment: .leading, spacing: Space.s4) {
                         RecordingLanguagePicker(source: $model.recordingSourceLanguage, target: $model.recordingTargetLanguage)
                             .disabled(model.engine.session.phase != .idle)
