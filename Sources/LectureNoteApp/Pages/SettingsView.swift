@@ -18,7 +18,7 @@ struct SettingsView: View {
                                 }
                             }
                             .labelsHidden()
-                            .fixedSize()
+                            .selectedTextPickerWidth((InterfaceLanguage(rawValue: interfaceLanguage) ?? .system).title)
                         }
                         divider
                         settingRow(tr("外观")) {
@@ -28,11 +28,11 @@ struct SettingsView: View {
                                 }
                             }
                             .labelsHidden()
-                            .fixedSize()
+                            .selectedTextPickerWidth((InterfaceAppearance(rawValue: appearance) ?? .system).title)
                         }
                         divider
                         settingRow(tr("输入源")) {
-                            AudioInputPicker(inputs: model.audioInputs, enabled: model.engine.session.phase == .idle)
+                            AudioInputPicker(inputs: model.audioInputs, enabled: model.engine.session.phase == .idle, fitsSelectedText: true)
                         }
                         divider
                         row(tr("麦克风权限"), microphone)

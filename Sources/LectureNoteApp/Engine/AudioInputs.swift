@@ -106,8 +106,17 @@ final class AudioInputs {
 struct AudioInputPicker: View {
     @Bindable var inputs: AudioInputs
     var enabled = true
+    var fitsSelectedText = false
 
     var body: some View {
+        if fitsSelectedText {
+            picker.selectedTextPickerWidth(inputs.selectionTitle)
+        } else {
+            picker.frame(maxWidth: 300, alignment: .trailing)
+        }
+    }
+
+    private var picker: some View {
         Picker(tr("输入源"), selection: $inputs.selectedUID) {
             Text(tr("系统默认")).tag(AudioInputs.systemDefault)
             ForEach(inputs.devices) { device in
@@ -119,7 +128,6 @@ struct AudioInputPicker: View {
         }
         .labelsHidden()
         .disabled(!enabled)
-        .frame(maxWidth: 300, alignment: .trailing)
         .accessibilityLabel(tr("输入源"))
     }
 }
