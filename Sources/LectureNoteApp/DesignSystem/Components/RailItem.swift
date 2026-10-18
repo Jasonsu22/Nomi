@@ -17,6 +17,7 @@ struct RailItem: View {
             }
             .foregroundStyle(selected ? AppColor.onSelection : AppColor.textSecondary)
             .frame(width: 60, height: 54)
+            .contentShape(Rectangle())
             .background {
                 if selected {
                     RoundedRectangle(cornerRadius: Radius.field, style: .continuous)
