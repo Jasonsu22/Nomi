@@ -7,6 +7,7 @@ struct MeetingDetailView: View {
     @State private var titleDraft = ""
     @State private var sidePreference: Bool?
     @State private var showingLanguages = false
+    @FocusState private var titleFocused: Bool
 
     var body: some View {
         Group {
@@ -80,6 +81,11 @@ struct MeetingDetailView: View {
                     .textFieldStyle(.plain)
                     .font(AppFont.detailTitle)
                     .foregroundStyle(AppColor.textPrimary)
+                    .focused($titleFocused)
+                    .background(OutsideClickObserver(isActive: titleFocused) {
+                        titleFocused = false
+                    })
+                    .onSubmit { titleFocused = false }
                     .onChange(of: titleDraft) { _, newValue in
                         model.rename(id: meeting.id, to: newValue)
                     }
