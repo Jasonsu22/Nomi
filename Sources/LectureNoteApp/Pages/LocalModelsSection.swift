@@ -137,8 +137,9 @@ struct LocalModelPicker: View {
                 Spacer()
                 VStack(alignment: .center, spacing: Space.s2) {
                     if switching {
-                        ProgressView().controlSize(.small)
-                        Text(tr("正在加载…")).font(AppFont.caption)
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel(tr("正在加载…"))
                     } else if progress != nil {
                         Button(tr("取消")) { model.localModels.cancel(item) }
                     } else if active {
