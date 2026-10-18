@@ -1,0 +1,51 @@
+{"t": 0.2, "type": "tail", "text": "今天我们讲", "start": 0.0, "revision": 1}
+{"t": 0.56, "type": "tail", "text": "今天我们讲注意力机制，", "start": 0.0, "revision": 2}
+{"t": 0.92, "type": "commit", "id": 1, "source": "今天我们讲注意力机制，", "translation": "Today we'll cover the attention mechanism,", "start": 0.0, "end": 1.7, "tail": "它决"}
+{"t": 1.34, "type": "tail", "text": "它决定了模型在生", "start": 1.7, "revision": 3}
+{"t": 1.7, "type": "tail", "text": "它决定了模型在生成每一个词的时候，", "start": 1.7, "revision": 4}
+{"t": 2.06, "type": "commit", "id": 2, "source": "它决定了模型在生成每一个词的时候，", "translation": "which decides, as the model generates each word,", "start": 1.7, "end": 3.4, "tail": "应该"}
+{"t": 2.48, "type": "tail", "text": "应该把注意力放在", "start": 3.4, "revision": 5}
+{"t": 2.84, "type": "tail", "text": "应该把注意力放在输入的哪些位置。", "start": 3.4, "revision": 6}
+{"t": 3.2, "type": "commit", "id": 3, "source": "应该把注意力放在输入的哪些位置。", "translation": "where in the input it should pay attention.", "start": 3.4, "end": 5.1, "tail": "可以"}
+{"t": 3.62, "type": "tail", "text": "可以把它想", "start": 5.1, "revision": 7}
+{"t": 3.98, "type": "tail", "text": "可以把它想成一次提问，", "start": 5.1, "revision": 8}
+{"t": 4.34, "type": "commit", "id": 4, "source": "可以把它想成一次提问，", "translation": "You can think of it as asking a question,", "start": 5.1, "end": 6.8, "tail": "查询"}
+{"t": 4.76, "type": "tail", "text": "查询来自当", "start": 6.8, "revision": 9}
+{"t": 5.12, "type": "tail", "text": "查询来自当前这个词，", "start": 6.8, "revision": 10}
+{"t": 5.48, "type": "commit", "id": 5, "source": "查询来自当前这个词，", "translation": "the query comes from the current word,", "start": 6.8, "end": 8.5, "tail": "键和"}
+{"t": 5.9, "type": "tail", "text": "键和值来自前面已", "start": 8.5, "revision": 11}
+{"t": 6.26, "type": "tail", "text": "键和值来自前面已经看到的那些词。", "start": 8.5, "revision": 12}
+{"t": 6.62, "type": "commit", "id": 6, "source": "键和值来自前面已经看到的那些词。", "translation": "and the keys and values come from the words already seen.", "start": 8.5, "end": 10.2, "tail": "模型"}
+{"t": 7.04, "type": "tail", "text": "模型会给每个", "start": 10.2, "revision": 13}
+{"t": 7.4, "type": "tail", "text": "模型会给每个位置打一个分，", "start": 10.2, "revision": 14}
+{"t": 7.76, "type": "commit", "id": 7, "source": "模型会给每个位置打一个分，", "translation": "The model scores every position,", "start": 10.2, "end": 11.9, "tail": "分数"}
+{"t": 8.18, "type": "tail", "text": "分数越高，这个位置对", "start": 11.9, "revision": 15}
+{"t": 8.54, "type": "tail", "text": "分数越高，这个位置对当前词的影响就越大。", "start": 11.9, "revision": 16}
+{"t": 8.9, "type": "commit", "id": 8, "source": "分数越高，这个位置对当前词的影响就越大。", "translation": "and a higher score means that position affects the current word more.", "start": 11.9, "end": 13.6, "tail": "这些"}
+{"t": 9.32, "type": "tail", "text": "这些分数不是", "start": 13.6, "revision": 17}
+{"t": 9.68, "type": "tail", "text": "这些分数不是人手写的规则，", "start": 13.6, "revision": 18}
+{"t": 10.04, "type": "commit", "id": 9, "source": "这些分数不是人手写的规则，", "translation": "These scores are not rules written by hand,", "start": 13.6, "end": 15.3, "tail": "而是"}
+{"t": 10.46, "type": "tail", "text": "而是训练的时候", "start": 15.3, "revision": 19}
+{"t": 10.82, "type": "tail", "text": "而是训练的时候自己学出来的。", "start": 15.3, "revision": 20}
+{"t": 11.18, "type": "commit", "id": 10, "source": "而是训练的时候自己学出来的。", "translation": "they are learned during training.", "start": 15.3, "end": 17.0, "tail": "所以"}
+{"t": 11.6, "type": "tail", "text": "所以同一句话里，不同的词", "start": 17.0, "revision": 21}
+{"t": 11.96, "type": "tail", "text": "所以同一句话里，不同的词会看向完全不同的上下文。", "start": 17.0, "revision": 22}
+{"t": 12.32, "type": "commit", "id": 11, "source": "所以同一句话里，不同的词会看向完全不同的上下文。", "translation": "So in the same sentence, different words look at completely different context.", "start": 17.0, "end": 18.7, "tail": "这就"}
+{"t": 12.74, "type": "tail", "text": "这就是自注意力，和把所有词", "start": 18.7, "revision": 23}
+{"t": 13.1, "type": "tail", "text": "这就是自注意力，和把所有词揉成一个向量，最根本的差别。", "start": 18.7, "revision": 24}
+{"t": 13.46, "type": "commit", "id": 12, "source": "这就是自注意力，和把所有词揉成一个向量，最根本的差别。", "translation": "That is the real difference between self-attention and collapsing every word into one vector.", "start": 18.7, "end": 20.4, "tail": "记住"}
+{"t": 13.88, "type": "tail", "text": "记住这一", "start": 20.4, "revision": 25}
+{"t": 14.24, "type": "tail", "text": "记住这一点就够了。", "start": 20.4, "revision": 26}
+{"t": 14.6, "type": "commit", "id": 13, "source": "记住这一点就够了。", "translation": "That is the part worth remembering.", "start": 20.4, "end": 22.1, "tail": ""}
+{"t": 15.72, "type": "tail", "text": "接下来看一个", "start": 25.3, "revision": 27}
+{"t": 16.08, "type": "tail", "text": "接下来看一个具体的例子。", "start": 25.3, "revision": 28}
+{"t": 16.44, "type": "commit", "id": 14, "source": "接下来看一个具体的例子。", "translation": "Let's look at a concrete example.", "start": 25.3, "end": 27.0, "tail": "句子"}
+{"t": 16.86, "type": "tail", "text": "句子是「猫坐", "start": 27.0, "revision": 29}
+{"t": 17.22, "type": "tail", "text": "句子是「猫坐在垫子上」，", "start": 27.0, "revision": 30}
+{"t": 17.58, "type": "commit", "id": 15, "source": "句子是「猫坐在垫子上」，", "translation": "The sentence is \"the cat sat on the mat\",", "start": 27.0, "end": 28.7, "tail": "当模"}
+{"t": 18.0, "type": "tail", "text": "当模型处理「", "start": 28.7, "revision": 31}
+{"t": 18.36, "type": "tail", "text": "当模型处理「坐」这个词时，", "start": 28.7, "revision": 32}
+{"t": 18.72, "type": "commit", "id": 16, "source": "当模型处理「坐」这个词时，", "translation": "and when the model handles the word \"sat\",", "start": 28.7, "end": 30.4, "tail": "它会"}
+{"t": 19.14, "type": "tail", "text": "它会更看向「猫」", "start": 30.4, "revision": 33}
+{"t": 19.5, "type": "tail", "text": "它会更看向「猫」，而不是「垫子」。", "start": 30.4, "revision": 34}
+{"t": 19.86, "type": "commit", "id": 17, "source": "它会更看向「猫」，而不是「垫子」。", "translation": "it looks more toward \"cat\" than toward \"mat\".", "start": 30.4, "end": 32.1, "tail": ""}
