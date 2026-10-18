@@ -143,6 +143,9 @@ struct LocalModelPicker: View {
                         .font(AppFont.secondary).foregroundStyle(AppColor.accent)
                 } else if installed {
                     Button(tr("使用")) { Task { await model.selectLocalModel(item, for: role) } }
+                        .buttonStyle(.borderless)
+                        .font(AppFont.secondary)
+                        .foregroundStyle(AppColor.accent)
                         .disabled(!model.canSwitchModels)
                 } else {
                     Button {
@@ -174,7 +177,10 @@ struct LocalModelPicker: View {
                     Button(role: .destructive) {
                         showingModels = false
                         deletingModel = item
-                    } label: { Label(tr("删除"), systemImage: "trash") }
+                    } label: {
+                        Label(tr("删除"), systemImage: "trash")
+                            .foregroundStyle(.red)
+                    }
                     .controlSize(.small)
                     .font(AppFont.caption)
                     .disabled(!model.canSwitchModels)
