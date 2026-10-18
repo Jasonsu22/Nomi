@@ -31,10 +31,6 @@ struct SettingsView: View {
                             .selectedTextPickerWidth((InterfaceAppearance(rawValue: appearance) ?? .system).title)
                         }
                         divider
-                        settingRow(tr("输入源")) {
-                            AudioInputPicker(inputs: model.audioInputs, enabled: model.engine.session.phase == .idle, fitsSelectedText: true)
-                        }
-                        divider
                         row(tr("麦克风权限"), microphone)
                     }
                     .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
@@ -62,7 +58,6 @@ struct SettingsView: View {
                 .padding(.bottom, Space.s7)
             }
         }
-        .onAppear { model.audioInputs.refresh() }
     }
 
     private func settingRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
