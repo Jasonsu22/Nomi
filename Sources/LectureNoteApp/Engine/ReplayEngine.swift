@@ -14,6 +14,7 @@ final class ReplayEngine: TranscriptionEngine {
     var sourceLanguage = "zh"
     var targetLanguage = "en"
     var inputDeviceUID: String?
+    var recordingURL: URL?
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
 
     private var events: [FixtureEvent] = []

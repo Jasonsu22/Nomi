@@ -695,7 +695,10 @@ impl Qwen3ASR {
             .ok_or_else(|| Error::Tokenizer("Tokenizer not loaded".to_string()))?;
 
         let language_prefix = if language.trim().is_empty() || language.eq_ignore_ascii_case("auto") {
-            String::new()
+            // With nothing after "assistant\n" the quantized model often emits EOS as
+            // its first token and returns no text. Starting the "language X<asr_text>"
+            // header makes it name the language and then transcribe.
+            "language".to_string()
         } else {
             format!("language {}<asr_text>", language)
         };
@@ -826,8 +829,9 @@ impl Qwen3ASR {
         // Decode tokens
         let decoded = self.decode_tokens(&tokens, !auto_language)?;
         if auto_language {
-            // Auto generates "language Chinese<asr_text>..."; only expose spoken text.
-            let text = decoded.split_once("<asr_text>").map_or(decoded.as_str(), |(_, text)| text);
+            // Auto generates " Chinese<asr_text>..." after the "language" prompt; only
+            // expose spoken text. Without the tag there is only a language name.
+            let text = decoded.split_once("<asr_text>").map_or("", |(_, text)| text);
             Ok(text.trim().to_string())
         } else {
             Ok(decoded)

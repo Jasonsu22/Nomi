@@ -181,17 +181,12 @@ struct MeetingDetailView: View {
                 Label(tr("新建分类"), systemImage: "plus")
             }
         } label: {
-            Text(model.categoryName(for: meeting) ?? tr("未分类"))
+            metaLabel(model.categoryName(for: meeting) ?? tr("未分类"))
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
-        .font(AppFont.caption)
-        .foregroundStyle(AppColor.textSecondary)
-        .lineLimit(1)
         .fixedSize()
-        .padding(.horizontal, 10)
-        .frame(height: 26)
-        .background(AppColor.surface, in: Capsule())
         .popover(isPresented: $creatingCategory, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
             CategoryEditor(title: tr("新建分类"), draft: $categoryDraft) {
                 if let categoryID = model.addCategory(name: categoryDraft.name, colorIndex: categoryDraft.colorIndex, symbol: categoryDraft.symbol) {
@@ -216,18 +211,12 @@ struct MeetingDetailView: View {
             }
             .pickerStyle(.inline)
         } label: {
-            Label(model.audioInputs.selectionTitle, systemImage: "mic")
-                .font(AppFont.caption)
-                .foregroundStyle(AppColor.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.horizontal, 10)
-                .frame(height: 26)
+            metaLabel(model.audioInputs.selectionTitle, symbol: "mic")
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .background(AppColor.surface, in: Capsule())
         .disabled(model.engine.session.phase != .idle)
         .accessibilityLabel(tr("输入源"))
         .help(model.audioInputs.selectionTitle)
@@ -237,8 +226,11 @@ struct MeetingDetailView: View {
         metaLabel(text)
     }
 
-    private func metaLabel(_ text: String) -> some View {
-        Text(text)
+    private func metaLabel(_ text: String, symbol: String? = nil) -> some View {
+        HStack(spacing: 4) {
+            if let symbol { Image(systemName: symbol) }
+            Text(text).truncationMode(.middle)
+        }
             .font(AppFont.caption)
             .monospacedDigit()
             .foregroundStyle(AppColor.textSecondary)

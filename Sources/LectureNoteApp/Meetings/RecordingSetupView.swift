@@ -33,6 +33,7 @@ struct RecordingSetupView: View {
     @State private var title = tr("未命名会议")
     @State private var categoryID: UUID?
     @State private var startedAt = Date()
+    @FocusState private var titleFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s5) {
@@ -42,10 +43,14 @@ struct RecordingSetupView: View {
                 settingRow(tr("会议标题")) {
                     TextField(tr("未命名会议"), text: $title)
                         .textFieldStyle(.plain)
+                        .focused($titleFocused)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .frame(maxWidth: 240)
                         .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.tag, style: .continuous))
+                        // The observer clears the first responder itself. Setting
+                        // titleFocused = false here moves focus on to the date field.
+                        .background(OutsideClickObserver(isActive: titleFocused) {})
                 }
                 divider
                 settingRow(tr("开始时间")) {

@@ -30,7 +30,7 @@ struct InterfacePreferencesTests {
 
 @MainActor
 struct RecordingConfigurationTests {
-    @Test func openingSetupDoesNotRecordAndStartingFreezesTheChosenLanguages() {
+    @Test func openingSetupDoesNotRecordAndStartingFreezesTheChosenLanguages() async {
         let defaults = UserDefaults.standard
         let source = defaults.object(forKey: LectureLanguages.sourceKey)
         let target = defaults.object(forKey: LectureLanguages.targetKey)
@@ -47,6 +47,8 @@ struct RecordingConfigurationTests {
         model.recordingSourceLanguage = "ja"
         model.recordingTargetLanguage = "en"
         model.startTranscription()
+        // The engine starts on a later main-actor turn, after the setup sheet's click.
+        for _ in 0..<10 where engine.starts == 0 { await Task.yield() }
         #expect(engine.starts == 1)
         #expect(engine.sourceLanguage == "ja")
         #expect(engine.targetLanguage == "en")
@@ -70,6 +72,7 @@ private final class RecordingTestEngine: TranscriptionEngine {
     var sourceLanguage = "zh"
     var targetLanguage = "en"
     var inputDeviceUID: String?
+    var recordingURL: URL?
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
     var starts = 0
     func start(resuming paragraphs: [Paragraph], at offset: TimeInterval) { starts += 1; session.begin(at: offset) }

@@ -7,7 +7,7 @@ struct SourcesView: View {
         PageScaffold(title: tr("资料")) {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s3) {
-                    Text(tr("课件导入还没做。下面是每场会议的音频和转写，录音接上之后可以在这里播放。"))
+                    Text(tr("课件导入还没做。下面是每场会议的转写和录音文件。"))
                         .font(AppFont.secondary)
                         .foregroundStyle(AppColor.textSecondary)
                         .padding(.bottom, Space.s2)
@@ -32,6 +32,14 @@ struct SourcesView: View {
                                         .foregroundStyle(AppColor.textSecondary)
                                 }
                                 Spacer()
+                                if let audio = audioURL(meeting) {
+                                    Button(tr("在 Finder 中显示")) {
+                                        NSWorkspace.shared.activateFileViewerSelecting([audio])
+                                    }
+                                    .buttonStyle(.plain)
+                                    .font(AppFont.caption)
+                                    .foregroundStyle(AppColor.textSecondary)
+                                }
                                 Text(formatMeetingTime(meeting.startedAt))
                                     .font(AppFont.caption)
                                     .foregroundStyle(AppColor.textSecondary)
@@ -49,6 +57,14 @@ struct SourcesView: View {
 
     private func detail(_ meeting: Meeting) -> String {
         let category = model.categoryName(for: meeting) ?? tr("未分类")
-        return trf("%@ · 转写 %d 段 · 音频尚未录制", category, meeting.paragraphs.count)
+        let audio = meeting.audioFiles?.count ?? 0
+        guard audio > 0 else { return trf("%@ · 转写 %d 段 · 音频尚未录制", category, meeting.paragraphs.count) }
+        return trf("%@ · 转写 %d 段 · 音频 %d 段", category, meeting.paragraphs.count, audio)
+    }
+
+    private func audioURL(_ meeting: Meeting) -> URL? {
+        guard let name = meeting.audioFiles?.last else { return nil }
+        let url = MeetingStore.audioDirectory(for: meeting.id).appendingPathComponent(name)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 }

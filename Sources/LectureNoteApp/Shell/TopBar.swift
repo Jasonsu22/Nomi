@@ -34,15 +34,9 @@ struct TopBar: View {
                 canStart: model.canStart,
                 startTitle: model.recordingActionTitle,
                 reduceMotion: reduceMotion,
-                onStart: {
-                    withAnimation(Motion.morph(reduceMotion)) {
-                        model.performRecordingAction()
-                    }
-                },
+                onStart: model.performRecordingAction,
                 onStop: {
-                    withAnimation(Motion.morph(reduceMotion)) {
-                        model.stopTranscription()
-                    }
+                    model.stopTranscription()
                 },
                 onTogglePause: model.togglePause
             )

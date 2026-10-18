@@ -20,6 +20,7 @@ protocol TranscriptionEngine: AnyObject {
     var sourceLanguage: String { get set }
     var targetLanguage: String { get set }
     var inputDeviceUID: String? { get set }
+    var recordingURL: URL? { get set }
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)? { get set }
     func start(resuming paragraphs: [Paragraph], at offset: TimeInterval)
     func stop()

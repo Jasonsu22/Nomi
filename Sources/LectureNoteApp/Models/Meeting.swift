@@ -24,6 +24,8 @@ struct Meeting: Identifiable, Equatable, Codable {
     var paragraphs: [Paragraph]
     var isLive: Bool
     var inputDeviceName: String? = nil
+    /// File names inside `MeetingStore.audioDirectory(for: id)`, one per recording run.
+    var audioFiles: [String]? = nil
 
     var inputTitle: String { inputDeviceName ?? source.title }
 

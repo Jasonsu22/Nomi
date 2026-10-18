@@ -9,15 +9,12 @@ struct SessionControl: View {
     var onStart: () -> Void
     var onStop: () -> Void
     var onTogglePause: () -> Void
-    @Namespace private var glassNamespace
-
     var body: some View {
-        GlassEffectContainer(spacing: 12) {
-            control
-                .background(fill, in: Capsule())
-                .glassEffect(.clear.interactive(session.phase == .idle), in: Capsule())
-                .glassEffectID("session", in: glassNamespace)
-        }
+        control
+            .background(fill, in: Capsule())
+            // Interactive glass installs a hover tracker that crashes on macOS 26
+            // when this control is replaced during the click (EXC_BAD_ACCESS in mouseEntered).
+            .glassEffect(.clear, in: Capsule())
     }
 
     private var listening: Bool {

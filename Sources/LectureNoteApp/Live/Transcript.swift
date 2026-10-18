@@ -180,6 +180,7 @@ struct TranscriptBuilder {
 @Observable
 final class LiveTranscript {
     var paragraphs: [Paragraph] = []
+    @ObservationIgnored var onCommitted: (@MainActor () -> Void)?
     private var builder = TranscriptBuilder()
     private var sourceLanguage = "zh"
     private var timeOffset: TimeInterval = 0
@@ -207,6 +208,7 @@ final class LiveTranscript {
         continued.start += timeOffset
         continued.end += timeOffset
         publish(builder.applyCommit(continued, tail: tail), reduceMotion: reduceMotion)
+        onCommitted?()
     }
 
     func flush(at end: TimeInterval, reduceMotion: Bool) {

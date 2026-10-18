@@ -1,4 +1,7 @@
 "%@ · 转写 %d 段 · 音频尚未录制" = "%@ · %d transcript paragraphs · No recorded audio";
+"%@ · 转写 %d 段 · 音频 %d 段" = "%@ · %d transcript paragraphs · %d audio recordings";
+"在 Finder 中显示" = "Show in Finder";
+"课件导入还没做。下面是每场会议的转写和录音文件。" = "Course material import is coming soon. Each meeting's transcript and audio recordings are listed below.";
 "%d 分钟" = "%d min";
 "%d 小时 %d 分" = "%d h %d min";
 "%d 秒" = "%d sec";

@@ -86,7 +86,8 @@ final class AppModel {
         let pair = LectureLanguages.currentPair()
         recordingSourceLanguage = pair.source
         recordingTargetLanguage = pair.target
-        self.meetings = meetings ?? snapshot?.meetings ?? SampleMeetings.make()
+        // A crash or force-quit while preparing used to leave empty "0 sec" meetings behind.
+        self.meetings = meetings ?? snapshot?.meetings.filter { !$0.paragraphs.isEmpty || $0.duration > 0 } ?? SampleMeetings.make()
         self.categories = categories ?? snapshot?.categories ?? SampleMeetings.categories()
         self.filter = CategoryFilter.load()
         self.grouping = MeetingGrouping.load()
@@ -101,6 +102,9 @@ final class AppModel {
         }
         engine.onFinished = { [weak self] paragraphs, duration in
             self?.finishLiveMeeting(paragraphs: paragraphs, duration: duration)
+        }
+        engine.transcript.onCommitted = { [weak self] in
+            self?.schedulePersistence()
         }
     }
 
@@ -247,6 +251,7 @@ final class AppModel {
         if !trimmedTitle.isEmpty { meeting.title = trimmedTitle }
         meeting.categoryID = category(for: categoryID)?.id
         if let startedAt { meeting.startedAt = startedAt }
+        engine.recordingURL = nextAudioFile(for: &meeting)
         engine.sourceLanguage = meeting.sourceLanguage
         engine.targetLanguage = meeting.targetLanguage
         engine.inputDeviceUID = device?.id
@@ -257,7 +262,11 @@ final class AppModel {
         liveMeetingID = meeting.id
         openMeetingID = meeting.id
         page = .meetings
-        engine.start()
+        // Let the setup sheet finish this click before the recording control is swapped out.
+        Task { @MainActor in
+            await Task.yield()
+            engine.start()
+        }
     }
 
     private func resumeTranscription(_ id: UUID) {
@@ -278,17 +287,41 @@ final class AppModel {
         meetings[index].sourceLanguage = recordingSourceLanguage
         meetings[index].targetLanguage = recordingTargetLanguage
         meetings[index].inputDeviceName = device?.name
+        engine.recordingURL = nextAudioFile(for: &meetings[index])
         meetings[index].isLive = true
         liveMeetingID = id
         openMeetingID = id
         page = .meetings
         recordingSetupPresented = false
         recordingResumeID = nil
-        engine.start(resuming: history, at: offset)
+        Task { @MainActor in
+            await Task.yield()
+            engine.start(resuming: history, at: offset)
+        }
     }
 
     func stopTranscription() {
         engine.stop()
+    }
+
+    /// Each recording run gets its own file. ADTS (.aac) stays readable if the app dies
+    /// mid-recording; an unfinished .m4a has no index and cannot be opened.
+    private func nextAudioFile(for meeting: inout Meeting) -> URL? {
+        guard persistenceEnabled else { return nil }
+        let name = "audio-\((meeting.audioFiles?.count ?? 0) + 1).aac"
+        meeting.audioFiles = (meeting.audioFiles ?? []) + [name]
+        return MeetingStore.audioDirectory(for: meeting.id).appendingPathComponent(name)
+    }
+
+    private func removeAudio(of meeting: Meeting, except kept: [String]? = nil) {
+        let directory = MeetingStore.audioDirectory(for: meeting.id)
+        guard let kept else {
+            try? FileManager.default.removeItem(at: directory)
+            return
+        }
+        for name in meeting.audioFiles ?? [] where !kept.contains(name) {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
     }
 
     func togglePause() {
@@ -325,25 +358,36 @@ final class AppModel {
         persistenceTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            self?.persistMeetings()
+            self?.persistMeetings(inBackground: true)
         }
     }
 
-    private func persistMeetings() {
+    private func persistMeetings(inBackground: Bool = false) {
         guard persistenceEnabled else { return }
         persistenceTask?.cancel()
-        let saved = meetings.map { meeting in
+        let saved: [Meeting] = meetings.compactMap { meeting in
             guard meeting.id == liveMeetingID else { return meeting }
+            let paragraphs = engine.transcript.snapshot(at: engine.session.elapsed)
+            let hasText = paragraphs.contains { !$0.renderedSource(language: meeting.sourceLanguage).isEmpty }
+            guard hasText else { return resumedMeetingSnapshot }
             var saved = meeting
-            saved.paragraphs = engine.transcript.snapshot(at: engine.session.elapsed)
-            saved.duration = max(saved.duration, engine.session.elapsed)
+            saved.paragraphs = paragraphs
+            saved.duration = max(saved.duration, engine.session.elapsed, paragraphs.flatMap(\.commits).map(\.end).max() ?? 0)
             saved.isLive = false
             return saved
         }
+        let snapshot = MeetingStore.Snapshot(meetings: saved, categories: categories)
+        let message = tr("会议保存失败，请导出备份后重试。")
+        if inBackground {
+            MeetingStore.saveInBackground(snapshot) { [weak self] in
+                Task { @MainActor in self?.storageError = message }
+            }
+            return
+        }
         do {
-            try MeetingStore.save(.init(meetings: saved, categories: categories))
+            try MeetingStore.save(snapshot)
         } catch {
-            storageError = tr("会议保存失败，请导出备份后重试。")
+            storageError = message
         }
     }
 
@@ -354,6 +398,7 @@ final class AppModel {
 
     func deleteMeeting(_ id: UUID) {
         guard id != liveMeetingID, assistantStates[id]?.isGenerating != true else { return }
+        if let meeting = meetings.first(where: { $0.id == id }) { removeAudio(of: meeting) }
         meetings.removeAll { $0.id == id }
         assistantStates[id] = nil
         if openMeetingID == id {
@@ -497,7 +542,10 @@ final class AppModel {
     private func finishLiveMeeting(paragraphs: [Paragraph], duration: TimeInterval) {
         guard let id = liveMeetingID, let index = meetings.firstIndex(where: { $0.id == id }) else { return }
         let hasText = paragraphs.contains { !$0.renderedSource(language: meetings[index].sourceLanguage).isEmpty }
+        engine.recordingURL = nil
         if paragraphs.isEmpty, let saved = resumedMeetingSnapshot {
+            removeAudio(of: meetings[index], except: saved.audioFiles ?? [])
+            meetings[index].audioFiles = saved.audioFiles
             meetings[index].paragraphs = saved.paragraphs
             meetings[index].duration = saved.duration
             meetings[index].sourceLanguage = saved.sourceLanguage
@@ -505,6 +553,7 @@ final class AppModel {
             meetings[index].inputDeviceName = saved.inputDeviceName
             meetings[index].isLive = false
         } else if !hasText && duration <= 0 {
+            removeAudio(of: meetings[index])
             meetings.remove(at: index)
             if openMeetingID == id { openMeetingID = nil }
         } else {

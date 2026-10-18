@@ -20,7 +20,9 @@ final class LocalEngine: TranscriptionEngine {
     var sourceLanguage = "zh"
     var targetLanguage = "en"
     var inputDeviceUID: String?
+    var recordingURL: URL?
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
+    private static let logger = Logger(subsystem: "local.nomi.preview", category: "Engine")
 
     var canStart: Bool {
         process?.isRunning == true && session.phase == .idle && !isChangingModel && !isGenerating && (readiness == .ready || readiness == .sourceOnly)
@@ -352,6 +354,14 @@ final class LocalEngine: TranscriptionEngine {
                 self.stop()
             }
         }
+        if let recordingURL {
+            do {
+                microphone.recorder = try AudioFileRecorder(url: recordingURL, gate: sendGate)
+            } catch {
+                // Transcription still works without the audio file.
+                Self.logger.error("Could not create audio file: \(String(describing: error), privacy: .public)")
+            }
+        }
         do {
             try microphone.start(deviceUID: inputDeviceUID)
             sendGate.openGate()
@@ -532,17 +542,29 @@ private final class SendGate: @unchecked Sendable {
     }
 }
 
+/// Installed outside the main actor. `AVAudioNodeTapBlock` is non-Sendable, and a
+/// closure created on the main actor crashes when Core Audio calls it.
+private func installMicrophoneTap(on input: AVAudioInputNode, format: AVAudioFormat, processor: MicrophonePCMProcessor) {
+    // format: nil keeps the node's previous graph rate. After setDeviceID that
+    // rate no longer matches the hardware, and engine.start() fails with -10868.
+    input.installTap(onBus: 0, bufferSize: 1600, format: format) { buffer, _ in
+        processor.convert(buffer)
+    }
+}
+
 @MainActor
 private final class MicrophoneCapture {
     var onSamples: (@Sendable (Data, Double) -> Void)?
     var onFailure: (@Sendable (String) -> Void)?
+    /// Survives device-change restarts of the capture engine; released by `stop()`.
+    var recorder: AudioFileRecorder?
     private var engine: AVAudioEngine?
     private var configurationObserver: NSObjectProtocol?
     private var watchdog: Task<Void, Never>?
     private static let logger = Logger(subsystem: "local.nomi.preview", category: "AudioInput")
 
     func start(deviceUID: String?) throws {
-        stop()
+        stopCapture()
         let engine = AVAudioEngine()
         let input = engine.inputNode
         let deviceID: AudioDeviceID
@@ -561,17 +583,16 @@ private final class MicrophoneCapture {
         }
         let format = input.inputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw MicrophoneError.unavailable }
-        let processor = MicrophonePCMProcessor(onSamples: onSamples, onFailure: onFailure)
-        // Let the input node supply its native format. The converter follows each
-        // actual buffer rather than retaining a previous device's sample rate.
-        input.installTap(onBus: 0, bufferSize: 1600, format: nil) { buffer, _ in
-            processor.convert(buffer)
-        }
+        let processor = MicrophonePCMProcessor(onSamples: onSamples, onFailure: onFailure, recorder: recorder)
+        // The tap block is non-Sendable, so a closure formed on the main actor is
+        // isolated there. The audio thread then traps in swift_task_checkIsolated.
+        installMicrophoneTap(on: input, format: format, processor: processor)
         do {
             engine.prepare()
             try engine.start()
         } catch {
             input.removeTap(onBus: 0)
+            Self.logger.error("Microphone failed to start: \(String(describing: error), privacy: .public)")
             throw error
         }
         self.engine = engine
@@ -595,6 +616,12 @@ private final class MicrophoneCapture {
     }
 
     func stop() {
+        stopCapture()
+        recorder?.close()
+        recorder = nil
+    }
+
+    private func stopCapture() {
         watchdog?.cancel()
         watchdog = nil
         if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
@@ -610,6 +637,7 @@ private final class MicrophoneCapture {
 private final class MicrophonePCMProcessor: @unchecked Sendable {
     private let onSamples: (@Sendable (Data, Double) -> Void)?
     private let onFailure: (@Sendable (String) -> Void)?
+    private let recorder: AudioFileRecorder?
     private let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
     private var converter: AVAudioConverter?
     private var reportedFailure = false
@@ -622,9 +650,10 @@ private final class MicrophonePCMProcessor: @unchecked Sendable {
         return receivedAudio
     }
 
-    init(onSamples: (@Sendable (Data, Double) -> Void)?, onFailure: (@Sendable (String) -> Void)?) {
+    init(onSamples: (@Sendable (Data, Double) -> Void)?, onFailure: (@Sendable (String) -> Void)?, recorder: AudioFileRecorder?) {
         self.onSamples = onSamples
         self.onFailure = onFailure
+        self.recorder = recorder
     }
 
     func convert(_ buffer: AVAudioPCMBuffer) {
@@ -647,6 +676,7 @@ private final class MicrophonePCMProcessor: @unchecked Sendable {
             return buffer
         }
         guard error == nil, status != .error else { fail(); return }
+        recorder?.write(converted)
         guard let channel = converted.floatChannelData?.pointee else { return }
         let count = Int(converted.frameLength)
         guard count > 0 else { return }
@@ -670,4 +700,40 @@ private final class MicrophonePCMProcessor: @unchecked Sendable {
 
 private enum MicrophoneError: Error {
     case unavailable
+}
+
+/// Encodes the 16 kHz mono stream to AAC on the tap thread. Writes are skipped
+/// while the gate is closed, so paused time is not in the file.
+private final class AudioFileRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var file: AVAudioFile?
+    private let gate: SendGate
+    private var failed = false
+
+    fileprivate init(url: URL, gate: SendGate) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: 16_000,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 32_000,
+        ]
+        file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        self.gate = gate
+    }
+
+    func write(_ buffer: AVAudioPCMBuffer) {
+        guard gate.isOpen else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard let file, !failed else { return }
+        do { try file.write(from: buffer) } catch { failed = true }
+    }
+
+    func close() {
+        lock.lock()
+        defer { lock.unlock() }
+        file?.close()
+        file = nil
+    }
 }
