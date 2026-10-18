@@ -64,17 +64,18 @@ extension EnvironmentValues {
 }
 
 struct ReduceMotionBridge: ViewModifier {
-    @State private var reduce = ReduceMotion.system
+    @Environment(\.accessibilityReduceMotion) private var systemReduce
+
+    private var reduce: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["LECTURE_REDUCE_MOTION"] == "1" {
+            return true
+        }
+        #endif
+        return systemReduce
+    }
 
     func body(content: Content) -> some View {
-        content
-            .environment(\.appReduceMotion, reduce)
-            .onReceive(
-                NotificationCenter.default.publisher(
-                    for: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification
-                )
-            ) { _ in
-                reduce = ReduceMotion.system
-            }
+        content.environment(\.appReduceMotion, reduce)
     }
 }

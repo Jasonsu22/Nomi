@@ -1,11 +1,11 @@
 import SwiftUI
 
-struct ParagraphRow: View {
+struct ParagraphRow: View, Equatable {
     var paragraph: Paragraph
     var sourceLanguage: String
     var targetLanguage: String
     var compare: Bool
-    var fontSize: CGFloat
+    var fontSize: Double
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s3) {

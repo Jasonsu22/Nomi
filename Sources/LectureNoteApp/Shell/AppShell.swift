@@ -6,11 +6,6 @@ struct AppShell: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Color.clear
-                .frame(height: 28)
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .gesture(WindowDragGesture())
             TopBar(model: model, reduceMotion: reduce)
             HStack(spacing: 0) {
                 Rail(model: model, reduceMotion: reduce)
@@ -23,6 +18,18 @@ struct AppShell: View {
         }
         .background(AppColor.canvas.ignoresSafeArea())
         .containerBackground(AppColor.canvas, for: .window)
+        .alert("导出失败", isPresented: exportFailed) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(model.exportError ?? "")
+        }
+    }
+
+    private var exportFailed: Binding<Bool> {
+        Binding(
+            get: { model.exportError != nil },
+            set: { if !$0 { model.exportError = nil } }
+        )
     }
 
     private var reduce: Bool { reduceMotion }

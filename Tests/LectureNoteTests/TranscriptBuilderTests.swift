@@ -39,7 +39,7 @@ struct TranscriptBuilderTests {
         #expect(builder.paragraphs.count == 2)
         #expect(builder.paragraphs[0].closed)
         #expect(builder.paragraphs[0].tail.isEmpty)
-        #expect(builder.paragraphs[0].source == sentence)
+        #expect(builder.paragraphs[0].renderedSource(language: "zh") == sentence)
         #expect(builder.paragraphs[1].tail == "下一")
     }
 
@@ -102,10 +102,31 @@ struct TranscriptBuilderTests {
         #expect(events.count > 10)
         #expect(builder.paragraphs.count >= 2)
         #expect(builder.paragraphs[0].closed)
-        #expect(builder.paragraphs[0].source.count >= 200)
-        let spoken = builder.paragraphs.map(\.source).joined()
+        #expect(builder.paragraphs[0].renderedSource(language: "zh").count >= 200)
+        let spoken = builder.paragraphs.map { $0.renderedSource(language: "zh") }.joined()
         #expect(spoken.contains("注意力机制"))
         #expect(spoken.contains("垫子"))
         #expect(builder.paragraphs.allSatisfy { $0.tail.isEmpty })
+    }
+}
+
+struct LevelHistoryTests {
+    @Test func newestColumnEasesTowardTheLatestLevel() {
+        var history = LevelHistory()
+        history.record(0.8, at: 0)
+        let atShift = history.columnLevel(index: 23, count: 24, at: 0, reduceMotion: false)
+        #expect(atShift == LevelHistory.rest)
+        let eased = history.columnLevel(index: 23, count: 24, at: 0.02, reduceMotion: false)
+        #expect(eased > LevelHistory.rest)
+        #expect(eased < 0.8)
+        let snapped = history.columnLevel(index: 23, count: 24, at: 1, reduceMotion: true)
+        #expect(snapped == 0.8)
+    }
+
+    @Test func olderColumnsStayAtRestUntilASampleReachesThem() {
+        var history = LevelHistory()
+        history.record(0.9, at: 5)
+        let oldest = history.columnLevel(index: 0, count: 24, at: 5, reduceMotion: true)
+        #expect(oldest == LevelHistory.rest)
     }
 }

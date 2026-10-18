@@ -73,7 +73,7 @@ enum CategorySymbols {
 }
 
 enum CategoryPalette {
-    static let uncategorizedSymbol = "questionmark"
+    static let uncategorizedSymbol = "tray"
 
     struct Swatch {
         var light: UInt32

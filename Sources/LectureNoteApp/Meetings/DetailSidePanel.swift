@@ -15,6 +15,7 @@ struct DetailSidePanel: View {
     var onClose: () -> Void
     @State private var tab: DetailTab = .info
     @State private var confirmingDelete = false
+    @Namespace private var tabNamespace
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -26,10 +27,20 @@ struct DetailSidePanel: View {
                         }
                     } label: {
                         Text(item.rawValue)
-                            .font(AppFont.secondary.weight(tab == item ? .semibold : .regular))
-                            .foregroundStyle(tab == item ? AppColor.textPrimary : AppColor.textSecondary)
+                            .font(AppFont.caption.weight(.medium))
+                            .foregroundStyle(tab == item ? AppColor.onSelection : AppColor.textSecondary)
+                            .padding(.horizontal, 10)
+                            .frame(height: 26)
+                            .background {
+                                if tab == item {
+                                    Capsule()
+                                        .fill(AppColor.selection)
+                                        .matchedGeometryEffect(id: "detail-tab", in: tabNamespace)
+                                }
+                            }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityAddTraits(tab == item ? .isSelected : [])
                 }
                 Spacer(minLength: 0)
                 Button(action: onClose) {

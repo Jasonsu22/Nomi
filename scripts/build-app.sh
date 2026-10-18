@@ -4,7 +4,16 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-bin_dir="$(swift build -c debug --show-bin-path)"
+config="${1:-debug}"
+case "$config" in
+    debug|release) ;;
+    *)
+        echo "用法: build-app.sh [debug|release]" >&2
+        exit 1
+        ;;
+esac
+
+bin_dir="$(swift build -c "$config" --show-bin-path)"
 binary="$bin_dir/LectureNoteApp"
 resource_bundle="$(find "$bin_dir" -maxdepth 1 -name '*.bundle' -print -quit)"
 if [[ ! -x "$binary" || -z "$resource_bundle" ]]; then

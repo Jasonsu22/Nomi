@@ -17,6 +17,7 @@ struct LectureNoteApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
+        .restorationBehavior(.disabled)
         .defaultSize(width: 1180, height: 780)
         .commands {
             CommandGroup(replacing: .newItem) {

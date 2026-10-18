@@ -48,6 +48,7 @@ final class AppModel {
         didSet { grouping.save() }
     }
     var openMeetingID: UUID?
+    var exportError: String?
     var searchRequest = 0
     private(set) var appliedQuery = ""
     let engine: any TranscriptionEngine
@@ -213,13 +214,25 @@ final class AppModel {
 
     func export(_ items: [Meeting]) {
         guard !items.isEmpty else { return }
+        let markdown = items.map { $0.markdown(categoryName: categoryName(for: $0)) }.joined(separator: "\n")
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible) else {
+            exportError = "找不到窗口，无法打开保存面板。"
+            return
+        }
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = exportFilename(for: items)
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let markdown = items.map { $0.markdown(categoryName: categoryName(for: $0)) }.joined(separator: "\n")
-        try? markdown.write(to: url, atomically: true, encoding: .utf8)
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try markdown.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                Task { @MainActor in
+                    self.exportError = error.localizedDescription
+                }
+            }
+        }
     }
 
     var activeFilter: CategoryFilter {

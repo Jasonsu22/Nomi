@@ -24,9 +24,6 @@ struct Paragraph: Identifiable, Equatable {
         TranscriptText.join(commits.map(\.translation), language: language)
     }
 
-    var source: String { renderedSource(language: "zh") }
-    var translation: String { renderedTranslation(language: "en") }
-
     var isLive: Bool { !closed }
 }
 
