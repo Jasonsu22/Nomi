@@ -3,24 +3,22 @@ import SwiftUI
 struct AppShell: View {
     @Bindable var model: AppModel
     @Environment(\.appReduceMotion) private var reduceMotion
-    @Namespace private var meetingsNamespace
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                Color.clear
-                    .frame(height: 52)
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
-                    .gesture(WindowDragGesture())
-                Rail(selection: $model.page, reduceMotion: reduce)
-            }
-            .frame(width: 72)
-
-            VStack(spacing: 0) {
-                TopBar(model: model, reduceMotion: reduce)
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: 28)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .gesture(WindowDragGesture())
+            TopBar(model: model, reduceMotion: reduce)
+            HStack(spacing: 0) {
+                Rail(model: model, reduceMotion: reduce)
                 page
+                    .id(model.page)
+                    .transition(.pageEnter(reduceMotion: reduce))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
             }
         }
         .background(AppColor.canvas.ignoresSafeArea())
@@ -33,33 +31,15 @@ struct AppShell: View {
     private var page: some View {
         switch model.page {
         case .meetings:
-            meetings
+            MeetingsPage(model: model, reduceMotion: reduce)
         case .ask:
             AskView()
         case .sources:
-            SourcesView(meetings: model.meetings)
-        case .stats:
-            StatsView(meetings: model.meetings)
+            SourcesView(model: model)
         case .help:
             HelpView()
         case .settings:
             SettingsView()
-        }
-    }
-
-    @ViewBuilder
-    private var meetings: some View {
-        if let meetingID = model.openMeetingID {
-            MeetingDetailView(
-                model: model,
-                meetingID: meetingID,
-                namespace: meetingsNamespace,
-                reduceMotion: reduce
-            )
-            .transition(reduce ? .opacity : .identity)
-        } else {
-            MeetingListView(model: model, namespace: meetingsNamespace, reduceMotion: reduce)
-                .transition(reduce ? .opacity : .identity)
         }
     }
 }

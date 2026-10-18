@@ -13,7 +13,7 @@ struct PillButton: View {
                 .foregroundStyle(AppColor.textPrimary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(hovering ? AppColor.surfaceMuted : AppColor.surface, in: Capsule())
+                .background(hovering ? AppColor.surfaceInset : AppColor.surface, in: Capsule())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

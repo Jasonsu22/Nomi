@@ -20,26 +20,33 @@ struct Meeting: Identifiable, Equatable {
     var source: CaptureSource
     var sourceLanguage: String
     var targetLanguage: String
+    var categoryID: UUID?
     var paragraphs: [Paragraph]
     var isLive: Bool
 
     var characterCount: Int {
-        paragraphs.reduce(0) { $0 + $1.source.count }
+        paragraphs.reduce(0) { $0 + $1.renderedSource(language: sourceLanguage).count }
     }
 
-    var markdown: String {
+    func markdown(categoryName: String?) -> String {
         var lines = ["# \(title)", ""]
         lines.append("- 时间：\(formatMeetingTime(startedAt))")
         lines.append("- 时长：\(formatDuration(duration))")
+        if let categoryName {
+            lines.append("- 分类：\(categoryName)")
+        }
         lines.append("- 输入：\(source.title) · \(languageName(sourceLanguage)) → \(languageName(targetLanguage))")
         lines.append("")
-        for paragraph in paragraphs where !paragraph.source.isEmpty {
+        for paragraph in paragraphs {
+            let source = paragraph.renderedSource(language: sourceLanguage)
+            guard !source.isEmpty else { continue }
             lines.append("## \(formatClock(paragraph.openedAt))")
             lines.append("")
-            lines.append(paragraph.source)
-            if !paragraph.translation.isEmpty {
+            lines.append(source)
+            let translation = paragraph.renderedTranslation(language: targetLanguage)
+            if !translation.isEmpty {
                 lines.append("")
-                lines.append(paragraph.translation)
+                lines.append(translation)
             }
             lines.append("")
         }
@@ -55,6 +62,7 @@ struct Meeting: Identifiable, Equatable {
             source: .microphone,
             sourceLanguage: "zh",
             targetLanguage: "en",
+            categoryID: nil,
             paragraphs: [],
             isLive: true
         )

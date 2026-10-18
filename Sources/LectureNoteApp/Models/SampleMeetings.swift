@@ -1,12 +1,27 @@
 import Foundation
 
+enum SampleCategoryID {
+    static let english = UUID(uuidString: "A1B2C3D4-0001-4000-8000-000000000001")!
+    static let math = UUID(uuidString: "A1B2C3D4-0002-4000-8000-000000000002")!
+    static let computer = UUID(uuidString: "A1B2C3D4-0003-4000-8000-000000000003")!
+}
+
 enum SampleMeetings {
+    static func categories() -> [MeetingCategory] {
+        [
+            MeetingCategory(id: SampleCategoryID.english, name: "英语课", colorIndex: 1, symbol: "character.book.closed", sortOrder: 0),
+            MeetingCategory(id: SampleCategoryID.math, name: "数学课", colorIndex: 2, symbol: "function", sortOrder: 1),
+            MeetingCategory(id: SampleCategoryID.computer, name: "计算机课", colorIndex: 0, symbol: "laptopcomputer", sortOrder: 2),
+        ]
+    }
+
     static func make(now: Date = .now) -> [Meeting] {
         [
             meeting(
                 title: "操作系统 · 进程调度",
                 startedAt: today(minutesAgo: 80, now: now),
                 duration: 48 * 60,
+                categoryID: SampleCategoryID.computer,
                 paragraphs: [
                     spoken(
                         id: 1,
@@ -42,6 +57,7 @@ enum SampleMeetings {
                 title: "线性代数 · 特征值",
                 startedAt: today(minutesAgo: 26, now: now),
                 duration: 51 * 60,
+                categoryID: SampleCategoryID.math,
                 paragraphs: [
                     spoken(
                         id: 1,
@@ -60,9 +76,28 @@ enum SampleMeetings {
                 ]
             ),
             meeting(
+                title: "英语语法 · 主谓一致",
+                startedAt: today(minutesAgo: 140, now: now),
+                duration: 30 * 60,
+                sourceLanguage: "en",
+                targetLanguage: "zh",
+                categoryID: SampleCategoryID.english,
+                paragraphs: [
+                    spoken(
+                        id: 1,
+                        openedAt: 0,
+                        pairs: [
+                            ("The verb", "动词"),
+                            ("agrees with the subject.", "要和主语保持一致。"),
+                        ]
+                    ),
+                ]
+            ),
+            meeting(
                 title: "计算机网络 · 拥塞控制",
                 startedAt: yesterday(hour: 21, minute: 40, now: now),
                 duration: 36 * 60,
+                categoryID: nil,
                 paragraphs: [
                     spoken(
                         id: 1,
@@ -87,6 +122,9 @@ enum SampleMeetings {
         title: String,
         startedAt: Date,
         duration: TimeInterval,
+        sourceLanguage: String = "zh",
+        targetLanguage: String = "en",
+        categoryID: UUID?,
         paragraphs: [Paragraph]
     ) -> Meeting {
         Meeting(
@@ -95,8 +133,9 @@ enum SampleMeetings {
             startedAt: startedAt,
             duration: duration,
             source: .microphone,
-            sourceLanguage: "zh",
-            targetLanguage: "en",
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage,
+            categoryID: categoryID,
             paragraphs: paragraphs,
             isLive: false
         )

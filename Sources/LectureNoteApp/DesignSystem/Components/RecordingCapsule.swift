@@ -12,30 +12,22 @@ struct SessionControl: View {
     var body: some View {
         GlassEffectContainer(spacing: 12) {
             control
-                .background(prominent ? AppColor.accent : AppColor.surface, in: Capsule())
-                .overlay {
-                    if !prominent {
-                        Capsule().strokeBorder(AppColor.separator, lineWidth: 1)
-                    }
-                }
-                .glassEffect(glass, in: Capsule())
+                .background(fill, in: Capsule())
+                .glassEffect(.clear.interactive(session.phase == .idle), in: Capsule())
                 .glassEffectID("session", in: glassNamespace)
         }
     }
 
-    private var prominent: Bool {
-        session.phase == .idle || session.phase == .preparing
+    private var listening: Bool {
+        session.phase == .listening || session.phase == .stopping
     }
 
-    private var glass: Glass {
-        prominent ? .clear.interactive(session.phase == .idle) : .regular
+    private var fill: Color {
+        listening ? AppColor.selection : AppColor.accent
     }
 
     private var ink: Color {
-        switch session.phase {
-        case .idle, .preparing: AppColor.onAccent
-        case .listening, .stopping: AppColor.textPrimary
-        }
+        listening ? AppColor.onSelection : AppColor.onAccent
     }
 
     @ViewBuilder
@@ -51,13 +43,13 @@ struct SessionControl: View {
             label(title: "准备中", pulsing: true)
                 .accessibilityLabel("准备中")
         case .listening:
-            listening
+            listeningControl
         case .stopping:
             Text("正在保存")
                 .font(AppFont.secondary.weight(.semibold))
                 .foregroundStyle(ink)
                 .padding(.horizontal, 16)
-                .frame(height: 36)
+                .frame(height: 40)
         }
     }
 
@@ -70,12 +62,12 @@ struct SessionControl: View {
         .font(AppFont.secondary.weight(.semibold))
         .foregroundStyle(ink)
         .padding(.horizontal, 16)
-        .frame(height: 36)
+        .frame(height: 40)
     }
 
-    private var listening: some View {
+    private var listeningControl: some View {
         HStack(spacing: 10) {
-            WaveformIcon(meter: meter)
+            DotWaveform(meter: meter, paused: session.isPaused, reduceMotion: reduceMotion)
                 .foregroundStyle(ink)
             TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                 Text(formatClock(session.elapsed))
@@ -94,28 +86,18 @@ struct SessionControl: View {
         }
         .padding(.leading, 14)
         .padding(.trailing, 8)
-        .frame(height: 36)
+        .frame(height: 40)
     }
 
     private func iconButton(systemName: String, label: String, filled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(filled ? Color.white : AppColor.textPrimary)
+                .foregroundStyle(filled ? AppColor.onAccent : ink)
                 .frame(width: 22, height: 22)
-                .background(filled ? AppColor.accent : AppColor.surfaceMuted, in: Circle())
+                .background(filled ? AppColor.accent : AppColor.surface, in: Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
-    }
-}
-
-private struct WaveformIcon: View {
-    var meter: LevelMeter
-
-    var body: some View {
-        Image(systemName: "waveform", variableValue: min(1, max(0, meter.rms)))
-            .font(.system(size: 13, weight: .semibold))
-            .frame(width: 18)
     }
 }

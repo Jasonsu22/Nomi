@@ -16,15 +16,36 @@ struct Paragraph: Identifiable, Equatable {
     var tail: String
     var closed: Bool
 
-    var source: String {
-        commits.map(\.source).joined()
+    func renderedSource(language: String) -> String {
+        TranscriptText.join(commits.map(\.source), language: language)
     }
 
-    var translation: String {
-        commits.map(\.translation).filter { !$0.isEmpty }.joined(separator: " ")
+    func renderedTranslation(language: String) -> String {
+        TranscriptText.join(commits.map(\.translation), language: language)
     }
+
+    var source: String { renderedSource(language: "zh") }
+    var translation: String { renderedTranslation(language: "en") }
 
     var isLive: Bool { !closed }
+}
+
+enum TranscriptText {
+    static func usesSpaces(_ language: String) -> Bool {
+        let code = language.lowercased()
+        if code == "none" || code.hasPrefix("zh") || code.hasPrefix("ja") {
+            return false
+        }
+        return true
+    }
+
+    static func join(_ parts: [String], language: String) -> String {
+        let pieces = parts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard usesSpaces(language) else { return pieces.joined() }
+        return pieces.joined(separator: " ")
+    }
 }
 
 enum TranscriptChange: Equatable {
@@ -35,8 +56,10 @@ enum TranscriptChange: Equatable {
 
 struct TranscriptBuilder {
     static let maxCharacters = 200
+    static let spacedCharacterLimit = 600
     static let pauseGap: TimeInterval = 2
 
+    var sourceLanguage = "zh"
     private(set) var paragraphs: [Paragraph] = []
     private var nextParagraphID = 1
 
@@ -112,9 +135,11 @@ struct TranscriptBuilder {
     }
 
     private func shouldClose(_ paragraph: Paragraph) -> Bool {
-        let text = paragraph.source
-        guard text.count >= Self.maxCharacters, let last = text.last else { return false }
-        return "。！？!?".contains(last)
+        let text = paragraph.renderedSource(language: sourceLanguage)
+        let limit = TranscriptText.usesSpaces(sourceLanguage) ? Self.spacedCharacterLimit : Self.maxCharacters
+        guard text.count >= limit, let last = text.last else { return false }
+        let endings = TranscriptText.usesSpaces(sourceLanguage) ? ".!?" : "。！？!?"
+        return endings.contains(last)
     }
 }
 
@@ -123,9 +148,16 @@ struct TranscriptBuilder {
 final class LiveTranscript {
     var paragraphs: [Paragraph] = []
     private var builder = TranscriptBuilder()
+    private var sourceLanguage = "zh"
+
+    func setSourceLanguage(_ code: String) {
+        sourceLanguage = code
+        builder.sourceLanguage = code
+    }
 
     func reset() {
         builder = TranscriptBuilder()
+        builder.sourceLanguage = sourceLanguage
         paragraphs = []
     }
 

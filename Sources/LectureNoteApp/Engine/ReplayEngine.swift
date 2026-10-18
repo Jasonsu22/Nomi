@@ -9,6 +9,7 @@ final class ReplayEngine: TranscriptionEngine {
     let session = SessionState()
 
     var loadError: String?
+    var sourceLanguage = "zh"
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
 
     private var events: [FixtureEvent] = []
@@ -31,6 +32,7 @@ final class ReplayEngine: TranscriptionEngine {
         guard loadError == nil else { return }
         cursor = 0
         playback = 0
+        transcript.setSourceLanguage(sourceLanguage)
         transcript.reset()
         session.begin()
         startLevel()

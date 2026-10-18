@@ -1,11 +1,11 @@
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 enum AppPage: String, CaseIterable, Identifiable {
     case meetings
     case ask
     case sources
-    case stats
     case help
     case settings
 
@@ -16,7 +16,6 @@ enum AppPage: String, CaseIterable, Identifiable {
         case .meetings: "会议"
         case .ask: "提问"
         case .sources: "资料"
-        case .stats: "统计"
         case .help: "帮助"
         case .settings: "设置"
         }
@@ -27,7 +26,6 @@ enum AppPage: String, CaseIterable, Identifiable {
         case .meetings: "calendar"
         case .ask: "text.bubble"
         case .sources: "folder"
-        case .stats: "chart.bar"
         case .help: "questionmark.circle"
         case .settings: "gearshape"
         }
@@ -39,16 +37,35 @@ enum AppPage: String, CaseIterable, Identifiable {
 final class AppModel {
     var page: AppPage = .meetings
     var meetings: [Meeting]
-    var query = ""
+    var categories: [MeetingCategory]
+    var query = "" {
+        didSet { scheduleSearch() }
+    }
+    var filter: CategoryFilter {
+        didSet { filter.save() }
+    }
+    var grouping: MeetingGrouping {
+        didSet { grouping.save() }
+    }
     var openMeetingID: UUID?
     var searchRequest = 0
-    let engine: ReplayEngine
+    private(set) var appliedQuery = ""
+    let engine: any TranscriptionEngine
 
     private var liveMeetingID: UUID?
+    private var searchTask: Task<Void, Never>?
 
-    init(engine: ReplayEngine = ReplayEngine(), meetings: [Meeting]? = nil) {
+    init(engine: (any TranscriptionEngine)? = nil, meetings: [Meeting]? = nil, categories: [MeetingCategory]? = nil) {
+        let engine = engine ?? ReplayEngine()
         self.engine = engine
         self.meetings = meetings ?? SampleMeetings.make()
+        self.categories = categories ?? SampleMeetings.categories()
+        self.filter = CategoryFilter.load()
+        self.grouping = MeetingGrouping.load()
+        if case .category(let id) = self.filter, self.category(for: id) == nil {
+            self.filter = .all
+            self.filter.save()
+        }
         engine.onFinished = { [weak self] paragraphs, duration in
             self?.finishLiveMeeting(paragraphs: paragraphs, duration: duration)
         }
@@ -68,21 +85,37 @@ final class AppModel {
         engine.session.phase == .listening && !engine.session.isPaused
     }
 
-    func filteredMeetings() -> [Meeting] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return meetings }
-        return meetings.filter { meeting in
-            meeting.title.localizedStandardContains(trimmed)
-                || meeting.paragraphs.contains {
-                    $0.source.localizedStandardContains(trimmed)
-                        || $0.translation.localizedStandardContains(trimmed)
-                }
+    var visibleMeetings: [Meeting] {
+        meetings.filter { matches($0) }
+    }
+
+    func count(in filter: CategoryFilter) -> Int {
+        meetings.filter { categoryMatches($0, filter: filter) }.count
+    }
+
+    func category(for id: UUID?) -> MeetingCategory? {
+        guard let id else { return nil }
+        return categories.first { $0.id == id }
+    }
+
+    func categoryName(for meeting: Meeting) -> String? {
+        category(for: meeting.categoryID)?.name
+    }
+
+    func select(_ page: AppPage) {
+        if page == .meetings, self.page == .meetings {
+            openMeetingID = nil
         }
+        self.page = page
     }
 
     func startTranscription() {
         guard engine.session.phase == .idle, engine.loadError == nil else { return }
-        let meeting = Meeting.live()
+        var meeting = Meeting.live()
+        if case .category(let id) = activeFilter {
+            meeting.categoryID = id
+        }
+        engine.sourceLanguage = meeting.sourceLanguage
         meetings.insert(meeting, at: 0)
         liveMeetingID = meeting.id
         openMeetingID = meeting.id
@@ -112,27 +145,143 @@ final class AppModel {
         meetings[index].title = title
     }
 
+    func assign(meeting id: UUID, category categoryID: UUID?) {
+        guard let index = meetings.firstIndex(where: { $0.id == id }) else { return }
+        meetings[index].categoryID = categoryID
+    }
+
+    func deleteMeeting(_ id: UUID) {
+        guard id != liveMeetingID else { return }
+        meetings.removeAll { $0.id == id }
+        if openMeetingID == id {
+            openMeetingID = nil
+        }
+    }
+
+    @discardableResult
+    func addCategory(name: String, colorIndex: Int, symbol: String) -> UUID? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let category = MeetingCategory(
+            id: UUID(),
+            name: trimmed,
+            colorIndex: colorIndex,
+            symbol: symbol,
+            sortOrder: (categories.map(\.sortOrder).max() ?? -1) + 1
+        )
+        categories.append(category)
+        filter = .category(category.id)
+        return category.id
+    }
+
+    func updateCategory(_ id: UUID, name: String, colorIndex: Int, symbol: String) {
+        guard let index = categories.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        categories[index].name = trimmed
+        categories[index].colorIndex = colorIndex
+        categories[index].symbol = symbol
+    }
+
+    func deleteCategory(_ id: UUID) {
+        categories.removeAll { $0.id == id }
+        for index in meetings.indices where meetings[index].categoryID == id {
+            meetings[index].categoryID = nil
+        }
+        if case .category(let current) = filter, current == id {
+            filter = .uncategorized
+        }
+    }
+
     func requestSearch() {
         page = .meetings
         openMeetingID = nil
         searchRequest += 1
     }
 
-    func copyNotes() -> Bool {
-        let items: [Meeting]
-        if let openMeetingID, let meeting = meetings.first(where: { $0.id == openMeetingID }) {
-            items = [meeting]
-        } else {
-            items = meetings
+    func copyTranscript(_ meeting: Meeting) {
+        let text = meeting.paragraphs.map { paragraph in
+            let source = paragraph.renderedSource(language: meeting.sourceLanguage)
+            let translation = paragraph.renderedTranslation(language: meeting.targetLanguage)
+            return translation.isEmpty ? source : "\(source)\n\(translation)"
         }
-        let markdown = items.map(\.markdown).joined(separator: "\n")
+        .filter { !$0.isEmpty }
+        .joined(separator: "\n\n")
         NSPasteboard.general.clearContents()
-        return NSPasteboard.general.setString(markdown, forType: .string)
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    func export(_ items: [Meeting]) {
+        guard !items.isEmpty else { return }
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = exportFilename(for: items)
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let markdown = items.map { $0.markdown(categoryName: categoryName(for: $0)) }.joined(separator: "\n")
+        try? markdown.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    var activeFilter: CategoryFilter {
+        if case .category(let id) = filter, category(for: id) == nil {
+            return .all
+        }
+        return filter
+    }
+
+    private func matches(_ meeting: Meeting) -> Bool {
+        guard categoryMatches(meeting, filter: activeFilter) else { return false }
+        let trimmed = appliedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        if meeting.title.localizedStandardContains(trimmed) { return true }
+        if let name = categoryName(for: meeting), name.localizedStandardContains(trimmed) { return true }
+        return meeting.paragraphs.contains { paragraph in
+            paragraph.renderedSource(language: meeting.sourceLanguage).localizedStandardContains(trimmed)
+                || paragraph.renderedTranslation(language: meeting.targetLanguage).localizedStandardContains(trimmed)
+        }
+    }
+
+    private func categoryMatches(_ meeting: Meeting, filter: CategoryFilter) -> Bool {
+        switch filter {
+        case .all:
+            return true
+        case .uncategorized:
+            return meeting.categoryID == nil
+        case .category(let id):
+            return meeting.categoryID == id
+        }
+    }
+
+    private func scheduleSearch() {
+        let text = query
+        searchTask?.cancel()
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            appliedQuery = ""
+            return
+        }
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            self?.appliedQuery = text
+        }
+    }
+
+    private func exportFilename(for items: [Meeting]) -> String {
+        let raw: String
+        if items.count == 1 {
+            raw = items[0].title
+        } else if case .category(let id) = activeFilter, let name = category(for: id)?.name {
+            raw = name
+        } else {
+            raw = "会议记录"
+        }
+        let cleaned = raw.replacingOccurrences(of: "/", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (cleaned.isEmpty ? "会议记录" : cleaned) + ".md"
     }
 
     private func finishLiveMeeting(paragraphs: [Paragraph], duration: TimeInterval) {
         guard let id = liveMeetingID, let index = meetings.firstIndex(where: { $0.id == id }) else { return }
-        let hasText = paragraphs.contains { !$0.source.isEmpty }
+        let hasText = paragraphs.contains { !$0.renderedSource(language: meetings[index].sourceLanguage).isEmpty }
         if !hasText {
             meetings.remove(at: index)
             if openMeetingID == id { openMeetingID = nil }

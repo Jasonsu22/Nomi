@@ -10,7 +10,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "LectureNoteApp",
-            resources: [.copy("Fixtures")]
+            resources: [
+                .copy("Fixtures"),
+                .process("Resources"),
+            ]
         ),
         .testTarget(
             name: "LectureNoteTests",

@@ -2,6 +2,10 @@ import SwiftUI
 
 struct ParagraphRow: View {
     var paragraph: Paragraph
+    var sourceLanguage: String
+    var targetLanguage: String
+    var compare: Bool
+    var fontSize: CGFloat
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
@@ -10,19 +14,33 @@ struct ParagraphRow: View {
                 .monospacedDigit()
                 .foregroundStyle(AppColor.textSecondary)
                 .frame(width: 48, alignment: .leading)
-            VStack(alignment: .leading, spacing: 6) {
+            if compare {
                 spoken
-                    .font(AppFont.body)
+                    .font(.system(size: fontSize))
                     .lineSpacing(5)
                     .contentTransition(.interpolate)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if !paragraph.translation.isEmpty {
-                    Text(paragraph.translation)
-                        .font(AppFont.secondary)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .lineSpacing(4)
+                Text(translation.isEmpty ? " " : translation)
+                    .font(.system(size: fontSize - 1))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .lineSpacing(4)
+                    .contentTransition(.interpolate)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    spoken
+                        .font(.system(size: fontSize))
+                        .lineSpacing(5)
                         .contentTransition(.interpolate)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if !translation.isEmpty {
+                        Text(translation)
+                            .font(.system(size: max(12, fontSize - 2)))
+                            .foregroundStyle(AppColor.textSecondary)
+                            .lineSpacing(4)
+                            .contentTransition(.interpolate)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
         }
@@ -36,13 +54,25 @@ struct ParagraphRow: View {
         }
     }
 
+    private var source: String {
+        paragraph.renderedSource(language: sourceLanguage)
+    }
+
+    private var translation: String {
+        paragraph.renderedTranslation(language: targetLanguage)
+    }
+
     private var spoken: Text {
-        var committed = AttributedString(paragraph.source)
+        var committed = AttributedString(source)
         committed.foregroundColor = AppColor.textPrimary
-        if !paragraph.tail.isEmpty {
-            var pending = AttributedString(paragraph.tail)
-            pending.foregroundColor = AppColor.textSecondary
-            committed.append(pending)
+        let pending = paragraph.tail.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !pending.isEmpty {
+            if TranscriptText.usesSpaces(sourceLanguage), !source.isEmpty {
+                committed.append(AttributedString(" "))
+            }
+            var tail = AttributedString(pending)
+            tail.foregroundColor = AppColor.textSecondary
+            committed.append(tail)
         }
         return Text(committed)
     }

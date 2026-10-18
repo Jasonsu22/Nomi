@@ -2,7 +2,8 @@ import SwiftUI
 
 struct MeetingCard: View {
     var meeting: Meeting
-    var namespace: Namespace.ID
+    var symbol: String
+    var colorIndex: Int
     var reduceMotion: Bool
     var action: () -> Void
     @State private var hovering = false
@@ -10,41 +11,47 @@ struct MeetingCard: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .center, spacing: Space.s3) {
+                CategoryIcon(symbol: symbol, colorIndex: colorIndex, size: 32)
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: Space.s2) {
-                        if meeting.isLive {
-                            LiveDot(reduceMotion: reduceMotion)
-                        }
-                        Text(meeting.title)
-                            .font(AppFont.sectionTitle)
-                            .foregroundStyle(AppColor.textPrimary)
-                            .lineLimit(1)
-                    }
+                    Text(meeting.title)
+                        .font(AppFont.sectionTitle)
+                        .foregroundStyle(AppColor.textPrimary)
+                        .lineLimit(1)
                     Text(subtitle)
                         .font(AppFont.secondary)
                         .foregroundStyle(AppColor.textSecondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: Space.s3)
-                Text(meeting.isLive ? "进行中" : formatDuration(meeting.duration))
+                if meeting.isLive {
+                    HStack(spacing: 6) {
+                        LiveDot(reduceMotion: reduceMotion)
+                        Text("进行中")
+                    }
                     .font(AppFont.caption)
-                    .foregroundStyle(meeting.isLive ? AppColor.accent : AppColor.textSecondary)
+                    .foregroundStyle(AppColor.accent)
+                } else {
+                    Text(formatDuration(meeting.duration))
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                }
             }
             .padding(Space.s4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                hovering ? AppColor.surfaceMuted : AppColor.surface,
+                hovering ? AppColor.surfaceInset : AppColor.surface,
                 in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
             )
         }
         .buttonStyle(.plain)
-        .modifier(HeroFrame(id: meeting.id, namespace: namespace, enabled: !reduceMotion))
         .onHover { hovering = $0 }
         .animation(Motion.fade(reduceMotion), value: hovering)
     }
 
     private var subtitle: String {
-        "\(formatMeetingTime(meeting.startedAt)) · \(meeting.source.title) · \(languageName(meeting.sourceLanguage)) → \(languageName(meeting.targetLanguage))"
+        let length = meeting.isLive ? "进行中" : formatDuration(meeting.duration)
+        let languages = "\(languageName(meeting.sourceLanguage)) → \(languageName(meeting.targetLanguage))"
+        return "\(formatClockTime(meeting.startedAt)) · \(length) · \(languages)"
     }
 }
 

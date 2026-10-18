@@ -10,7 +10,9 @@ struct SettingsView: View {
                         divider
                         row("源语言", "中文")
                         divider
-                        row("目标语言", "English")
+                        row("目标语言", "英文")
+                        divider
+                        row("外观", "跟随系统")
                         divider
                         row("模型目录", "~/.OminiX/models")
                         divider
@@ -18,14 +20,24 @@ struct SettingsView: View {
                     }
                     .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
 
+                    HStack(spacing: Space.s3) {
+                        BrandLogo(side: 64)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("LectureNote")
+                                .font(AppFont.sectionTitle)
+                                .foregroundStyle(AppColor.textPrimary)
+                            Text("本机讲座笔记")
+                                .font(AppFont.secondary)
+                                .foregroundStyle(AppColor.textSecondary)
+                        }
+                    }
+
                     Text("这一步只回放示例讲座，用来看界面。识别、翻译和录音还没接上。")
                         .font(AppFont.secondary)
                         .foregroundStyle(AppColor.textSecondary)
                 }
-                .padding(.horizontal, Space.s6)
+                .pageColumn(maxWidth: 760)
                 .padding(.bottom, Space.s7)
-                .frame(maxWidth: 720)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -60,8 +72,7 @@ struct HelpView: View {
                 note("正在说的字是浅色，提交之后在原位变深，译文接在这一段下面。")
                 note("往上翻之后，右下角会出现「回到最新」。")
             }
-            .padding(.horizontal, Space.s6)
-            .frame(maxWidth: 640, alignment: .leading)
+            .pageColumn(maxWidth: 760)
         }
     }
 

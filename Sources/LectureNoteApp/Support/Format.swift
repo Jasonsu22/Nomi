@@ -27,20 +27,63 @@ func formatDuration(_ seconds: TimeInterval) -> String {
 func languageName(_ code: String) -> String {
     switch code {
     case "zh": "中文"
-    case "en": "English"
+    case "en": "英文"
+    case "ja": "日文"
     case "none": "不翻译"
     default: code
     }
 }
 
+func formatClockTime(_ date: Date) -> String {
+    clockTimeFormatter.string(from: date)
+}
+
+func formatMonthDay(_ date: Date) -> String {
+    monthDayFormatter.string(from: date)
+}
+
+func formatWeekday(_ date: Date) -> String {
+    weekdayFormatter.string(from: date)
+}
+
 func formatMeetingTime(_ date: Date, now: Date = .now) -> String {
+    let time = formatClockTime(date)
     let calendar = Calendar.current
-    let time = date.formatted(date: .omitted, time: .shortened)
     if calendar.isDateInToday(date) {
         return "今天 \(time)"
     }
     if calendar.isDateInYesterday(date) {
         return "昨天 \(time)"
     }
-    return date.formatted(date: .abbreviated, time: .shortened)
+    return "\(formatMonthDay(date)) \(time)"
 }
+
+func formatTimeRange(start: Date, duration: TimeInterval, liveElapsed: TimeInterval?) -> String {
+    let startText = formatClockTime(start)
+    if let liveElapsed {
+        return "\(startText) · \(formatClock(liveElapsed))"
+    }
+    let end = formatClockTime(start.addingTimeInterval(duration))
+    return "\(startText)–\(end)"
+}
+
+private let clockTimeFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "zh_CN")
+    formatter.dateFormat = "HH:mm"
+    return formatter
+}()
+
+private let monthDayFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "zh_CN")
+    formatter.dateFormat = "M月d日"
+    return formatter
+}()
+
+private let weekdayFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "zh_CN")
+    formatter.dateFormat = "EEE"
+    return formatter
+}()

@@ -11,7 +11,9 @@ struct LectureNoteApp: App {
                 .onAppear {
                     NSApplication.shared.setActivationPolicy(.regular)
                     NSApplication.shared.activate()
+                    #if DEBUG
                     applyPreview(ProcessInfo.processInfo.environment["LECTURE_PREVIEW"])
+                    #endif
                 }
         }
         .windowStyle(.hiddenTitleBar)
@@ -42,7 +44,7 @@ struct LectureNoteApp: App {
     private var root: some View {
         AppShell(model: model)
             .frame(minWidth: 960, minHeight: 640)
-            .environment(\.appReduceMotion, ReduceMotion.system)
+            .modifier(ReduceMotionBridge())
             .modifier(ForcedColorScheme(scheme: forcedScheme))
     }
 
@@ -50,6 +52,10 @@ struct LectureNoteApp: App {
         switch name {
         case "detail":
             if let meeting = model.meetings.first(where: { !$0.isLive }) {
+                model.openMeeting(meeting.id)
+            }
+        case "english":
+            if let meeting = model.meetings.first(where: { $0.sourceLanguage == "en" }) {
                 model.openMeeting(meeting.id)
             }
         case "live":
@@ -60,11 +66,15 @@ struct LectureNoteApp: App {
     }
 
     private var forcedScheme: ColorScheme? {
+        #if DEBUG
         switch ProcessInfo.processInfo.environment["LECTURE_COLOR_SCHEME"] {
         case "dark": .dark
         case "light": .light
         default: nil
         }
+        #else
+        nil
+        #endif
     }
 }
 

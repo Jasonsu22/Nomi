@@ -15,12 +15,12 @@ struct RailItem: View {
                     .font(AppFont.caption)
                     .lineLimit(1)
             }
-            .foregroundStyle(selected ? AppColor.textPrimary : AppColor.textSecondary)
+            .foregroundStyle(selected ? AppColor.onSelection : AppColor.textSecondary)
             .frame(width: 60, height: 54)
             .background {
                 if selected {
                     RoundedRectangle(cornerRadius: Radius.field, style: .continuous)
-                        .fill(AppColor.surfaceMuted)
+                        .fill(AppColor.selection)
                         .matchedGeometryEffect(id: "rail", in: namespace)
                 }
             }

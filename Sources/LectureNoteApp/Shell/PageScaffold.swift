@@ -9,12 +9,21 @@ struct PageScaffold<Content: View>: View {
             Text(title)
                 .font(AppFont.pageTitle)
                 .foregroundStyle(AppColor.textPrimary)
-                .padding(.horizontal, Space.s6)
+                .pageColumn()
                 .padding(.top, 28)
                 .padding(.bottom, Space.s5)
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+extension View {
+    func pageColumn(maxWidth: CGFloat = 1200) -> some View {
+        frame(maxWidth: maxWidth, alignment: .leading)
+            .padding(.leading, 48)
+            .padding(.trailing, 32)
+            .frame(maxWidth: .infinity, alignment: .center)
     }
 }

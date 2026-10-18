@@ -15,7 +15,7 @@ struct StatusChip: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(AppColor.surfaceMuted, in: Capsule())
+        .background(AppColor.surfaceInset, in: Capsule())
         .accessibilityElement(children: .combine)
     }
 }

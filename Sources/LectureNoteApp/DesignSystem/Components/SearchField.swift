@@ -3,12 +3,13 @@ import SwiftUI
 struct SearchField: View {
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
+    var prompt: String = "搜索会议、内容或分类"
 
     var body: some View {
         HStack(spacing: Space.s2) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(AppColor.textSecondary)
-            TextField("搜索会议、内容", text: $text)
+            TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
                 .font(AppFont.body)
                 .focused(isFocused)
@@ -24,7 +25,7 @@ struct SearchField: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
+        .frame(height: 40)
+        .background(AppColor.surface, in: Capsule())
     }
 }

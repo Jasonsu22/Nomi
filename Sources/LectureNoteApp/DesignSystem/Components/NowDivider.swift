@@ -5,7 +5,7 @@ struct NowDivider: View {
         HStack(spacing: Space.s3) {
             line
             TimelineView(.everyMinute) { context in
-                Text("现在 · \(context.date.formatted(date: .omitted, time: .shortened))")
+                Text("现在 · \(formatClockTime(context.date))")
                     .font(AppFont.caption)
                     .monospacedDigit()
                     .foregroundStyle(AppColor.accent)

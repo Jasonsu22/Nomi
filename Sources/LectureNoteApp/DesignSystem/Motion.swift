@@ -8,6 +8,10 @@ enum Motion {
         reduce ? reduced : .snappy(duration: 0.18)
     }
 
+    static func page(_ reduce: Bool) -> Animation {
+        reduce ? reduced : .smooth(duration: 0.22)
+    }
+
     static func layout(_ reduce: Bool) -> Animation {
         reduce ? reduced : .smooth(duration: 0.32)
     }
@@ -23,15 +27,29 @@ enum Motion {
 
 enum ReduceMotion {
     static var system: Bool {
+        #if DEBUG
         if ProcessInfo.processInfo.environment["LECTURE_REDUCE_MOTION"] == "1" {
             return true
         }
+        #endif
         return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 }
 
 func insertionTransition(reduceMotion: Bool) -> AnyTransition {
     reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 8))
+}
+
+extension AnyTransition {
+    static func pageEnter(reduceMotion: Bool) -> AnyTransition {
+        if reduceMotion {
+            return .opacity.animation(Motion.fade(true))
+        }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: 8)).animation(Motion.page(false)),
+            removal: .opacity.animation(.easeOut(duration: 0.1))
+        )
+    }
 }
 
 private struct AppReduceMotionKey: EnvironmentKey {
@@ -42,5 +60,21 @@ extension EnvironmentValues {
     var appReduceMotion: Bool {
         get { self[AppReduceMotionKey.self] }
         set { self[AppReduceMotionKey.self] = newValue }
+    }
+}
+
+struct ReduceMotionBridge: ViewModifier {
+    @State private var reduce = ReduceMotion.system
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.appReduceMotion, reduce)
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification
+                )
+            ) { _ in
+                reduce = ReduceMotion.system
+            }
     }
 }

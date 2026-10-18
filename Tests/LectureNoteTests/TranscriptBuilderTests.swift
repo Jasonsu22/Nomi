@@ -43,6 +43,51 @@ struct TranscriptBuilderTests {
         #expect(builder.paragraphs[1].tail == "下一")
     }
 
+    @Test func englishCommitsKeepSpacesAndChineseTranslationsDoNot() {
+        var builder = TranscriptBuilder()
+        builder.sourceLanguage = "en"
+        builder.applyCommit(
+            Commit(id: 1, source: "Hello", translation: " 你好", start: 0, end: 1),
+            tail: ""
+        )
+        builder.applyCommit(
+            Commit(id: 2, source: " world", translation: "世界", start: 1, end: 2),
+            tail: ""
+        )
+        let paragraph = builder.paragraphs[0]
+        #expect(paragraph.renderedSource(language: "en") == "Hello world")
+        #expect(paragraph.renderedTranslation(language: "zh") == "你好世界")
+        #expect(!paragraph.closed)
+    }
+
+    @Test func englishFullStopClosesALongParagraph() {
+        var builder = TranscriptBuilder()
+        builder.sourceLanguage = "en"
+        let sentence = String(repeating: "word ", count: 120).trimmingCharacters(in: .whitespaces) + "."
+        #expect(sentence.count >= TranscriptBuilder.spacedCharacterLimit)
+        builder.applyCommit(
+            Commit(id: 1, source: sentence, translation: "", start: 0, end: 8),
+            tail: "Next"
+        )
+        #expect(builder.paragraphs.count == 2)
+        #expect(builder.paragraphs[0].closed)
+        #expect(builder.paragraphs[1].tail == "Next")
+    }
+
+    @Test func shortEnglishSentenceStaysOpen() {
+        var builder = TranscriptBuilder()
+        builder.sourceLanguage = "en"
+        let sentence = String(repeating: "word ", count: 40).trimmingCharacters(in: .whitespaces) + "."
+        #expect(sentence.count < TranscriptBuilder.spacedCharacterLimit)
+        #expect(sentence.count >= TranscriptBuilder.maxCharacters)
+        builder.applyCommit(
+            Commit(id: 1, source: sentence, translation: "", start: 0, end: 4),
+            tail: ""
+        )
+        #expect(builder.paragraphs.count == 1)
+        #expect(!builder.paragraphs[0].closed)
+    }
+
     @Test func sampleLectureBecomesSeparateParagraphs() throws {
         let events = try SampleLecture.load()
         var builder = TranscriptBuilder()

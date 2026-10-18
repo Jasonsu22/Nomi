@@ -1,36 +1,54 @@
 import SwiftUI
 
 struct SourcesView: View {
-    var meetings: [Meeting]
+    var model: AppModel
 
     var body: some View {
         PageScaffold(title: "资料") {
             ScrollView {
-                VStack(spacing: Space.s3) {
-                    ForEach(meetings) { meeting in
-                        HStack(spacing: Space.s3) {
-                            Image(systemName: "waveform")
-                                .foregroundStyle(AppColor.textSecondary)
-                                .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(meeting.title)
-                                    .font(AppFont.secondary.weight(.semibold))
-                                    .foregroundStyle(AppColor.textPrimary)
-                                Text("转写 \(meeting.paragraphs.count) 段 · 音频尚未录制")
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    Text("课件导入还没做。下面是每场会议的音频和转写，录音接上之后可以在这里播放。")
+                        .font(AppFont.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .padding(.bottom, Space.s2)
+                    VStack(spacing: 0) {
+                        ForEach(Array(model.meetings.enumerated()), id: \.element.id) { index, meeting in
+                            if index > 0 {
+                                Rectangle()
+                                    .fill(AppColor.separator)
+                                    .frame(height: 1)
+                                    .padding(.leading, Space.s4)
+                            }
+                            HStack(spacing: Space.s3) {
+                                Image(systemName: "waveform")
+                                    .foregroundStyle(AppColor.textSecondary)
+                                    .frame(width: 28)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(meeting.title)
+                                        .font(AppFont.secondary.weight(.semibold))
+                                        .foregroundStyle(AppColor.textPrimary)
+                                    Text(detail(meeting))
+                                        .font(AppFont.caption)
+                                        .foregroundStyle(AppColor.textSecondary)
+                                }
+                                Spacer()
+                                Text(formatMeetingTime(meeting.startedAt))
                                     .font(AppFont.caption)
                                     .foregroundStyle(AppColor.textSecondary)
                             }
-                            Spacer()
+                            .padding(Space.s4)
                         }
-                        .padding(Space.s4)
-                        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
                     }
+                    .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
                 }
-                .padding(.horizontal, Space.s6)
+                .pageColumn()
                 .padding(.bottom, Space.s7)
-                .frame(maxWidth: 880)
-                .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    private func detail(_ meeting: Meeting) -> String {
+        let category = model.categoryName(for: meeting) ?? "未分类"
+        return "\(category) · 转写 \(meeting.paragraphs.count) 段 · 音频尚未录制"
     }
 }

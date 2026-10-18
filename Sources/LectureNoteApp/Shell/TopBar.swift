@@ -6,6 +6,7 @@ struct TopBar: View {
 
     var body: some View {
         HStack(spacing: Space.s3) {
+            BrandLogo(side: 20)
             Text("LectureNote")
                 .font(AppFont.secondary.weight(.semibold))
                 .foregroundStyle(AppColor.textPrimary)
@@ -28,16 +29,11 @@ struct TopBar: View {
                 onTogglePause: model.togglePause
             )
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, Space.s4)
         .frame(height: 52)
         .background {
             AppColor.canvas
                 .gesture(WindowDragGesture())
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(AppColor.separator)
-                .frame(height: 1)
         }
     }
 }
