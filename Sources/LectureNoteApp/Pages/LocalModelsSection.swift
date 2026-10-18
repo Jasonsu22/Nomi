@@ -126,7 +126,7 @@ struct LocalModelPicker: View {
         let progress = model.localModels.downloads[item.id]
         let switching = model.localModels.switchingID == item.id
         return VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(spacing: Space.s3) {
+            HStack(alignment: .center, spacing: Space.s3) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.name).font(AppFont.body.weight(.medium)).foregroundStyle(AppColor.textPrimary)
                     Text("\(item.quantization) · \(item.sizeLabel)")
@@ -143,22 +143,21 @@ struct LocalModelPicker: View {
                         Button(tr("取消")) { model.localModels.cancel(item) }
                     } else if active {
                         Label(tr("使用中"), systemImage: "checkmark.circle.fill")
-                            .font(AppFont.caption).foregroundStyle(AppColor.accent)
+                            .foregroundStyle(AppColor.accent)
+                            .frame(minWidth: 60, alignment: .center)
                     } else if installed {
                         Button {
                             Task { await model.selectLocalModel(item, for: role) }
                         } label: {
                             Text(tr("使用")).frame(minWidth: 60)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .font(AppFont.caption)
                         .disabled(!model.canSwitchModels)
                     } else {
                         Button {
                             model.localModels.download(item)
                         } label: {
                             Label(model.localModels.errors[item.id] == nil ? tr("下载") : tr("重试"), systemImage: "arrow.down.circle")
+                                .frame(minWidth: 60, alignment: .center)
                         }
                     }
                     if installed {
@@ -170,12 +169,12 @@ struct LocalModelPicker: View {
                                 .foregroundStyle(.red)
                                 .frame(minWidth: 60)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .font(AppFont.caption)
                         .disabled(!model.canSwitchModels)
                     }
                 }
+                .font(AppFont.caption)
+                .controlSize(.small)
+                .buttonStyle(.bordered)
             }
             if let progress {
                 if progress.total > 0 {
