@@ -1,0 +1,23 @@
+[package]
+name = "moxin-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Local transcription engine for Nomi"
+
+[dependencies]
+voice-core = { path = "../crates/voice-core" }
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+hound = "3.5"
+futures = "0.3"
+libc = "0.2"
+
+[[bin]]
+name = "moxin-engine"
+path = "src/main.rs"

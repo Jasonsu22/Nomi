@@ -13,11 +13,25 @@ case "$config" in
         ;;
 esac
 
+# Build the backend from this repository; a missing worker must fail packaging.
+cargo_args=(build --locked --manifest-path "$root/Backend/Cargo.toml" --target-dir "$root/Backend/target" -p moxin-engine -p asr-worker -p llm-worker)
+if [[ "$config" == release ]]; then
+    cargo_args+=(--release)
+fi
+cargo "${cargo_args[@]}"
+swift build -c "$config"
 bin_dir="$(swift build -c "$config" --show-bin-path)"
 binary="$bin_dir/LectureNoteApp"
 resource_bundle="$(find "$bin_dir" -maxdepth 1 -name '*.bundle' -print -quit)"
-if [[ ! -x "$binary" || -z "$resource_bundle" ]]; then
-    echo "找不到编译产物：$bin_dir" >&2
+engine_dir="$root/Backend/target/$config"
+for name in moxin-engine asr-worker llm-worker; do
+    if [[ ! -x "$engine_dir/$name" ]]; then
+        echo "缺少后端程序：$engine_dir/$name" >&2
+        exit 1
+    fi
+done
+if [[ ! -x "$binary" || -z "$resource_bundle" || ! -f "$engine_dir/mlx.metallib" ]]; then
+    echo "缺少应用资源或 MLX Metal 库，停止打包。" >&2
     exit 1
 fi
 
@@ -27,15 +41,10 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 
 cp "$binary" "$app/Contents/MacOS/Nomi"
 cp -R "$resource_bundle" "$app/Contents/Resources/"
-engine_dir="$root/../Moxin-Voice/target/debug"
 for name in moxin-engine asr-worker llm-worker; do
-    if [[ -x "$engine_dir/$name" ]]; then
-        cp "$engine_dir/$name" "$app/Contents/MacOS/$name"
-    fi
+    cp "$engine_dir/$name" "$app/Contents/MacOS/$name"
 done
-if [[ -f "$engine_dir/mlx.metallib" ]]; then
-    cp "$engine_dir/mlx.metallib" "$app/Contents/MacOS/mlx.metallib"
-fi
+cp "$engine_dir/mlx.metallib" "$app/Contents/MacOS/mlx.metallib"
 cp "$root/Design/Brand/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 
 cat > "$app/Contents/Info.plist" <<'EOF'

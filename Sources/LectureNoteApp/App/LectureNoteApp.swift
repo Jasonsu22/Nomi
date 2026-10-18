@@ -10,6 +10,9 @@ struct LectureNoteApp: App {
     var body: some Scene {
         WindowGroup {
             root
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    (model.engine as? LocalEngine)?.shutdown()
+                }
                 .onAppear {
                     NSApplication.shared.setActivationPolicy(.regular)
                     if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),

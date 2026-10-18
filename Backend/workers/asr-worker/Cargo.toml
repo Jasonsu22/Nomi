@@ -1,0 +1,19 @@
+[package]
+name = "asr-worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Qwen3-ASR worker for Nomi"
+
+[dependencies]
+voice-core = { path = "../../crates/voice-core" }
+qwen3-asr-mlx = { git = "https://github.com/OminiX-ai/OminiX-MLX.git", rev = "6aac996db8b71fb7dae7a2409c46b4f2ade93092", package = "qwen3-asr-mlx" }
+mlx-sys = { git = "https://github.com/OminiX-ai/OminiX-MLX.git", rev = "6aac996db8b71fb7dae7a2409c46b4f2ade93092", package = "mlx-sys" }
+serde_json = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[[bin]]
+name = "asr-worker"
+path = "src/main.rs"

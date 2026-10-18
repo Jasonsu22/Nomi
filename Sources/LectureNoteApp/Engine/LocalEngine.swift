@@ -22,10 +22,16 @@ final class LocalEngine: TranscriptionEngine {
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
 
     var canStart: Bool {
-        session.phase == .idle && !isChangingModel && !isGenerating && loadError == nil && (readiness == .ready || readiness == .sourceOnly)
+        process?.isRunning == true && session.phase == .idle && !isChangingModel && !isGenerating && loadError == nil && (readiness == .ready || readiness == .sourceOnly)
     }
 
     @ObservationIgnored private var process: Process?
+    @ObservationIgnored private var lifetimePipe: Pipe?
+    @ObservationIgnored private var logHandle: FileHandle?
+    @ObservationIgnored private var shuttingDown = false
+    @ObservationIgnored private var restartAttempts = 0
+    @ObservationIgnored private var restartTask: Task<Void, Never>?
+    @ObservationIgnored private var launchID = UUID()
     @ObservationIgnored private var stdout = Data()
     @ObservationIgnored private var port: Int?
     @ObservationIgnored private var token: String?
@@ -36,7 +42,6 @@ final class LocalEngine: TranscriptionEngine {
     @ObservationIgnored private let sendGate = SendGate()
 
     static func launchIfAvailable() -> LocalEngine? {
-        guard binaryURL() != nil else { return nil }
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return nil }
         let engine = LocalEngine()
         engine.launch()
@@ -81,49 +86,115 @@ final class LocalEngine: TranscriptionEngine {
     }
 
     deinit {
-        process?.terminate()
+        try? lifetimePipe?.fileHandleForWriting.close()
+        try? logHandle?.close()
+    }
+
+    func shutdown() {
+        shuttingDown = true
+        restartTask?.cancel()
+        stopTask?.cancel()
+        receiveTask?.cancel()
+        sendGate.closeGate()
+        microphone.stop()
+        socket?.cancel(with: .goingAway, reason: nil)
+        socket = nil
+        // EOF tells the bundled engine to stop its entire private process group.
+        try? lifetimePipe?.fileHandleForWriting.close()
+        lifetimePipe = nil
+        try? logHandle?.close()
+        logHandle = nil
     }
 
     private func launch() {
         guard let url = Self.binaryURL() else {
             readiness = .unavailable
+            loadError = tr("引擎没有启动")
             return
         }
+        readiness = .preparing
+        loadError = nil
+        stdout = Data()
+        port = nil
+        token = nil
+        launchID = UUID()
+        let id = launchID
         let process = Process()
         process.executableURL = url
+        process.currentDirectoryURL = url.deletingLastPathComponent()
         process.arguments = [
+            "--managed-by-app",
             "--port", "0",
             "--asr-model", LocalModelDefinition.selected(for: .asr).directory.path,
             "--llm-model", LocalModelDefinition.selected(for: .translator).directory.path,
             "--assistant-model", LocalModelDefinition.selected(for: .assistant).directory.path,
         ]
         let output = Pipe()
-        let errors = Pipe()
+        let lifetime = Pipe()
+        lifetimePipe = lifetime
+        process.standardInput = lifetime
         process.standardOutput = output
-        process.standardError = errors
-        errors.fileHandleForReading.readabilityHandler = { handle in
-            if handle.availableData.isEmpty { handle.readabilityHandler = nil }
-        }
+        logHandle = Self.openLog()
+        process.standardError = logHandle ?? FileHandle.nullDevice
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty else { return }
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
             Task { @MainActor in
-                self?.consume(data)
+                guard let self, self.launchID == id, !self.shuttingDown else { return }
+                self.consume(data)
             }
         }
-        process.terminationHandler = { [weak self] _ in
+        process.terminationHandler = { [weak self] terminated in
+            let pid = terminated.processIdentifier
             Task { @MainActor in
-                guard let self, self.port == nil else { return }
-                self.readiness = .unavailable
+                self?.backendExited(pid: pid)
             }
         }
         do {
             try process.run()
             self.process = process
         } catch {
+            try? lifetime.fileHandleForWriting.close()
+            lifetimePipe = nil
             readiness = .unavailable
             loadError = tr("引擎没有启动")
         }
+    }
+
+    private func backendExited(pid: Int32) {
+        guard !shuttingDown, process?.processIdentifier == pid else { return }
+        process = nil
+        port = nil
+        token = nil
+        modelStatus = nil
+        try? lifetimePipe?.fileHandleForWriting.close()
+        lifetimePipe = nil
+        try? logHandle?.close()
+        logHandle = nil
+        readiness = .unavailable
+        loadError = tr("引擎没有启动")
+        if session.phase != .idle {
+            finish(duration: session.phase == .stopping ? session.elapsed : session.beginStopping())
+        }
+        guard restartAttempts < 1 else { return }
+        restartAttempts += 1
+        readiness = .preparing
+        restartTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self, !self.shuttingDown else { return }
+            self.launch()
+        }
+    }
+
+    private static func openLog() -> FileHandle? {
+        let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Nomi")
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("engine.log")
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        return try? FileHandle(forWritingTo: url)
     }
 
     private func consume(_ data: Data) {
@@ -143,6 +214,7 @@ final class LocalEngine: TranscriptionEngine {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            guard self.port == port, self.token == token, !shuttingDown else { return }
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                 readiness = .unavailable
                 return
@@ -150,6 +222,7 @@ final class LocalEngine: TranscriptionEngine {
             let status = try JSONDecoder().decode(LocalModelRuntimeStatus.self, from: data)
             apply(status)
         } catch {
+            guard self.port == port, self.token == token, !shuttingDown else { return }
             readiness = .unavailable
         }
     }
@@ -284,6 +357,9 @@ final class LocalEngine: TranscriptionEngine {
                         self.handle(text)
                     }
                 } catch {
+                    guard !Task.isCancelled, self.socket === socket, !self.shuttingDown else { return }
+                    self.loadError = tr("连接转录服务失败")
+                    self.finish(duration: self.session.phase == .stopping ? self.session.elapsed : self.session.beginStopping())
                     return
                 }
             }
@@ -380,11 +456,16 @@ final class LocalEngine: TranscriptionEngine {
     }
 
     private static func binaryURL() -> URL? {
-        let candidates = [
-            ProcessInfo.processInfo.environment["NOMI_ENGINE"].map { URL(fileURLWithPath: $0) },
+        var candidates: [URL?] = [
             Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("moxin-engine"),
-            URL(fileURLWithPath: "/Users/jason/Projects/LectureNote/Moxin-Voice/target/debug/moxin-engine"),
         ]
+        #if DEBUG
+        let project = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        candidates += [
+            ProcessInfo.processInfo.environment["NOMI_ENGINE"].map { URL(fileURLWithPath: $0) },
+            project.appendingPathComponent("Backend/target/debug/moxin-engine"),
+        ]
+        #endif
         return candidates.compactMap { $0 }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 }

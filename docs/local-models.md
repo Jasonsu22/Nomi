@@ -10,18 +10,14 @@ ASR repositories can supply `vocab.json` + `merges.txt` instead of `tokenizer.js
 
 The download workflow follows Moxin-Studio's local model manager (catalog, per-model progress, cancel and retry), implemented with native Swift URLSession downloads. The Rust engine exposes an authenticated `/v1/models/select` endpoint. It blocks simultaneous recording / switching, validates model architecture and files, unloads the selected role, and loads the new directory. Other model families require additional worker support.
 
-Build the updated Rust binaries in `../Moxin-Voice` before packaging the app:
+The app repository includes its backend in `Backend/`. From the Nomi project directory, build the Swift app, Rust engine/workers and app bundle together:
 
 ```sh
-cargo build -p moxin-engine -p asr-worker -p llm-worker
-```
-
-Then, from this app directory:
-
-```sh
-swift build
 bash scripts/build-app.sh
+open build/Nomi.app
 ```
+
+No sibling Moxin-Voice checkout or separately started backend is required. The app bundle includes `moxin-engine`, `asr-worker`, `llm-worker` and `mlx.metallib`; packaging fails if any are missing. Launching the app starts its own authenticated loopback engine, and quitting closes its lifetime pipe to terminate that engine and its workers. An unexpected engine exit clears readiness and triggers one restart attempt. A missing backend is an error rather than a silent switch to fixture playback. Startup logs are written to `~/Library/Logs/Nomi/engine.log`.
 
 ## Questions, summaries and API profiles
 
@@ -44,4 +40,4 @@ API protocol references:
 - https://ai.google.dev/gemini-api/docs/openai
 - https://docs.ollama.com/api/openai-compatibility
 
-Validation is compilation and opening the packaged app only, as requested. Downloads, model switching/deletion, API credentials/requests, confirmation flows, and generated answers/summaries still need user testing. No paid requests or model deletions were performed by the agent.
+Validation covers compilation, opening the packaged app from the renamed Nomi directory, and confirming that app exit closes all bundled backend processes and reopening starts them again. No automated test suite was run, as requested. Downloads, model switching/deletion, API credentials/requests, confirmation flows, and generated answers/summaries still need user testing. No paid requests or model deletions were performed by the agent.

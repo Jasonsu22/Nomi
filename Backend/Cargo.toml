@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["moxin-engine", "crates/voice-core", "workers/asr-worker", "workers/llm-worker"]
+
+[workspace.package]
+version = "1.2.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[patch."https://github.com/OminiX-ai/OminiX-MLX.git"]
+qwen3-asr-mlx = { path = "vendor/qwen3-asr-mlx" }
