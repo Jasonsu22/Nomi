@@ -5,12 +5,27 @@ struct TopBar: View {
     var reduceMotion: Bool
 
     var body: some View {
-        HStack(spacing: Space.s3) {
-            BrandLogo(side: 32)
-                .frame(width: Rail.width)
-            Text("Nomi")
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(AppColor.textPrimary)
+        GeometryReader { proxy in
+            bar(leadingWidth: Rail.width + PageColumnLayout.leadingInset(in: proxy.size.width - Rail.width))
+        }
+        .frame(height: 52)
+        .background {
+            AppColor.canvas
+                .gesture(WindowDragGesture())
+        }
+    }
+
+    private func bar(leadingWidth: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 0) {
+                BrandLogo(side: 32)
+                    .frame(width: Rail.width - Space.s4)
+                    .padding(.leading, Space.s2)
+                Text("Nomi")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+            }
+            .frame(width: leadingWidth, alignment: .leading)
             StatusChip(title: model.statusTitle, live: model.statusIsLive)
             Spacer(minLength: Space.s3)
             SessionControl(
@@ -32,10 +47,6 @@ struct TopBar: View {
             )
         }
         .padding(.trailing, Space.s4)
-        .frame(height: 52)
-        .background {
-            AppColor.canvas
-                .gesture(WindowDragGesture())
-        }
+        .frame(maxHeight: .infinity)
     }
 }

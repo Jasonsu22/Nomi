@@ -1,5 +1,15 @@
 import SwiftUI
 
+enum PageColumnLayout {
+    static let maxWidth: CGFloat = 1200
+    static let leading: CGFloat = 48
+    static let trailing: CGFloat = 32
+
+    static func leadingInset(in availableWidth: CGFloat) -> CGFloat {
+        leading + max(0, (availableWidth - maxWidth - leading - trailing) / 2)
+    }
+}
+
 struct PageScaffold<Content: View>: View {
     var title: String
     @ViewBuilder var content: () -> Content
@@ -20,10 +30,10 @@ struct PageScaffold<Content: View>: View {
 }
 
 extension View {
-    func pageColumn(maxWidth: CGFloat = 1200) -> some View {
+    func pageColumn(maxWidth: CGFloat = PageColumnLayout.maxWidth) -> some View {
         frame(maxWidth: maxWidth, alignment: .leading)
-            .padding(.leading, 48)
-            .padding(.trailing, 32)
+            .padding(.leading, PageColumnLayout.leading)
+            .padding(.trailing, PageColumnLayout.trailing)
             .frame(maxWidth: .infinity, alignment: .center)
     }
 }
