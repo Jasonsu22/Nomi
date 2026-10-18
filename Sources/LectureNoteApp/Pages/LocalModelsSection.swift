@@ -125,15 +125,17 @@ struct LocalModelPicker: View {
         let active = !isSwitchingRole && runtime?.loaded == true && runtime?.path == item.directory.path
         let progress = model.localModels.downloads[item.id]
         let switching = model.localModels.switchingID == item.id
-        return HStack(spacing: Space.s3) {
-            VStack(alignment: .leading, spacing: Space.s2) {
-                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.name).font(AppFont.body.weight(.medium)).foregroundStyle(AppColor.textPrimary)
-                        Text("\(item.quantization) · \(item.sizeLabel)")
-                            .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
-                    }
-                    Spacer()
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name).font(AppFont.body.weight(.medium)).foregroundStyle(AppColor.textPrimary)
+                    Text("\(item.quantization) · \(item.sizeLabel)")
+                        .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                    Link(tr("查看模型"), destination: URL(string: "https://huggingface.co/\(item.repository)")!)
+                        .font(AppFont.caption)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: Space.s1) {
                     if switching {
                         ProgressView().controlSize(.small)
                         Text(tr("正在加载…")).font(AppFont.caption)
@@ -143,31 +145,22 @@ struct LocalModelPicker: View {
                         Label(tr("使用中"), systemImage: "checkmark.circle.fill")
                             .font(AppFont.secondary).foregroundStyle(AppColor.accent)
                     } else if installed {
-                        Button(tr("使用")) { Task { await model.selectLocalModel(item, for: role) } }
-                            .buttonStyle(.borderless)
-                            .font(AppFont.secondary)
-                            .foregroundStyle(AppColor.accent)
-                            .disabled(!model.canSwitchModels)
-                    }
-                }
-                if let progress {
-                    if progress.total > 0 {
-                        ProgressView(value: progress.fraction).tint(AppColor.accent)
-                        Text(progress.verifying ? tr("正在校验文件…") : "\(ByteCountFormatter.string(fromByteCount: progress.completed, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: progress.total, countStyle: .file))")
-                            .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                        Button {
+                            Task { await model.selectLocalModel(item, for: role) }
+                        } label: {
+                            Text(tr("使用")).frame(minWidth: 60)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .font(AppFont.caption)
+                        .disabled(!model.canSwitchModels)
                     } else {
-                        HStack(spacing: Space.s2) {
-                            ProgressView().controlSize(.small)
-                            Text(tr("正在获取下载信息…")).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                        Button {
+                            model.localModels.download(item)
+                        } label: {
+                            Label(model.localModels.errors[item.id] == nil ? tr("下载") : tr("重试"), systemImage: "arrow.down.circle")
                         }
                     }
-                }
-                if let error = model.localModels.errors[item.id] ?? (runtime?.path == item.directory.path ? runtime?.error : nil) {
-                    Text(error).font(AppFont.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-                }
-                HStack(alignment: .lastTextBaseline) {
-                    Link(tr("查看模型"), destination: URL(string: "https://huggingface.co/\(item.repository)")!)
-                    Spacer()
                     if installed {
                         Button(role: .destructive) {
                             showingModels = false
@@ -175,20 +168,29 @@ struct LocalModelPicker: View {
                         } label: {
                             Label(tr("删除"), systemImage: "trash")
                                 .foregroundStyle(.red)
+                                .frame(minWidth: 60)
                         }
+                        .buttonStyle(.bordered)
                         .controlSize(.small)
                         .font(AppFont.caption)
                         .disabled(!model.canSwitchModels)
                     }
                 }
-                .font(AppFont.caption)
             }
-            if !installed && !switching && progress == nil {
-                Button {
-                    model.localModels.download(item)
-                } label: {
-                    Label(model.localModels.errors[item.id] == nil ? tr("下载") : tr("重试"), systemImage: "arrow.down.circle")
+            if let progress {
+                if progress.total > 0 {
+                    ProgressView(value: progress.fraction).tint(AppColor.accent)
+                    Text(progress.verifying ? tr("正在校验文件…") : "\(ByteCountFormatter.string(fromByteCount: progress.completed, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: progress.total, countStyle: .file))")
+                        .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                } else {
+                    HStack(spacing: Space.s2) {
+                        ProgressView().controlSize(.small)
+                        Text(tr("正在获取下载信息…")).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                    }
                 }
+            }
+            if let error = model.localModels.errors[item.id] ?? (runtime?.path == item.directory.path ? runtime?.error : nil) {
+                Text(error).font(AppFont.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, Space.s4)
