@@ -41,6 +41,7 @@ struct LocalModelPicker: View {
     var role: LocalModelRole
     @State private var showingModels = false
     @State private var deletingModel: LocalModelDefinition?
+    @State private var modelListHeight: CGFloat = 0
 
     private var runtime: LocalModelRuntimeStatus.Model? {
         (model.engine as? LocalEngine)?.modelStatus?.model(for: role)
@@ -95,8 +96,13 @@ struct LocalModelPicker: View {
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(LocalModelDefinition.catalog.filter { $0.supports(role) }) { item in option(item) }
                         }
+                        .onGeometryChange(for: CGFloat.self) { geometry in
+                            geometry.size.height
+                        } action: { height in
+                            modelListHeight = height
+                        }
                     }
-                    .frame(height: min(400, CGFloat(LocalModelDefinition.catalog.filter { $0.supports(role) }.count) * 130))
+                    .frame(height: min(400, modelListHeight))
                     Text(tr("来源：Hugging Face。下载完成后点击「使用」切换。"))
                         .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
                         .padding(Space.s4)
@@ -120,7 +126,7 @@ struct LocalModelPicker: View {
         let progress = model.localModels.downloads[item.id]
         let switching = model.localModels.switchingID == item.id
         return VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(spacing: Space.s3) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.name).font(AppFont.body.weight(.medium)).foregroundStyle(AppColor.textPrimary)
                     Text("\(item.quantization) · \(item.sizeLabel)")
@@ -163,7 +169,7 @@ struct LocalModelPicker: View {
             if let error = model.localModels.errors[item.id] ?? (runtime?.path == item.directory.path ? runtime?.error : nil) {
                 Text(error).font(AppFont.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
-            HStack {
+            HStack(alignment: .lastTextBaseline) {
                 Link(tr("查看模型"), destination: URL(string: "https://huggingface.co/\(item.repository)")!)
                 Spacer()
                 if installed {
@@ -171,6 +177,8 @@ struct LocalModelPicker: View {
                         showingModels = false
                         deletingModel = item
                     } label: { Label(tr("删除"), systemImage: "trash") }
+                    .controlSize(.small)
+                    .font(AppFont.caption)
                     .disabled(!model.canSwitchModels)
                 }
             }
