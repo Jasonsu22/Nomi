@@ -182,13 +182,13 @@ final class AppModel {
         canStart && (engine.readiness == .preview || audioInputs.selectedDevice != nil)
     }
 
-    func startTranscription() {
+    func startTranscription(title: String? = nil, categoryID: UUID? = nil) {
         guard canRecord else { return }
         let device = audioInputs.selectedDevice
         var meeting = Meeting.live(sourceLanguage: recordingSourceLanguage, targetLanguage: recordingTargetLanguage, inputDeviceName: device?.name)
-        if case .category(let id) = activeFilter {
-            meeting.categoryID = id
-        }
+        let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedTitle.isEmpty { meeting.title = trimmedTitle }
+        meeting.categoryID = category(for: categoryID)?.id
         engine.sourceLanguage = meeting.sourceLanguage
         engine.targetLanguage = meeting.targetLanguage
         engine.inputDeviceUID = device?.id

@@ -79,6 +79,7 @@
 "未分类" = "Uncategorized";
 "未分类 %d" = "Uncategorized %d";
 "未命名会议" = "Untitled Meeting";
+"会议标题" = "Meeting Title";
 "本机 · 只出原文" = "On Device · Transcription Only";
 "本机 · 模型就绪" = "On Device · Models Ready";
 "本机讲座笔记" = "Local Lecture Notes";
