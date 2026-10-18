@@ -26,6 +26,7 @@ func formatDuration(_ seconds: TimeInterval) -> String {
 
 func languageName(_ code: String) -> String {
     let name: String = switch code {
+    case "auto": "自动检测"
     case "zh": "中文"
     case "en": "英文"
     case "ja": "日文"

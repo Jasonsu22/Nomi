@@ -6,6 +6,7 @@ struct RecordingLanguagePicker: View {
 
     var body: some View {
         Picker(tr("输入语言"), selection: $source) {
+            Text(languageName(LectureLanguages.automatic)).tag(LectureLanguages.automatic)
             ForEach(LectureLanguages.supported, id: \.self) { code in
                 Text(languageName(code)).tag(code)
             }

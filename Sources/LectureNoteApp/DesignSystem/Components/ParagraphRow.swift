@@ -67,7 +67,7 @@ struct ParagraphRow: View, Equatable {
         committed.foregroundColor = AppColor.textPrimary
         let pending = paragraph.tail.trimmingCharacters(in: .whitespacesAndNewlines)
         if !pending.isEmpty {
-            if TranscriptText.usesSpaces(sourceLanguage), !source.isEmpty {
+            if TranscriptText.needsSeparator(source, pending, language: sourceLanguage) {
                 committed.append(AttributedString(" "))
             }
             var tail = AttributedString(pending)

@@ -115,6 +115,7 @@
 "识别模型没有加载" = "The recognition model is not loaded";
 "识别语言" = "Recognition Language";
 "输入语言" = "Input Language";
+"自动检测" = "Auto Detect";
 "目标翻译语言" = "Translation Language";
 "语言" = "Languages";
 "语言在录制开始前选择，不会修改已有转写。" = "Languages are selected before recording. Existing transcripts are unchanged.";

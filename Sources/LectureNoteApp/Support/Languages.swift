@@ -1,6 +1,7 @@
 import Foundation
 
 enum LectureLanguages {
+    static let automatic = "auto"
     static let followSystem = "system"
     static let sourceKey = "nomi.sourceLanguage"
     static let targetKey = "nomi.targetLanguage"
@@ -34,7 +35,7 @@ enum LectureLanguages {
 
     static func resolve(preferred: String, storedSource: String?, storedTarget: String?) -> (source: String, target: String) {
         let source: String
-        if let storedSource, storedSource != followSystem, supported.contains(storedSource) {
+        if let storedSource, storedSource == automatic || supported.contains(storedSource) {
             source = storedSource
         } else {
             source = code(forPreferred: preferred)

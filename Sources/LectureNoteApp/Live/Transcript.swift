@@ -40,8 +40,30 @@ enum TranscriptText {
         let pieces = parts
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+        if language == LectureLanguages.automatic {
+            return pieces.reduce("") { result, piece in
+                result + (needsSeparator(result, piece, language: language) ? " " : "") + piece
+            }
+        }
         guard usesSpaces(language) else { return pieces.joined() }
         return pieces.joined(separator: " ")
+    }
+
+    static func needsSeparator(_ left: String, _ right: String, language: String) -> Bool {
+        guard let last = left.last, let first = right.first, usesSpaces(language) else { return false }
+        guard language == LectureLanguages.automatic else { return true }
+        return !last.isWhitespace && !first.isWhitespace
+            && !isCJK(last) && !isCJK(first)
+            && !",.!?;:)]}".contains(first) && !"([{\"".contains(last)
+    }
+
+    private static func isCJK(_ character: Character) -> Bool {
+        character.unicodeScalars.contains {
+            switch $0.value {
+            case 0x3000...0x30ff, 0x3400...0x9fff, 0xf900...0xfaff, 0xff00...0xffef, 0x20000...0x323af: true
+            default: false
+            }
+        }
     }
 }
 
@@ -135,7 +157,7 @@ struct TranscriptBuilder {
         let text = paragraph.renderedSource(language: sourceLanguage)
         let limit = TranscriptText.usesSpaces(sourceLanguage) ? Self.spacedCharacterLimit : Self.maxCharacters
         guard text.count >= limit, let last = text.last else { return false }
-        let endings = TranscriptText.usesSpaces(sourceLanguage) ? ".!?" : "。！？!?"
+        let endings = sourceLanguage == LectureLanguages.automatic ? "。！？.!?" : (TranscriptText.usesSpaces(sourceLanguage) ? ".!?" : "。！？!?")
         return endings.contains(last)
     }
 }
