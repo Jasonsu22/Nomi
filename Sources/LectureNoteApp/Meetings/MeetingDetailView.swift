@@ -126,12 +126,6 @@ struct MeetingDetailView: View {
                         }
                         Text(tr("语言在录制开始前选择，不会修改已有转写。"))
                             .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
-                        if model.engine.session.phase == .idle {
-                            Button(tr("录制新会议")) {
-                                showingLanguages = false
-                                model.prepareRecording()
-                            }
-                        }
                     }
                     .padding(Space.s4)
                     .frame(width: 300)
