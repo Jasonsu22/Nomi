@@ -163,8 +163,6 @@ struct LocalModelPicker: View {
                         Text(tr("正在获取下载信息…")).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
                     }
                 }
-            } else if installed && !active && !switching {
-                Text(tr("已下载")).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
             }
             if let error = model.localModels.errors[item.id] ?? (runtime?.path == item.directory.path ? runtime?.error : nil) {
                 Text(error).font(AppFont.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
