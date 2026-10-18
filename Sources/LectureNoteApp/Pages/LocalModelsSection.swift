@@ -135,7 +135,7 @@ struct LocalModelPicker: View {
                         .font(AppFont.caption)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: Space.s1) {
+                VStack(alignment: .center, spacing: Space.s2) {
                     if switching {
                         ProgressView().controlSize(.small)
                         Text(tr("正在加载…")).font(AppFont.caption)
@@ -143,7 +143,7 @@ struct LocalModelPicker: View {
                         Button(tr("取消")) { model.localModels.cancel(item) }
                     } else if active {
                         Label(tr("使用中"), systemImage: "checkmark.circle.fill")
-                            .font(AppFont.secondary).foregroundStyle(AppColor.accent)
+                            .font(AppFont.caption).foregroundStyle(AppColor.accent)
                     } else if installed {
                         Button {
                             Task { await model.selectLocalModel(item, for: role) }
