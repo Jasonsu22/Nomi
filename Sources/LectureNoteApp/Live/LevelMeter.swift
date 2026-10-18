@@ -46,6 +46,11 @@ final class LevelMeter {
 
     @ObservationIgnored var history = LevelHistory()
 
+    func recordMicrophoneRMS(_ value: Double) {
+        let decibels = 20 * log10(max(value, 0.000_001))
+        rms = min(1, max(0, (decibels + 65) / 45))
+    }
+
     func columnLevel(index: Int, count: Int, at time: TimeInterval, reduceMotion: Bool) -> CGFloat {
         history.columnLevel(index: index, count: count, at: time, reduceMotion: reduceMotion)
     }

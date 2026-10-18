@@ -2,6 +2,7 @@ import AVFoundation
 import AudioToolbox
 import CoreAudio
 import Foundation
+import OSLog
 import SwiftUI
 
 @MainActor
@@ -22,7 +23,7 @@ final class LocalEngine: TranscriptionEngine {
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
 
     var canStart: Bool {
-        process?.isRunning == true && session.phase == .idle && !isChangingModel && !isGenerating && loadError == nil && (readiness == .ready || readiness == .sourceOnly)
+        process?.isRunning == true && session.phase == .idle && !isChangingModel && !isGenerating && (readiness == .ready || readiness == .sourceOnly)
     }
 
     @ObservationIgnored private var process: Process?
@@ -331,6 +332,13 @@ final class LocalEngine: TranscriptionEngine {
                 self?.forward(data, rms: rms)
             }
         }
+        microphone.onFailure = { [weak self] message in
+            Task { @MainActor in
+                guard let self, self.session.phase == .listening || self.session.phase == .preparing else { return }
+                self.loadError = message
+                self.stop()
+            }
+        }
         do {
             try microphone.start(deviceUID: inputDeviceUID)
             sendGate.openGate()
@@ -341,7 +349,7 @@ final class LocalEngine: TranscriptionEngine {
 
     private func forward(_ data: Data, rms: Double) {
         guard sendGate.isOpen, session.phase == .preparing || session.phase == .listening else { return }
-        level.rms = rms
+        level.recordMicrophoneRMS(rms)
         socket?.send(.data(data)) { _ in }
     }
 
@@ -396,7 +404,8 @@ final class LocalEngine: TranscriptionEngine {
             )
             transcript.applyCommit(commit, tail: event.tail ?? "", reduceMotion: reduce)
         case "level":
-            if sendGate.isOpen { level.rms = event.rms ?? 0 }
+            // The local microphone drives the meter; inference replies can lag.
+            break
         case "error":
             if event.code == "asr_missing" {
                 readiness = .asrMissing
@@ -507,67 +516,139 @@ private final class SendGate: @unchecked Sendable {
     }
 }
 
-private final class MicrophoneCapture: @unchecked Sendable {
+@MainActor
+private final class MicrophoneCapture {
     var onSamples: (@Sendable (Data, Double) -> Void)?
-    private let engine = AVAudioEngine()
-    private var converter: AVAudioConverter?
+    var onFailure: (@Sendable (String) -> Void)?
+    private var engine: AVAudioEngine?
+    private var configurationObserver: NSObjectProtocol?
+    private var watchdog: Task<Void, Never>?
+    private static let logger = Logger(subsystem: "local.nomi.preview", category: "AudioInput")
 
     func start(deviceUID: String?) throws {
+        stop()
+        let engine = AVAudioEngine()
         let input = engine.inputNode
+        let deviceID: AudioDeviceID
         if let deviceUID {
-            guard var device = AudioHardware.inputs().first(where: { $0.id == deviceUID })?.deviceID,
-                  let unit = input.audioUnit else { throw MicrophoneError.unavailable }
-            let result = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &device, UInt32(MemoryLayout<AudioDeviceID>.size))
-            guard result == noErr else { throw MicrophoneError.unavailable }
+            guard let device = AudioHardware.inputs().first(where: { $0.id == deviceUID }) else {
+                throw MicrophoneError.unavailable
+            }
+            deviceID = device.deviceID
+        } else {
+            deviceID = AudioHardware.defaultInputID()
         }
-        let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0,
-              let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false),
-              let converter = AVAudioConverter(from: format, to: target) else {
-            throw MicrophoneError.unavailable
+        guard deviceID != 0 else { throw MicrophoneError.unavailable }
+        // Avoid reconfiguring an already selected device, which can stop the I/O unit.
+        if input.auAudioUnit.deviceID != deviceID {
+            try input.auAudioUnit.setDeviceID(deviceID)
         }
-        self.converter = converter
-        input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1600, format: format) { [weak self] buffer, _ in
-            self?.convert(buffer)
+        let format = input.inputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { throw MicrophoneError.unavailable }
+        let processor = MicrophonePCMProcessor(onSamples: onSamples, onFailure: onFailure)
+        // Let the input node supply its native format. The converter follows each
+        // actual buffer rather than retaining a previous device's sample rate.
+        input.installTap(onBus: 0, bufferSize: 1600, format: nil) { buffer, _ in
+            processor.convert(buffer)
         }
-        engine.prepare()
-        try engine.start()
+        do {
+            engine.prepare()
+            try engine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            throw error
+        }
+        self.engine = engine
+        Self.logger.info("Microphone started: device=\(deviceID), rate=\(format.sampleRate), channels=\(format.channelCount)")
+        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self, weak engine] _ in
+            Task { @MainActor in
+                guard let self, let engine, self.engine === engine, !engine.isRunning else { return }
+                do {
+                    try self.start(deviceUID: deviceUID)
+                } catch {
+                    self.onFailure?(tr("音频设备连接已改变，请重新选择输入源。"))
+                }
+            }
+        }
+        watchdog = Task { [weak self, weak engine] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, let self, let engine, self.engine === engine, !processor.hasReceivedAudio else { return }
+            Self.logger.error("Microphone started but did not deliver PCM buffers")
+            self.onFailure?(tr("麦克风未收到音频数据，请重新选择输入源。"))
+        }
     }
 
     func stop() {
-        if engine.isRunning {
-            engine.inputNode.removeTap(onBus: 0)
+        watchdog?.cancel()
+        watchdog = nil
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+        configurationObserver = nil
+        if let engine {
             engine.stop()
+            engine.inputNode.removeTap(onBus: 0)
         }
+        engine = nil
+    }
+}
+
+private final class MicrophonePCMProcessor: @unchecked Sendable {
+    private let onSamples: (@Sendable (Data, Double) -> Void)?
+    private let onFailure: (@Sendable (String) -> Void)?
+    private let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
+    private var converter: AVAudioConverter?
+    private var reportedFailure = false
+    private let lock = NSLock()
+    private var receivedAudio = false
+
+    var hasReceivedAudio: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return receivedAudio
     }
 
-    private func convert(_ buffer: AVAudioPCMBuffer) {
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * 16_000 / buffer.format.sampleRate) + 32
-        guard let converter, let converted = AVAudioPCMBuffer(pcmFormat: converter.outputFormat, frameCapacity: capacity) else {
-            return
+    init(onSamples: (@Sendable (Data, Double) -> Void)?, onFailure: (@Sendable (String) -> Void)?) {
+        self.onSamples = onSamples
+        self.onFailure = onFailure
+    }
+
+    func convert(_ buffer: AVAudioPCMBuffer) {
+        guard buffer.frameLength > 0 else { return }
+        if converter?.inputFormat != buffer.format {
+            converter = AVAudioConverter(from: buffer.format, to: target)
         }
+        guard let converter else { fail(); return }
+        let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * target.sampleRate / buffer.format.sampleRate)) + 32
+        guard let converted = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { fail(); return }
         var consumed = false
         var error: NSError?
-        converter.convert(to: converted, error: &error) { _, status in
+        let status = converter.convert(to: converted, error: &error) { _, inputStatus in
             if consumed {
-                status.pointee = .noDataNow
+                inputStatus.pointee = .noDataNow
                 return nil
             }
             consumed = true
-            status.pointee = .haveData
+            inputStatus.pointee = .haveData
             return buffer
         }
-        guard error == nil, let channel = converted.floatChannelData?.pointee else { return }
+        guard error == nil, status != .error else { fail(); return }
+        guard let channel = converted.floatChannelData?.pointee else { return }
         let count = Int(converted.frameLength)
         guard count > 0 else { return }
+        lock.lock()
+        receivedAudio = true
+        lock.unlock()
         var energy = 0.0
         for index in 0..<count {
             let sample = Double(channel[index])
             energy += sample * sample
         }
-        let data = Data(bytes: channel, count: count * MemoryLayout<Float>.size)
-        onSamples?(data, (energy / Double(count)).squareRoot())
+        onSamples?(Data(bytes: channel, count: count * MemoryLayout<Float>.size), (energy / Double(count)).squareRoot())
+    }
+
+    private func fail() {
+        guard !reportedFailure else { return }
+        reportedFailure = true
+        onFailure?(tr("音频格式转换失败，请重新开始录音。"))
     }
 }
 
