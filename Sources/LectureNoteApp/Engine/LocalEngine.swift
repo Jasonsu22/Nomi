@@ -482,10 +482,16 @@ final class LocalEngine: TranscriptionEngine {
         case .denied:
             return false
         default:
-            return await withCheckedContinuation { continuation in
-                AVAudioApplication.requestRecordPermission { granted in
-                    continuation.resume(returning: granted)
-                }
+            return await requestRecordPermission()
+        }
+    }
+
+    /// The completion runs on an arbitrary thread. Formed inside a main-actor method it
+    /// would be main-actor isolated and trap in swift_task_checkIsolated.
+    private nonisolated static func requestRecordPermission() async -> Bool {
+        await withCheckedContinuation { continuation in
+            AVAudioApplication.requestRecordPermission { granted in
+                continuation.resume(returning: granted)
             }
         }
     }
