@@ -319,7 +319,7 @@ struct SourcesView: View {
             Text(tr("时间"))
                 .frame(width: 110, alignment: .leading)
             Text(tr("操作"))
-                .frame(width: 128, alignment: .trailing)
+                .frame(width: 128, alignment: .leading)
         }
         .font(AppFont.caption)
         .foregroundStyle(AppColor.textSecondary)
@@ -375,7 +375,7 @@ struct SourcesView: View {
                 .buttonStyle(.plain)
                 .help(tr("删除"))
             }
-            .frame(width: 128, alignment: .trailing)
+            .frame(width: 128, alignment: .leading)
         }
         .font(AppFont.caption)
         .foregroundStyle(AppColor.textSecondary)
