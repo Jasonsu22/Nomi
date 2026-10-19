@@ -276,7 +276,6 @@ struct SourcesView: View {
     private var groups: some View {
         let sections = sourceSections(visible)
         return VStack(alignment: .leading, spacing: Space.s5) {
-            tableHeader
             ForEach(sections) { section in
                 VStack(alignment: .leading, spacing: Space.s3) {
                     CategorySectionTitle(title: section.title, count: section.sources.count, colorIndex: section.colorIndex)
@@ -310,20 +309,6 @@ struct SourcesView: View {
             sections.append(SourceSection(id: "none", title: tr("未分类"), colorIndex: CategoryPalette.uncategorizedIndex, sources: loose))
         }
         return sections
-    }
-
-    private var tableHeader: some View {
-        HStack(spacing: Space.s3) {
-            Text(tr("名称"))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(tr("时间"))
-                .frame(width: 110, alignment: .leading)
-            Text(tr("操作"))
-                .frame(width: 128, alignment: .leading)
-        }
-        .font(AppFont.caption)
-        .foregroundStyle(AppColor.textSecondary)
-        .padding(.horizontal, Space.s4)
     }
 
     private func sourceRow(_ source: KnowledgeSource) -> some View {
