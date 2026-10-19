@@ -32,7 +32,6 @@ struct RecordingSetupView: View {
     @Bindable var model: AppModel
     @State private var title = tr("未命名会议")
     @State private var categoryID: UUID?
-    @State private var startedAt = Date()
     @FocusState private var titleFocused: Bool
 
     var body: some View {
@@ -49,14 +48,8 @@ struct RecordingSetupView: View {
                         .frame(maxWidth: 240)
                         .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.tag, style: .continuous))
                         // The observer clears the first responder itself. Setting
-                        // titleFocused = false here moves focus on to the date field.
+                        // titleFocused = false here moves focus on to the next control.
                         .background(OutsideClickObserver(isActive: titleFocused) {})
-                }
-                divider
-                settingRow(tr("开始时间")) {
-                    DatePicker(tr("开始时间"), selection: $startedAt, displayedComponents: [.date, .hourAndMinute])
-                        .datePickerStyle(.field)
-                        .labelsHidden()
                 }
                 divider
                 settingRow(tr("分类")) {
@@ -98,7 +91,7 @@ struct RecordingSetupView: View {
                 Button(tr("取消")) { model.cancelRecordingSetup() }
                     .keyboardShortcut(.cancelAction)
                 Button(model.recordingResumeID == nil ? tr("开始录制") : tr("继续录制")) {
-                    model.startTranscription(title: title, categoryID: categoryID, startedAt: startedAt)
+                    model.startTranscription(title: title, categoryID: categoryID)
                 }
                     .buttonStyle(.borderedProminent)
                     .disabled(!model.canRecord)
@@ -113,7 +106,6 @@ struct RecordingSetupView: View {
             if let meeting = model.recordingSetupMeeting {
                 title = meeting.title
                 categoryID = meeting.categoryID
-                startedAt = meeting.startedAt
             }
         }
     }

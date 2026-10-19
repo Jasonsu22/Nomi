@@ -54,6 +54,10 @@ func formatWeekday(_ date: Date) -> String {
     dateFormatter("EEE").string(from: date)
 }
 
+func formatStartStamp(_ date: Date) -> String {
+    "\(formatMonthDay(date)) \(formatWeekday(date)) \(formatClockTime(date))"
+}
+
 func formatMeetingTime(_ date: Date, now: Date = .now) -> String {
     let time = formatClockTime(date)
     let calendar = Calendar.current
@@ -64,6 +68,14 @@ func formatMeetingTime(_ date: Date, now: Date = .now) -> String {
         return trf("昨天 %@", time)
     }
     return "\(formatMonthDay(date)) \(time)"
+}
+
+func formatRelativeTime(_ date: Date, now: Date = .now) -> String {
+    if abs(now.timeIntervalSince(date)) < 45 { return tr("刚刚") }
+    let formatter = RelativeDateTimeFormatter()
+    formatter.locale = InterfaceLanguage.current.locale
+    formatter.unitsStyle = .full
+    return formatter.localizedString(for: date, relativeTo: now)
 }
 
 func formatTimeRange(start: Date, duration: TimeInterval, liveElapsed: TimeInterval?) -> String {

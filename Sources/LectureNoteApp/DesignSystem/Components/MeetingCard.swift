@@ -5,12 +5,20 @@ struct MeetingCard: View {
     var symbol: String
     var colorIndex: Int
     var reduceMotion: Bool
+    /// `nil` outside manage mode. Live meetings stay `nil` and cannot be selected.
+    var selected: Bool? = nil
     var action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(alignment: .center, spacing: Space.s3) {
+                if let selected {
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 18))
+                        .foregroundStyle(selected ? AppColor.accent : AppColor.textSecondary)
+                        .frame(width: 22)
+                }
                 CategoryIcon(symbol: symbol, colorIndex: colorIndex, size: 32)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(meeting.title)
@@ -50,8 +58,7 @@ struct MeetingCard: View {
 
     private var subtitle: String {
         let length = meeting.isLive ? tr("进行中") : formatDuration(meeting.duration)
-        let languages = "\(languageName(meeting.sourceLanguage)) → \(languageName(meeting.targetLanguage))"
-        return "\(formatClockTime(meeting.startedAt)) · \(length) · \(languages)"
+        return "\(formatStartStamp(meeting.startedAt)) · \(length)"
     }
 }
 

@@ -118,28 +118,14 @@ struct MeetingDetailView: View {
                 Button {
                     showingStartTime = true
                 } label: {
-                    HStack(spacing: Space.s2) {
-                        metaChip("\(formatMonthDay(meeting.startedAt)) \(formatWeekday(meeting.startedAt))")
-                        metaChip(formatClockTime(meeting.startedAt))
-                    }
+                    metaChip(formatStartStamp(meeting.startedAt))
                 }
                 .buttonStyle(.plain)
-                .help(tr("修改开始时间"))
+                .help(tr("重设时间"))
                 .popover(isPresented: $showingStartTime, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-                    VStack(alignment: .leading, spacing: Space.s4) {
-                        Text(tr("开始时间")).font(AppFont.sectionTitle)
-                        DatePicker(tr("开始时间"), selection: Binding(
-                            get: { model.meetings.first { $0.id == meeting.id }?.startedAt ?? meeting.startedAt },
-                            set: { model.setStartTime(meeting: meeting.id, to: $0) }
-                        ), displayedComponents: [.date, .hourAndMinute])
-                        .datePickerStyle(.field)
-                        .labelsHidden()
-                        HStack {
-                            Spacer()
-                            Button(tr("完成")) { showingStartTime = false }
-                        }
+                    StartTimeEditor(date: startTimeBinding(meeting)) {
+                        showingStartTime = false
                     }
-                    .padding(Space.s4)
                 }
                 categoryChip(meeting)
                 Button {
@@ -159,6 +145,13 @@ struct MeetingDetailView: View {
                 audioInputChip
             }
         }
+    }
+
+    private func startTimeBinding(_ meeting: Meeting) -> Binding<Date> {
+        Binding(
+            get: { model.meetings.first { $0.id == meeting.id }?.startedAt ?? meeting.startedAt },
+            set: { model.setStartTime(meeting: meeting.id, to: $0) }
+        )
     }
 
     private func categoryChip(_ meeting: Meeting) -> some View {
@@ -243,5 +236,25 @@ struct MeetingDetailView: View {
     private func sideVisible(width: CGFloat) -> Bool {
         let preferred = sidePreference ?? (width >= 1100)
         return preferred && width >= 760
+    }
+}
+
+struct StartTimeEditor: View {
+    @Binding var date: Date
+    var onDone: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            Text(tr("重设时间")).font(AppFont.sectionTitle)
+            DatePicker(tr("重设时间"), selection: $date, displayedComponents: [.date, .hourAndMinute])
+                .datePickerStyle(.field)
+                .labelsHidden()
+            HStack {
+                Spacer()
+                Button(tr("完成")) { onDone() }
+            }
+        }
+        .padding(Space.s4)
+        .environment(\.locale, InterfaceLanguage.current.locale)
     }
 }

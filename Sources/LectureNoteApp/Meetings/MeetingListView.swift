@@ -29,8 +29,14 @@ struct MeetingListView: View {
     @State private var draft = CategoryDraft()
     @State private var renaming: Meeting?
     @State private var renameDraft = ""
+    @State private var resettingTime: Meeting?
     @State private var deletingMeeting: Meeting?
     @State private var deletingCategory: MeetingCategory?
+    @State private var managing = false
+    @State private var selectedIDs: Set<UUID> = []
+    @State private var confirmingBulkDelete = false
+    @State private var movingIDs: Set<UUID> = []
+    @State private var creatingForMove = false
 
     var body: some View {
         let visible = model.visibleMeetings
@@ -56,6 +62,15 @@ struct MeetingListView: View {
         .onChange(of: model.searchRequest) { _, _ in
             searchFocused = true
         }
+        .sheet(item: $resettingTime) { meeting in
+            StartTimeEditor(date: Binding(
+                get: { model.meetings.first { $0.id == meeting.id }?.startedAt ?? meeting.startedAt },
+                set: { model.setStartTime(meeting: meeting.id, to: $0) }
+            )) {
+                resettingTime = nil
+            }
+            .frame(width: 320)
+        }
         .alert(tr("重命名"), isPresented: renamingPresented) {
             TextField(tr("名称"), text: $renameDraft)
             Button(tr("确定")) {
@@ -68,7 +83,7 @@ struct MeetingListView: View {
         .alert(tr("删除这场会议？"), isPresented: deletingMeetingPresented) {
             Button(tr("删除"), role: .destructive) {
                 if let deletingMeeting {
-                    model.deleteMeeting(deletingMeeting.id)
+                    removeMeetings([deletingMeeting.id])
                 }
             }
             Button(tr("取消"), role: .cancel) {}
@@ -89,6 +104,28 @@ struct MeetingListView: View {
         } message: {
             Text(tr("这个分类下的会议会变成未分类。"))
         }
+        .sheet(isPresented: $creatingForMove) {
+            CategoryEditor(title: tr("新建分类"), draft: $draft) {
+                if let id = model.addCategory(
+                    name: draft.name,
+                    colorIndex: draft.colorIndex,
+                    symbol: draft.symbol,
+                    select: false
+                ) {
+                    move(movingIDs, to: id)
+                }
+                creatingForMove = false
+                movingIDs = []
+            }
+        }
+        .alert(trf("删除这 %d 场会议？", selectedIDs.count), isPresented: $confirmingBulkDelete) {
+            Button(tr("删除"), role: .destructive) {
+                removeMeetings(selectedIDs, leaveManageMode: true)
+            }
+            Button(tr("取消"), role: .cancel) {}
+        } message: {
+            Text(tr("转写和录音会一起删掉，删掉之后无法恢复。"))
+        }
     }
 
     private var header: some View {
@@ -97,12 +134,34 @@ struct MeetingListView: View {
                 .font(AppFont.pageTitle)
                 .foregroundStyle(AppColor.textPrimary)
             Spacer(minLength: Space.s3)
-            PillButton(title: tr("导出")) {
-                model.export(model.visibleMeetings)
+            if managing {
+                PillButton(title: tr("完成")) { endManaging() }
+                Text(trf("已选 %d", selectedIDs.count))
+                    .font(AppFont.secondary.weight(.medium))
+                    .foregroundStyle(AppColor.textSecondary)
+                PillButton(title: tr("全选")) { selectAllVisible() }
+                PillMenu(title: tr("移到分类"), enabled: !selectedIDs.isEmpty) {
+                    categoryMoveItems(for: selectedIDs)
+                }
+                PillButton(title: tr("删除"), tint: .red) { confirmingBulkDelete = true }
+                    .disabled(selectedIDs.isEmpty)
+                    .opacity(selectedIDs.isEmpty ? 0.4 : 1)
+            } else {
+                PillButton(title: tr("导出")) {
+                    model.export(model.visibleMeetings)
+                }
+                .help(tr("把当前筛选出的会议存成 Markdown"))
+                PillButton(title: tr("管理")) {
+                    selectedIDs.removeAll()
+                    managing = true
+                }
+                groupingToggle
             }
-            .help(tr("把当前筛选出的会议存成 Markdown"))
-            groupingToggle
         }
+        // The time/category capsule is taller than the text buttons. Without a
+        // fixed height, hiding it in manage mode shortens this row and the
+        // search field and list move up.
+        .frame(height: 36)
     }
 
     private var groupingToggle: some View {
@@ -122,10 +181,10 @@ struct MeetingListView: View {
             }
         } label: {
             Text(title)
-                .font(AppFont.caption)
+                .font(AppFont.secondary.weight(.medium))
                 .foregroundStyle(selected ? AppColor.onSelection : AppColor.textSecondary)
-                .padding(.horizontal, 10)
-                .frame(height: 24)
+                .padding(.horizontal, 12)
+                .frame(height: 30)
                 .background(selected ? AppColor.selection : Color.clear, in: Capsule())
         }
         .buttonStyle(.plain)
@@ -146,8 +205,10 @@ struct MeetingListView: View {
                             draft = CategoryDraft(name: category.name, colorIndex: category.colorIndex, symbol: category.symbol)
                             editing = category
                         }
-                        Button(tr("删除"), role: .destructive) {
+                        Button(role: .destructive) {
                             deletingCategory = category
+                        } label: {
+                            Text(tr("删除")).foregroundStyle(.red)
                         }
                     }
                     .popover(isPresented: editingPresented(category), arrowEdge: .bottom) {
@@ -243,10 +304,39 @@ struct MeetingListView: View {
                     VStack(spacing: Space.s3) {
                         ForEach(section.meetings) { meeting in
                             card(meeting)
-                                .transition(insertionTransition(reduceMotion: reduceMotion))
+                                .transition(removalTransition)
                         }
                     }
+                    .animation(Motion.layout(reduceMotion), value: section.meetings.map(\.id))
                 }
+                .transition(.opacity)
+            }
+        }
+    }
+
+    /// The removed card fades. The cards under it move up in the same animation,
+    /// instead of the gap closing on the next frame.
+    private var removalTransition: AnyTransition {
+        .asymmetric(
+            insertion: insertionTransition(reduceMotion: reduceMotion),
+            removal: .opacity
+        )
+    }
+
+    private func removeMeetings(_ ids: Set<UUID>, leaveManageMode: Bool = false) {
+        let removed = ids
+        // The alert dismisses in a transaction that turns animations off.
+        // Wait until that transaction ends, then delete.
+        Task { @MainActor in
+            withAnimation(Motion.layout(reduceMotion)) {
+                model.deleteMeetings(removed)
+                selectedIDs.subtract(removed)
+            }
+            guard leaveManageMode else { return }
+            try? await Task.sleep(for: .seconds(reduceMotion ? 0.2 : 0.32))
+            withAnimation(Motion.fade(reduceMotion)) {
+                managing = false
+                selectedIDs.removeAll()
             }
         }
     }
@@ -257,10 +347,20 @@ struct MeetingListView: View {
             meeting: meeting,
             symbol: category?.symbol ?? CategoryPalette.uncategorizedSymbol,
             colorIndex: category?.colorIndex ?? CategoryPalette.uncategorizedIndex,
-            reduceMotion: reduceMotion
+            reduceMotion: reduceMotion,
+            selected: managing && !meeting.isLive ? selectedIDs.contains(meeting.id) : nil
         ) {
-            withAnimation(Motion.layout(reduceMotion)) {
-                model.openMeeting(meeting.id)
+            if managing {
+                guard !meeting.isLive else { return }
+                if selectedIDs.contains(meeting.id) {
+                    selectedIDs.remove(meeting.id)
+                } else {
+                    selectedIDs.insert(meeting.id)
+                }
+            } else {
+                withAnimation(Motion.layout(reduceMotion)) {
+                    model.openMeeting(meeting.id)
+                }
             }
         }
         .contextMenu {
@@ -273,24 +373,57 @@ struct MeetingListView: View {
                 renameDraft = meeting.title
                 renaming = meeting
             }
+            Button(tr("重设时间")) {
+                resettingTime = meeting
+            }
             Menu(tr("移到分类")) {
-                Button(tr("未分类")) {
-                    model.assign(meeting: meeting.id, category: nil)
-                }
-                ForEach(model.categories) { category in
-                    Button(category.name) {
-                        model.assign(meeting: meeting.id, category: category.id)
-                    }
-                }
+                categoryMoveItems(for: moveTargets(meeting))
             }
             Button(tr("导出")) {
                 model.export([meeting])
             }
             if !meeting.isLive {
-                Button(tr("删除"), role: .destructive) {
+                Button(role: .destructive) {
                     deletingMeeting = meeting
+                } label: {
+                    Text(tr("删除")).foregroundStyle(.red)
                 }
             }
+        }
+    }
+
+    /// A selected row moves the whole selection. Any other row moves only itself.
+    private func moveTargets(_ meeting: Meeting) -> Set<UUID> {
+        if managing, selectedIDs.contains(meeting.id) {
+            return selectedIDs
+        }
+        return [meeting.id]
+    }
+
+    @ViewBuilder
+    private func categoryMoveItems(for ids: Set<UUID>) -> some View {
+        Button(tr("未分类")) { move(ids, to: nil) }
+        ForEach(model.categories.sorted { $0.sortOrder < $1.sortOrder }) { category in
+            Button(category.name) { move(ids, to: category.id) }
+        }
+        Divider()
+        Button {
+            movingIDs = ids
+            draft = CategoryDraft(
+                name: "",
+                colorIndex: model.categories.count % CategoryPalette.swatches.count,
+                symbol: CategorySymbols.all[0]
+            )
+            creatingForMove = true
+        } label: {
+            Label(tr("新建分类"), systemImage: "plus")
+        }
+    }
+
+    private func move(_ ids: Set<UUID>, to categoryID: UUID?) {
+        guard !ids.isEmpty else { return }
+        withAnimation(Motion.layout(reduceMotion)) {
+            model.assign(meetings: ids, category: categoryID)
         }
     }
 
@@ -337,6 +470,15 @@ struct MeetingListView: View {
         return lhs.startedAt > rhs.startedAt
     }
 
+    private func selectAllVisible() {
+        selectedIDs = Set(model.visibleMeetings.filter { !$0.isLive }.map(\.id))
+    }
+
+    private func endManaging() {
+        managing = false
+        selectedIDs.removeAll()
+    }
+
     private var renamingPresented: Binding<Bool> {
         Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })
     }
@@ -363,4 +505,31 @@ private struct MeetingSection: Identifiable {
     var colorIndex: Int?
     var meetings: [Meeting]
     var showsNow: Bool
+}
+
+private struct PillMenu<Content: View>: View {
+    var title: String
+    var enabled: Bool = true
+    @ViewBuilder var content: () -> Content
+    @Environment(\.appReduceMotion) private var reduceMotion
+    @State private var hovering = false
+
+    var body: some View {
+        Menu(content: content) {
+            Text(title)
+                .font(AppFont.secondary.weight(.medium))
+                .foregroundStyle(AppColor.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(hovering && enabled ? AppColor.surfaceInset : AppColor.surface, in: Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .onHover { hovering = $0 }
+        .animation(Motion.fade(reduceMotion), value: hovering)
+    }
 }

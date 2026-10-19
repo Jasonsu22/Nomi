@@ -232,7 +232,11 @@ final class LiveTranscript {
                 paragraphs = updated
             }
         case .paragraphOpened, .committed:
-            withAnimation(Motion.layout(reduceMotion)) {
+            // Animating this layout makes the live scroll view spring upward
+            // when a paragraph closes, then chase the bottom again.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
                 paragraphs = updated
             }
         }

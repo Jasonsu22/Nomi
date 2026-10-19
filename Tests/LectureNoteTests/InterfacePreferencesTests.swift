@@ -47,8 +47,6 @@ struct RecordingConfigurationTests {
         model.recordingSourceLanguage = "ja"
         model.recordingTargetLanguage = "en"
         model.startTranscription()
-        // The engine starts on a later main-actor turn, after the setup sheet's click.
-        for _ in 0..<10 where engine.starts == 0 { await Task.yield() }
         #expect(engine.starts == 1)
         #expect(engine.sourceLanguage == "ja")
         #expect(engine.targetLanguage == "en")

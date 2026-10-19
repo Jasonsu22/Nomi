@@ -74,7 +74,12 @@ struct DetailSidePanel: View {
         .clipped()
         .alert(tr("删除这场会议？"), isPresented: $confirmingDelete) {
             Button(tr("删除"), role: .destructive) {
-                model.deleteMeeting(meeting.id)
+                let id = meeting.id
+                Task { @MainActor in
+                    withAnimation(Motion.layout(reduceMotion)) {
+                        model.deleteMeeting(id)
+                    }
+                }
             }
             Button(tr("取消"), role: .cancel) {}
         } message: {

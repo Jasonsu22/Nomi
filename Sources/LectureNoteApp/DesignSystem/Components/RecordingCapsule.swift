@@ -11,10 +11,9 @@ struct SessionControl: View {
     var onTogglePause: () -> Void
     var body: some View {
         control
-            .background(fill, in: Capsule())
-            // Interactive glass installs a hover tracker that crashes on macOS 26
-            // when this control is replaced during the click (EXC_BAD_ACCESS in mouseEntered).
-            .glassEffect(.clear, in: Capsule())
+            // Tinted glass, not the interactive kind. The interactive hover tracker
+            // crashes on macOS 26 when this control is replaced during the click.
+            .glassEffect(.regular.tint(fill), in: Capsule())
     }
 
     private var listening: Bool {

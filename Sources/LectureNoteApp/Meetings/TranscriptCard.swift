@@ -101,7 +101,6 @@ struct TranscriptCard: View {
                                 fontSize: fontSize
                             )
                             .equatable()
-                            .transition(insertionTransition(reduceMotion: reduceMotion))
                         }
                     }
                     Color.clear
@@ -114,15 +113,21 @@ struct TranscriptCard: View {
                 .frame(maxWidth: .infinity)
             }
             .defaultScrollAnchor(meeting.isLive ? .bottom : .top, for: .initialOffset)
+            .defaultScrollAnchor(followsLatest && meeting.isLive ? .bottom : nil, for: .sizeChanges)
+            .scrollIndicators(userScrolling ? .automatic : .hidden, axes: .vertical)
+            .background(LiveScrollerGate(shown: userScrolling))
             .onScrollPhaseChange { _, phase in
                 switch phase {
                 case .interacting, .tracking, .decelerating:
                     userScrolling = true
                 case .idle:
+                    let wasDragging = userScrolling
                     userScrolling = false
-                    followsLatest = distanceFromBottom < 72
+                    if wasDragging {
+                        followsLatest = distanceFromBottom < 72
+                    }
                 case .animating:
-                    userScrolling = false
+                    break
                 }
             }
             .onScrollGeometryChange(for: CGFloat.self) { geo in
@@ -148,9 +153,9 @@ struct TranscriptCard: View {
                     .padding(.trailing, 20)
                     .padding(.bottom, 16)
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    .animation(Motion.tap(reduceMotion), value: followsLatest)
                 }
             }
-            .animation(Motion.tap(reduceMotion), value: followsLatest)
         }
     }
 
@@ -169,8 +174,31 @@ struct TranscriptCard: View {
     }
 
     private func stick(_ proxy: ScrollViewProxy) {
-        withAnimation(Motion.layout(reduceMotion)) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
             proxy.scrollTo("bottom", anchor: .bottom)
+        }
+    }
+}
+
+/// Overlay scrollers, and only while the user is dragging. Content growth must
+/// not flash the bar or change the text width.
+private struct LiveScrollerGate: NSViewRepresentable {
+    var shown: Bool
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        view.isHidden = true
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let scroll = nsView.enclosingScrollView else { return }
+            scroll.scrollerStyle = .overlay
+            scroll.autohidesScrollers = true
+            scroll.hasVerticalScroller = shown
         }
     }
 }

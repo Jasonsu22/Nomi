@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PillButton: View {
     var title: String
+    var tint: Color = AppColor.textPrimary
     var action: () -> Void
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var hovering = false
@@ -10,7 +11,7 @@ struct PillButton: View {
         Button(action: action) {
             Text(title)
                 .font(AppFont.secondary.weight(.medium))
-                .foregroundStyle(AppColor.textPrimary)
+                .foregroundStyle(tint)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(hovering ? AppColor.surfaceInset : AppColor.surface, in: Capsule())

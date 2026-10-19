@@ -406,7 +406,11 @@ final class LocalEngine: TranscriptionEngine {
             switch event.value {
             case "listening":
                 if session.phase == .preparing {
-                    withAnimationIfNeeded { session.markListening() }
+                    // A bouncy morph here springs the capsule back to the button
+                    // width before settling, which looks like Resume flashing in.
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { session.markListening() }
                 }
             case "idle":
                 finish(duration: session.phase == .stopping ? session.elapsed : session.beginStopping())

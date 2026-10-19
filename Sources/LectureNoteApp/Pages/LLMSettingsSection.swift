@@ -58,7 +58,9 @@ struct LLMSettingsSection: View {
                             Button(tr("编辑")) { editingProfile = profile }
                             Button(role: .destructive) { confirmation = .delete(profile) } label: {
                                 Label(tr("删除"), systemImage: "trash")
+                                    .foregroundStyle(.red)
                             }
+                            .tint(.red)
                         }
                         .disabled(model.assistantIsBusy)
                     }

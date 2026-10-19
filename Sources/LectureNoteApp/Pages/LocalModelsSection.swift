@@ -170,6 +170,7 @@ struct LocalModelPicker: View {
                                 .foregroundStyle(.red)
                                 .frame(minWidth: 60)
                         }
+                        .tint(.red)
                         .disabled(!model.canSwitchModels)
                     }
                 }

@@ -54,6 +54,11 @@ final class AppModel {
     var openMeetingID: UUID?
     var exportError: String?
     var storageError: String?
+    var sourceError: String?
+    var sources: [KnowledgeSource] = [] {
+        didSet { persistSources() }
+    }
+    private var sourcesPersistence = false
     var searchRequest = 0
     private(set) var appliedQuery = ""
     let engine: any TranscriptionEngine
@@ -95,6 +100,14 @@ final class AppModel {
             storageError = tr("无法读取本地会议记录，原文件已保留。")
         } else {
             persistenceEnabled = usesStorage
+        }
+        if usesStorage {
+            do {
+                sources = try SourceStore.load()
+                sourcesPersistence = true
+            } catch {
+                sourceError = tr("无法读取资料库，原文件已保留。")
+            }
         }
         if case .category(let id) = self.filter, self.category(for: id) == nil {
             self.filter = .all
@@ -262,11 +275,7 @@ final class AppModel {
         liveMeetingID = meeting.id
         openMeetingID = meeting.id
         page = .meetings
-        // Let the setup sheet finish this click before the recording control is swapped out.
-        Task { @MainActor in
-            await Task.yield()
-            engine.start()
-        }
+        engine.start()
     }
 
     private func resumeTranscription(_ id: UUID) {
@@ -294,10 +303,7 @@ final class AppModel {
         page = .meetings
         recordingSetupPresented = false
         recordingResumeID = nil
-        Task { @MainActor in
-            await Task.yield()
-            engine.start(resuming: history, at: offset)
-        }
+        engine.start(resuming: history, at: offset)
     }
 
     func stopTranscription() {
@@ -392,8 +398,25 @@ final class AppModel {
     }
 
     func assign(meeting id: UUID, category categoryID: UUID?) {
-        guard let index = meetings.firstIndex(where: { $0.id == id }) else { return }
-        meetings[index].categoryID = categoryID
+        assign(meetings: [id], category: categoryID)
+    }
+
+    func assign(meetings ids: Set<UUID>, category categoryID: UUID?) {
+        guard !ids.isEmpty else { return }
+        var updated = meetings
+        var changed = false
+        for index in updated.indices where ids.contains(updated[index].id) && updated[index].categoryID != categoryID {
+            updated[index].categoryID = categoryID
+            changed = true
+        }
+        guard changed else { return }
+        meetings = updated
+    }
+
+    func deleteMeetings(_ ids: Set<UUID>) {
+        for id in ids {
+            deleteMeeting(id)
+        }
     }
 
     func deleteMeeting(_ id: UUID) {
@@ -407,7 +430,7 @@ final class AppModel {
     }
 
     @discardableResult
-    func addCategory(name: String, colorIndex: Int, symbol: String) -> UUID? {
+    func addCategory(name: String, colorIndex: Int, symbol: String, select: Bool = true) -> UUID? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let category = MeetingCategory(
@@ -418,7 +441,7 @@ final class AppModel {
             sortOrder: (categories.map(\.sortOrder).max() ?? -1) + 1
         )
         categories.append(category)
-        filter = .category(category.id)
+        if select { filter = .category(category.id) }
         return category.id
     }
 
@@ -436,8 +459,52 @@ final class AppModel {
         for index in meetings.indices where meetings[index].categoryID == id {
             meetings[index].categoryID = nil
         }
+        if sources.contains(where: { $0.categoryID == id }) {
+            var updated = sources
+            for index in updated.indices where updated[index].categoryID == id {
+                updated[index].categoryID = nil
+            }
+            sources = updated
+        }
         if case .category(let current) = filter, current == id {
             filter = .uncategorized
+        }
+    }
+
+    func commitSources(_ staged: [KnowledgeSource]) {
+        guard !staged.isEmpty else { return }
+        sources.insert(contentsOf: staged, at: 0)
+    }
+
+    func assign(source id: UUID, category categoryID: UUID?) {
+        guard let index = sources.firstIndex(where: { $0.id == id }) else { return }
+        sources[index].categoryID = categoryID
+    }
+
+    func rename(source id: UUID, to title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = sources.firstIndex(where: { $0.id == id }) else { return }
+        sources[index].title = trimmed
+    }
+
+    func deleteSource(_ id: UUID) {
+        guard let source = sources.first(where: { $0.id == id }) else { return }
+        SourceStore.remove(source)
+        sources.removeAll { $0.id == id }
+    }
+
+    func discardSources(_ staged: [KnowledgeSource]) {
+        for source in staged {
+            SourceStore.remove(source)
+        }
+    }
+
+    private func persistSources() {
+        guard sourcesPersistence else { return }
+        do {
+            try SourceStore.save(sources)
+        } catch {
+            sourceError = tr("资料保存失败，请重试。")
         }
     }
 
