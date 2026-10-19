@@ -29,6 +29,7 @@ enum RemoteLLMClient {
         key: String,
         system: String,
         prompt: String,
+        images: [ModelImage] = [],
         onUpdate: @escaping @MainActor (String) -> Void
     ) async throws -> String {
         let profile = try profile.validated()
@@ -44,13 +45,16 @@ enum RemoteLLMClient {
                 "model": profile.modelID,
                 "system": system,
                 "max_tokens": 8192,
-                "messages": [["role": "user", "content": prompt]],
+                "messages": [["role": "user", "content": anthropicContent(prompt: prompt, images: images)]],
                 "stream": true,
             ]
         } else {
             var chat: [String: Any] = [
                 "model": profile.modelID,
-                "messages": [["role": "system", "content": system], ["role": "user", "content": prompt]],
+                "messages": [
+                    ["role": "system", "content": system],
+                    ["role": "user", "content": openAIContent(prompt: prompt, images: images, miniMax: isMiniMax(profile))],
+                ],
                 "stream": true,
             ]
             if host(of: profile) == "api.openai.com" {
@@ -176,6 +180,33 @@ enum RemoteLLMClient {
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         } else if !key.isEmpty { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
         return request
+    }
+
+    static func openAIContent(prompt: String, images: [ModelImage], miniMax: Bool) -> Any {
+        guard !images.isEmpty else { return prompt }
+        var parts: [[String: Any]] = [["type": "text", "text": prompt]]
+        for image in images {
+            var imageURL: [String: Any] = ["url": "data:\(image.mime);base64,\(image.base64)"]
+            if miniMax { imageURL["detail"] = "default" }
+            parts.append(["type": "image_url", "image_url": imageURL])
+        }
+        return parts
+    }
+
+    static func anthropicContent(prompt: String, images: [ModelImage]) -> Any {
+        guard !images.isEmpty else { return prompt }
+        var parts: [[String: Any]] = [["type": "text", "text": prompt]]
+        for image in images {
+            parts.append([
+                "type": "image",
+                "source": [
+                    "type": "base64",
+                    "media_type": image.mime,
+                    "data": image.base64,
+                ],
+            ])
+        }
+        return parts
     }
 
     private static func host(of profile: LLMAPIProfile) -> String {

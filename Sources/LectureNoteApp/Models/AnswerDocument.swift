@@ -12,6 +12,7 @@ enum AnswerDocument {
         case math(String)
         case widget(title: String, html: String)
         case preparing
+        case remoteImage(alt: String, url: String)
     }
 
     static func pieces(in source: String, streaming: Bool = false) -> [Piece] {
@@ -297,8 +298,14 @@ enum AnswerDocument {
         var pieces: [Piece] = []
         var paragraph: [String] = []
         func flushParagraph() {
-            let text = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty { pieces.append(.paragraph(text)) }
+            var text = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if streaming, let start = text.range(of: "![", options: .backwards) {
+                let tail = text[start.lowerBound...]
+                if tail.firstMatch(of: Self.imagePattern()) == nil {
+                    text = String(text[..<start.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+            if !text.isEmpty { pieces.append(contentsOf: Self.imagePieces(in: text)) }
             paragraph.removeAll()
         }
         var index = 0
@@ -338,6 +345,33 @@ enum AnswerDocument {
             index += 1
         }
         flushParagraph()
+        return pieces
+    }
+
+    private static func imagePattern() -> Regex<(Substring, Substring, Substring)> {
+        /!\[([^\]]*)\]\(([^)\s]+)\)/
+    }
+
+    /// Pulls Markdown images out of a paragraph. Only https addresses become pictures.
+    static func imagePieces(in text: String) -> [Piece] {
+        let imageMarkdown = imagePattern()
+        var pieces: [Piece] = []
+        var rest = text[text.startIndex...]
+        while let match = rest.firstMatch(of: imageMarkdown) {
+            let before = String(rest[..<match.range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !before.isEmpty { pieces.append(.paragraph(before)) }
+            let alt = String(match.1)
+            let raw = String(match.2)
+            if let url = URL(string: raw), url.scheme?.lowercased() == "https" {
+                pieces.append(.remoteImage(alt: alt, url: raw))
+            } else if !raw.isEmpty {
+                pieces.append(.paragraph(raw))
+            }
+            rest = rest[match.range.upperBound...]
+        }
+        let tail = String(rest).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty { pieces.append(.paragraph(tail)) }
+        if pieces.isEmpty, !text.isEmpty { pieces.append(.paragraph(text)) }
         return pieces
     }
 

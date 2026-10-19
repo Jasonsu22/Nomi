@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct AppShell: View {
@@ -26,6 +27,24 @@ struct AppShell: View {
         }
         .background(AppColor.canvas.ignoresSafeArea())
         .background { MeetingWindowFrame(compact: compact) }
+        .overlay {
+            if let image = model.enlargedImage {
+                ChatImageLightbox(image: image, name: model.enlargedImageName, fileURL: model.enlargedImageURL, reduceMotion: reduce) {
+                    model.enlargedImage = nil
+                    model.enlargedImageURL = nil
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .nomiEnlargeImage)) { note in
+            guard let image = note.userInfo?["image"] as? NSImage else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                model.enlargedImage = image
+                model.enlargedImageName = (note.userInfo?["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "image.png"
+                model.enlargedImageURL = note.userInfo?["url"] as? URL
+            }
+        }
         .containerBackground(AppColor.canvas, for: .window)
         .sheet(isPresented: $model.recordingSetupPresented) {
             RecordingSetupView(model: model)

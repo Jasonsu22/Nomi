@@ -151,6 +151,8 @@ struct AnswerBody: View {
                     accent: colorScheme == .dark ? "#7CC4F2" : "#004A77"
                 )
             )
+        case .remoteImage(let alt, let url):
+            RemoteAnswerImage(address: url, caption: alt)
         }
     }
 }

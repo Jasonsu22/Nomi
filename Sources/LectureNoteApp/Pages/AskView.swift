@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AskView: View {
     var model: AppModel
@@ -16,6 +17,7 @@ struct AskView: View {
     @State private var renameDraft = ""
     @State private var deletingChat = false
     @State private var deleteID: UUID?
+    @State private var imageNotice: String?
 
     private let examples = ["这门课的重点是什么？", "有哪些需要记住的术语？", "作业或下一步是什么？"]
 
@@ -71,7 +73,6 @@ struct AskView: View {
             model.localModels.refresh()
             composerFocused = true
             restoreDraft()
-            Task { await model.refreshActiveAPIModels() }
         }
         .onChange(of: model.llmConfiguration.mode) { _, _ in
             Task { await model.refreshActiveAPIModels() }
@@ -248,19 +249,54 @@ struct AskView: View {
                 Spacer(minLength: Space.s2)
                 modelMenu
             }
+            if let imageNotice {
+                Text(imageNotice)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+            }
+            if !attachedImages.isEmpty, !modelSeesImages {
+                Text(tr("当前模型看不到图片，图片只会留在对话里。"))
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+            }
             HStack(alignment: .bottom, spacing: Space.s2) {
-                AskComposerField(
-                    text: $draft,
-                    placeholder: tr("问点什么…"),
-                    focused: composerFocused,
-                    onSubmit: send
-                )
-                .frame(height: composerHeight)
+                attachButton
+                VStack(alignment: .leading, spacing: 8) {
+                    if !attachedImages.isEmpty {
+                        ChatImageStrip(items: attachedImages, onRemove: removeImage)
+                    }
+                    AskComposerField(
+                        text: $draft,
+                        placeholder: tr("问点什么…"),
+                        focused: composerFocused,
+                        onSubmit: send,
+                        onPasteImages: addPastedImages,
+                        onRemoveLastImage: removeLastImage
+                    )
+                    .frame(height: composerHeight)
+                }
                 sendButton
             }
         }
         .padding(Space.s4)
         .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            let matched = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+            guard !matched.isEmpty else { return false }
+            for provider in matched {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+                    let url: URL?
+                    if let data = item as? Data {
+                        url = URL(dataRepresentation: data, relativeTo: nil)
+                    } else {
+                        url = item as? URL
+                    }
+                    guard let url else { return }
+                    Task { @MainActor in addImages(urls: [url]) }
+                }
+            }
+            return true
+        }
         .padding(Space.s4)
     }
 
@@ -415,7 +451,8 @@ struct AskView: View {
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.canGenerateAssistant && model.chatGeneratingID == nil
+        let hasText = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return (hasText || !attachedImages.isEmpty) && model.canGenerateAssistant && model.chatGeneratingID == nil
     }
 
     private var showsCloudNotice: Bool {
@@ -456,13 +493,20 @@ struct AskView: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
                 Spacer(minLength: 80)
-                Text(turn.question)
-                    .font(AppFont.body)
-                    .foregroundStyle(AppColor.textPrimary)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(AppColor.accentSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                VStack(alignment: .trailing, spacing: Space.s2) {
+                    if !turn.images.isEmpty {
+                        StoredImageStrip(images: turn.images)
+                    }
+                    if !turn.question.isEmpty {
+                        Text(turn.question)
+                            .font(AppFont.body)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .textSelection(.enabled)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(AppColor.accentSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
+                }
             }
             if let error = turn.error {
                 Text(error)
@@ -482,12 +526,19 @@ struct AskView: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
                 Spacer(minLength: 80)
-                Text(question)
-                    .font(AppFont.body)
-                    .foregroundStyle(AppColor.textPrimary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(AppColor.accentSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                VStack(alignment: .trailing, spacing: Space.s2) {
+                    if !model.pendingImageDrafts.isEmpty {
+                        ChatImageStrip(items: model.pendingImageDrafts)
+                    }
+                    if !question.isEmpty {
+                        Text(question)
+                            .font(AppFont.body)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(AppColor.accentSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
+                }
             }
             if model.pendingAnswer.isEmpty {
                 HStack(spacing: Space.s2) {
@@ -560,11 +611,92 @@ struct AskView: View {
     }
 
     private func send() {
-        guard model.chatGeneratingID == nil else { return }
+        guard model.chatGeneratingID == nil, let id = composerChatID() else { return }
+        let images = model.composerImages[id] ?? []
         let text = draft
-        guard model.ask(text, anchor: anchorMeetingID) else { return }
+        guard model.ask(text, images: images, anchor: anchorMeetingID) else { return }
         draft = ""
+        model.composerImages[id] = []
+        imageNotice = nil
         composerFocused = true
+    }
+
+    private var attachButton: some View {
+        Button(action: pickImages) {
+            Image(systemName: "paperclip")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppColor.textSecondary)
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain.clicking())
+        .help(tr("添加图片"))
+        .accessibilityLabel(tr("添加图片"))
+    }
+
+    private var attachedImages: [ChatImageDraft] {
+        guard let id = session?.id else { return [] }
+        return model.composerImages[id] ?? []
+    }
+
+    private var modelSeesImages: Bool {
+        ChatImages.seesImages(mode: model.llmConfiguration.mode, modelID: model.llmConfiguration.activeProfile?.modelID ?? "")
+    }
+
+    private func composerChatID() -> UUID? {
+        if let anchorMeetingID {
+            model.ensureMeetingChat(anchorMeetingID)
+            return model.meetingChatID[anchorMeetingID]
+        }
+        model.ensureChat()
+        return model.currentChatID
+    }
+
+    private func pickImages() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.jpeg, .png, .gif, .webP, .heic, .tiff]
+        panel.begin { response in
+            guard response == .OK else { return }
+            Task { @MainActor in addImages(urls: panel.urls) }
+        }
+    }
+
+    private func addPastedImages(_ pasteboard: NSPasteboard) -> Bool {
+        guard let id = composerChatID() else { return false }
+        let existing = model.composerImages[id]?.count ?? 0
+        guard let intake = ChatImages.intake(pasteboard: pasteboard, existing: existing) else { return false }
+        accept(intake, id: id)
+        return true
+    }
+
+    private func addImages(urls: [URL]) {
+        guard let id = composerChatID() else { return }
+        let existing = model.composerImages[id]?.count ?? 0
+        accept(ChatImages.intake(urls: urls, existing: existing), id: id)
+    }
+
+    private func accept(_ intake: (drafts: [ChatImageDraft], notice: String?), id: UUID) {
+        var next = model.composerImages[id] ?? []
+        next.append(contentsOf: intake.drafts)
+        model.composerImages[id] = next
+        imageNotice = intake.notice
+    }
+
+    private func removeImage(_ draft: ChatImageDraft) {
+        guard let id = session?.id else { return }
+        ChatImages.discard(draft)
+        var next = model.composerImages[id] ?? []
+        next.removeAll { $0.id == draft.id }
+        model.composerImages[id] = next
+        imageNotice = nil
+    }
+
+    private func removeLastImage() -> Bool {
+        guard draft.isEmpty, let last = attachedImages.last else { return false }
+        removeImage(last)
+        return true
     }
 
     private func restoreDraft() {
