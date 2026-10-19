@@ -53,7 +53,12 @@ final class AppModel {
     var grouping: MeetingGrouping {
         didSet { grouping.save() }
     }
-    var openMeetingID: UUID?
+    var openMeetingID: UUID? {
+        didSet {
+            if openMeetingID == nil { meetingCompact = false }
+        }
+    }
+    var meetingCompact = false
     var exportError: String?
     var storageError: String?
     var sourceError: String?

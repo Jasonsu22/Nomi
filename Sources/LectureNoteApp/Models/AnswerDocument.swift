@@ -29,13 +29,14 @@ enum AnswerDocument {
             case .fence:
                 let body = region.body
                 guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                if let title = htmlTitle(region.info),
-                   region.closed,
+                if region.closed,
                    body.utf8.count <= widgetByteLimit,
                    widgets < widgetLimit,
-                   allowsWidget(body) {
+                   let title = widgetTitle(info: region.info, body: body),
+                   let fragment = widgetFragment(from: body) {
                     widgets += 1
-                    result.append(.widget(title: title, html: body))
+                    let name = title.isEmpty ? (documentTitle(body) ?? "") : title
+                    result.append(.widget(title: name, html: fragment))
                 } else {
                     result.append(.code(body))
                 }
@@ -72,11 +73,21 @@ enum AnswerDocument {
         return pieces
     }
 
+    /// A fragment, or a complete page reduced to the styles, inline scripts, and body.
+    static func widgetFragment(from html: String) -> String? {
+        guard passesSafety(html) else { return nil }
+        let fragment = unwrapDocument(html)
+        guard allowsWidget(fragment) else { return nil }
+        return fragment
+    }
+
     static func allowsWidget(_ html: String) -> Bool {
         let folded = html.lowercased()
+        let shell = ["body", "html", "head", "meta"]
+        if shell.contains(where: { containsTag(folded, $0) || containsTag(folded, "/\($0)") }) { return false }
+        if folded.contains("<!doctype") { return false }
         let banned = [
-            "</body", "</html", "</head", "<!doctype", "<html", "<head", "<body",
-            "<iframe", "<object", "<embed", "<link", "<base", "<meta", "<form",
+            "<iframe", "<object", "<embed", "<link", "<base", "<form",
             "<img", "<image", "<video", "<audio", "<source", "<track",
             "<frame", "<frameset", "<applet", "<foreignobject",
             "javascript:", "@import", "formaction",
@@ -170,6 +181,124 @@ enum AnswerDocument {
         guard spaces <= 3 else { return false }
         let core = line.dropFirst(spaces).trimmingCharacters(in: .whitespaces)
         return core.count >= 3 && core.allSatisfy { $0 == "`" }
+    }
+
+    private static func widgetTitle(info: String, body: String) -> String? {
+        if let title = htmlTitle(info) { return title }
+        let trimmed = info.trimmingCharacters(in: .whitespaces)
+        guard trimmed.isEmpty else { return nil }
+        let folded = body.lowercased()
+        guard folded.contains("<!doctype") || containsTag(folded, "html") else { return nil }
+        return ""
+    }
+
+    private static func documentTitle(_ html: String) -> String? {
+        guard let inner = tagInner(html, tag: "title") else { return nil }
+        let text = inner.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    /// Drops the page shell. The caller still rejects anything unsafe in the original text.
+    private static func unwrapDocument(_ html: String) -> String {
+        let folded = html.lowercased()
+        let document = folded.contains("<!doctype") || containsTag(folded, "html")
+            || containsTag(folded, "head") || containsTag(folded, "body")
+        guard document else { return html }
+        let assets = keptHead(tagInner(html, tag: "head") ?? "")
+        guard let body = tagInner(html, tag: "body") else { return html }
+        return (assets + "\n" + body).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func keptHead(_ head: String) -> String {
+        let styles = tagBlocks(head, tag: "style").map { "<style>\($0)</style>" }
+        let scripts = inlineScriptBlocks(head).map { "<script>\($0)</script>" }
+        return (styles + scripts).joined(separator: "\n")
+    }
+
+    private static func tagInner(_ html: String, tag: String) -> String? {
+        let folded = html.lowercased()
+        guard let start = tagRange(folded, tag: tag) else { return nil }
+        guard let gt = folded.range(of: ">", range: start.upperBound..<folded.endIndex) else { return nil }
+        let end = tagRange(folded, tag: "/\(tag)", from: gt.upperBound)?.lowerBound ?? folded.endIndex
+        return String(html[gt.upperBound..<end])
+    }
+
+    private static func containsTag(_ folded: String, _ tag: String) -> Bool {
+        tagRange(folded, tag: tag) != nil
+    }
+
+    private static func tagRange(_ folded: String, tag: String, from start: String.Index? = nil) -> Range<String.Index>? {
+        var rest = folded[(start ?? folded.startIndex)...]
+        let needle = "<\(tag)"
+        while let found = rest.range(of: needle) {
+            let after = found.upperBound
+            if after == folded.endIndex || isTagBoundary(folded[after]) { return found }
+            guard let next = folded.index(found.lowerBound, offsetBy: 1, limitedBy: folded.endIndex) else { return nil }
+            rest = folded[next...]
+        }
+        return nil
+    }
+
+    private static func isTagBoundary(_ character: Character) -> Bool {
+        character == ">" || character == "/" || character.isWhitespace
+    }
+
+    private static func tagBlocks(_ html: String, tag: String) -> [String] {
+        var result: [String] = []
+        var rest = html[...]
+        while let start = rest.range(of: "<\(tag)", options: .caseInsensitive) {
+            let after = rest[start.upperBound...]
+            guard let gt = after.range(of: ">") else { break }
+            guard let end = after.range(of: "</\(tag)", options: .caseInsensitive), end.lowerBound >= gt.upperBound else { break }
+            result.append(String(after[gt.upperBound..<end.lowerBound]))
+            rest = after[end.upperBound...]
+        }
+        return result
+    }
+
+    private static func inlineScriptBlocks(_ html: String) -> [String] {
+        var result: [String] = []
+        var rest = html[...]
+        while let start = rest.range(of: "<script", options: .caseInsensitive) {
+            let after = rest[start.upperBound...]
+            guard let gt = after.range(of: ">") else { break }
+            let opening = after[..<gt.lowerBound]
+            guard let end = after.range(of: "</script", options: .caseInsensitive), end.lowerBound >= gt.upperBound else { break }
+            if opening.range(of: "src", options: .caseInsensitive) == nil {
+                result.append(String(after[gt.upperBound..<end.lowerBound]))
+            }
+            rest = after[end.upperBound...]
+        }
+        return result
+    }
+
+    private static func passesSafety(_ html: String) -> Bool {
+        let folded = html.lowercased()
+        let banned = [
+            "<iframe", "<object", "<embed", "<link", "<base", "<form",
+            "<img", "<image", "<video", "<audio", "<source", "<track",
+            "<frame", "<frameset", "<applet", "<foreignobject",
+            "javascript:", "@import", "formaction",
+        ]
+        if banned.contains(where: { folded.contains($0) }) { return false }
+        if scriptHasSource(folded) || hasExternalAddress(folded) || hasBlockedInput(folded) || hasUnsafeMeta(folded) {
+            return false
+        }
+        return true
+    }
+
+    private static func hasUnsafeMeta(_ folded: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: #"<meta\b[^>]*>"#, options: [.caseInsensitive]) else { return true }
+        let range = NSRange(folded.startIndex..., in: folded)
+        for match in regex.matches(in: folded, range: range) {
+            guard let span = Range(match.range, in: folded) else { return true }
+            let tag = String(folded[span])
+            if tag.contains("refresh") { return true }
+            let contentType = tag.contains("content-type")
+            if tag.contains("http-equiv") && !contentType { return true }
+            if !tag.contains("charset") && !tag.contains("viewport") && !contentType { return true }
+        }
+        return false
     }
 
     private static func htmlTitle(_ info: String) -> String? {

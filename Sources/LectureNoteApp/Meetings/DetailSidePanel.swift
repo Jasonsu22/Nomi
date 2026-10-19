@@ -3,12 +3,16 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum DetailTab: String, CaseIterable, Identifiable {
+    case transcript = "转写"
     case ask = "提问"
     case summary = "摘要"
     case sources = "资料"
     case info = "信息"
 
     var id: String { rawValue }
+
+    static let sideTabs: [DetailTab] = [.ask, .summary, .sources, .info]
+    static let compactTabs: [DetailTab] = [.transcript, .ask, .summary, .sources, .info]
 }
 
 struct DetailSidePanel: View {
@@ -17,6 +21,9 @@ struct DetailSidePanel: View {
     var reduceMotion: Bool
     var onPreferredSideWidth: (CGFloat) -> Void = { _ in }
     var onClose: () -> Void
+    var tabs: [DetailTab] = DetailTab.sideTabs
+    var initialTab: DetailTab = .ask
+    var showsClose = true
     @State private var tab: DetailTab = .ask
     @State private var confirmingDelete = false
     @State private var importingSources = false
@@ -27,7 +34,7 @@ struct DetailSidePanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s2) {
-                ForEach(DetailTab.allCases) { item in
+                ForEach(tabs) { item in
                     Button {
                         withAnimation(Motion.page(reduceMotion)) {
                             tab = item
@@ -50,14 +57,16 @@ struct DetailSidePanel: View {
                     .accessibilityAddTraits(tab == item ? .isSelected : [])
                 }
                 Spacer(minLength: 0)
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(AppColor.textSecondary)
-                        .frame(width: 24, height: 24)
+                if showsClose {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(AppColor.textSecondary)
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain.clicking())
+                    .accessibilityLabel(tr("关闭侧栏"))
                 }
-                .buttonStyle(.plain.clicking())
-                .accessibilityLabel(tr("关闭侧栏"))
             }
             .padding(.horizontal, Space.s4)
             .padding(.top, Space.s4)
@@ -65,6 +74,15 @@ struct DetailSidePanel: View {
 
             Group {
                 switch tab {
+                case .transcript:
+                    TranscriptCard(
+                        meeting: meeting,
+                        transcript: model.engine.transcript,
+                        reduceMotion: reduceMotion,
+                        canCompare: false,
+                        embedded: true,
+                        onCopy: { model.copyTranscript($0) }
+                    )
                 case .info:
                     info
                 case .ask:
@@ -84,6 +102,7 @@ struct DetailSidePanel: View {
         .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .clipped()
         .onAppear {
+            if initialTab != tab { tab = initialTab }
             if tab == .ask { onPreferredSideWidth(480) }
         }
         .onChange(of: tab) { _, newValue in

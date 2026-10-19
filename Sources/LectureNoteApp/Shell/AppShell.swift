@@ -4,19 +4,28 @@ struct AppShell: View {
     @Bindable var model: AppModel
     @Environment(\.appReduceMotion) private var reduceMotion
 
+    private var compact: Bool { model.meetingCompact && model.openMeetingID != nil }
+
     var body: some View {
-        VStack(spacing: 0) {
-            TopBar(model: model, reduceMotion: reduce)
-            HStack(spacing: 0) {
-                Rail(model: model, reduceMotion: reduce)
-                page
-                    .id(model.page)
-                    .transition(.pageEnter(reduceMotion: reduce))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
+        Group {
+            if compact, let meetingID = model.openMeetingID {
+                CompactMeetingView(model: model, meetingID: meetingID, reduceMotion: reduce)
+            } else {
+                VStack(spacing: 0) {
+                    TopBar(model: model, reduceMotion: reduce)
+                    HStack(spacing: 0) {
+                        Rail(model: model, reduceMotion: reduce)
+                        page
+                            .id(model.page)
+                            .transition(.pageEnter(reduceMotion: reduce))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
+                    }
+                }
             }
         }
         .background(AppColor.canvas.ignoresSafeArea())
+        .background { MeetingWindowFrame(compact: compact) }
         .containerBackground(AppColor.canvas, for: .window)
         .sheet(isPresented: $model.recordingSetupPresented) {
             RecordingSetupView(model: model)

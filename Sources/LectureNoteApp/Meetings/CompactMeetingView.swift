@@ -1,0 +1,127 @@
+import SwiftUI
+
+struct CompactMeetingView: View {
+    @Bindable var model: AppModel
+    var meetingID: UUID
+    var reduceMotion: Bool
+    @State private var recordingChoice = false
+    @State private var stopArmed = false
+
+    var body: some View {
+        Group {
+            if let meeting = model.meetings.first(where: { $0.id == meetingID }) {
+                content(meeting)
+            }
+        }
+    }
+
+    private func content(_ meeting: Meeting) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            if meeting.isLive || model.engine.session.phase != .idle {
+                HStack {
+                    Spacer(minLength: 0)
+                    sessionControl
+                    Spacer(minLength: 0)
+                }
+            }
+            HStack(spacing: Space.s2) {
+                Button {
+                    withAnimation(Motion.layout(reduceMotion)) {
+                        model.closeMeeting()
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .frame(width: 28, height: 28)
+                        .background(AppColor.surface, in: Circle())
+                }
+                .buttonStyle(.plain.clicking())
+                .accessibilityLabel(tr("返回会议列表"))
+
+                CategoryIcon(
+                    symbol: model.category(for: meeting.categoryID)?.symbol ?? CategoryPalette.uncategorizedSymbol,
+                    colorIndex: model.category(for: meeting.categoryID)?.colorIndex ?? CategoryPalette.uncategorizedIndex
+                )
+                Text(meeting.title.isEmpty ? tr("未命名会议") : meeting.title)
+                    .font(AppFont.sectionTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: Space.s2)
+                Button {
+                    model.meetingCompact = false
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(width: 28, height: 28)
+                        .background(AppColor.surface, in: Circle())
+                }
+                .buttonStyle(.plain.clicking())
+                .accessibilityLabel(tr("恢复窗口"))
+                .help(tr("恢复窗口"))
+            }
+            DetailSidePanel(
+                model: model,
+                meeting: meeting,
+                reduceMotion: reduceMotion,
+                onClose: {},
+                tabs: DetailTab.compactTabs,
+                initialTab: .transcript,
+                showsClose: false
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(AppColor.canvas.ignoresSafeArea().gesture(WindowDragGesture()))
+        .onChange(of: model.engine.session.phase) { _, phase in
+            if phase == .idle { stopArmed = false }
+        }
+        .alert(tr("继续录制还是停止？"), isPresented: $recordingChoice) {
+            Button(tr("继续录制")) { continueRecording() }
+            Button(tr("停止"), role: .destructive) { chooseStop() }
+        } message: {
+            Text(model.engine.session.phase == .idle
+                 ? tr("继续会开始录制这场会议。")
+                 : tr("停止后需要再点一次红色按钮，才会结束录制。"))
+        }
+    }
+
+    private var sessionControl: some View {
+        SessionControl(
+            session: model.engine.session,
+            meter: model.engine.level,
+            canStart: model.canStart,
+            startTitle: model.recordingActionTitle,
+            reduceMotion: reduceMotion,
+            stopArmed: stopArmed,
+            onStart: beginRecording,
+            onStop: {
+                stopArmed = false
+                model.stopTranscription()
+            },
+            onTogglePause: model.togglePause,
+            onAsk: { recordingChoice = true }
+        )
+    }
+
+    private func beginRecording() {
+        if model.resumableMeeting != nil {
+            recordingChoice = true
+        } else {
+            model.performRecordingAction()
+        }
+    }
+
+    private func continueRecording() {
+        stopArmed = false
+        guard model.engine.session.phase == .idle else { return }
+        model.performRecordingAction()
+    }
+
+    private func chooseStop() {
+        guard model.engine.session.phase != .idle else { return }
+        stopArmed = true
+    }
+}

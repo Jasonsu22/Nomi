@@ -61,7 +61,10 @@ struct LectureNoteApp: App {
         AppShell(model: model)
             .id(interfaceLanguage)
             .environment(\.locale, InterfaceLanguage.resolved(interfaceLanguage).locale)
-            .frame(minWidth: 960, minHeight: 640)
+            .frame(
+                minWidth: model.meetingCompact && model.openMeetingID != nil ? 360 : 960,
+                minHeight: model.meetingCompact && model.openMeetingID != nil ? 560 : 640
+            )
             .modifier(ReduceMotionBridge())
             .modifier(ForcedColorScheme(scheme: forcedScheme))
     }

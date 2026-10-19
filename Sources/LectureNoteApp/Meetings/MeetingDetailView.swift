@@ -113,6 +113,18 @@ struct MeetingDetailView: View {
                     }
 
                 Spacer(minLength: Space.s2)
+                Button {
+                    model.meetingCompact = true
+                } label: {
+                    Image(systemName: "square.on.square")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(AppColor.surface, in: Circle())
+                }
+                .buttonStyle(.plain.clicking())
+                .accessibilityLabel(tr("缩小窗口"))
+                .help(tr("缩小窗口"))
                 if !showSide {
                     Button {
                         withAnimation(Motion.layout(reduceMotion)) {

@@ -65,6 +65,51 @@ struct AnswerDocumentTests {
         #expect(oversized.contains { if case .widget = $0 { return true } else { return false } })
     }
 
+    @Test func completePageBecomesAWidgetWithoutItsShell() {
+        let pieces = AnswerDocument.pieces(in: """
+        可以。
+        ```html
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>互动渐变</title>
+        <style>body { margin: 0; }</style>
+        </head>
+        <body>
+        <input type="range">
+        </body>
+        </html>
+        ```
+        """)
+        let widget = pieces.compactMap { piece -> (String, String)? in
+            if case .widget(let title, let html) = piece { return (title, html) }
+            return nil
+        }
+        #expect(widget.count == 1)
+        #expect(widget.first?.0 == "互动渐变")
+        #expect(widget.first?.1.contains("<input type=\"range\">") == true)
+        #expect(widget.first?.1.contains("<style>") == true)
+        #expect(widget.first?.1.lowercased().contains("<!doctype") == false)
+        #expect(widget.first?.1.lowercased().contains("<meta") == false)
+    }
+
+    @Test func completePageWithAnExternalScriptStaysCode() {
+        let pieces = AnswerDocument.pieces(in: """
+        ```
+        <!doctype html>
+        <html><body><script src="https://example.com/app.js"></script></body></html>
+        ```
+        ```python
+        <html><body>print</body></html>
+        ```
+        """)
+        #expect(!pieces.contains { if case .widget = $0 { return true } else { return false } })
+        #expect(pieces.contains { if case .code(let body) = $0 { return body.contains("example.com") } else { return false } })
+        #expect(pieces.contains { if case .code(let body) = $0 { return body.contains("print") } else { return false } })
+    }
+
     @Test func streamingHidesHtmlFencesUntilTheAnswerFinishes() {
         let open = AnswerDocument.streamingPieces(in: "说明\n```html 图\n<svg>")
         #expect(open.contains { if case .text(let text) = $0 { return text.contains("说明") } else { return false } })

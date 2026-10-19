@@ -6,6 +6,7 @@ struct TranscriptCard: View {
     var transcript: LiveTranscript
     var reduceMotion: Bool
     var canCompare: Bool
+    var embedded = false
     var onCopy: (Meeting) -> Void
 
     @AppStorage("lecturenote.transcriptFontSize") private var fontSize = 15.0
@@ -17,14 +18,25 @@ struct TranscriptCard: View {
 
     var body: some View {
         let paragraphs = paragraphs
-        VStack(alignment: .leading, spacing: 0) {
+        card(paragraphs)
+        .onAppear {
+            followsLatest = meeting.isLive
+        }
+    }
+
+    private func card(_ paragraphs: [Paragraph]) -> some View {
+        let content = VStack(alignment: .leading, spacing: 0) {
             toolbar
             transcript(paragraphs)
         }
-        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .onAppear {
-            followsLatest = meeting.isLive
+        return Group {
+            if embedded {
+                content
+            } else {
+                content
+                    .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+            }
         }
     }
 
@@ -34,9 +46,11 @@ struct TranscriptCard: View {
 
     private var toolbar: some View {
         HStack(spacing: Space.s2) {
-            Text(tr("转写"))
-                .font(AppFont.sectionTitle)
-                .foregroundStyle(AppColor.textPrimary)
+            if !embedded {
+                Text(tr("转写"))
+                    .font(AppFont.sectionTitle)
+                    .foregroundStyle(AppColor.textPrimary)
+            }
             Spacer(minLength: Space.s2)
             fontButton("A−") { fontSize = max(13, fontSize - 1) }
             fontButton("A+") { fontSize = min(20, fontSize + 1) }

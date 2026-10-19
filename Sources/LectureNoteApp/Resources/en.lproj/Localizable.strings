@@ -95,6 +95,8 @@
 "打不开麦克风" = "Cannot open the selected audio input";
 "打开" = "Open";
 "打开侧栏" = "Show Sidebar";
+"缩小窗口" = "Shrink the Window";
+"恢复窗口" = "Restore the Window";
 "找不到示例回放。" = "The sample recording could not be found.";
 "找不到窗口，无法打开保存面板。" = "Cannot find a window for the save dialog.";
 "把当前筛选出的会议存成 Markdown" = "Save the filtered meetings as Markdown";
