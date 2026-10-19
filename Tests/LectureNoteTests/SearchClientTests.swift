@@ -45,6 +45,7 @@ struct SearchClientTests {
         #expect(found.count == 1)
         #expect(found[0].url == "https://example.com/a")
         #expect(found[0].detail == "example.com")
+        #expect(found[0].passage == 1)
     }
 
     @Test func webPromptDoesNotTellTheModelToSearchByItself() {

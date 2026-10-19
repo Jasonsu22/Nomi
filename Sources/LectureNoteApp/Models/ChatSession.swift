@@ -190,6 +190,27 @@ struct ChatCitation: Codable, Equatable, Identifiable, Sendable {
     var meetingID: UUID?
     var sourceID: UUID?
     var url: String?
+    /// Passage number written as [1] in the answer. Empty for a bare link.
+    var passage: Int?
+
+    var inlineLabel: String {
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = name.isEmpty ? fallback : name
+        if label.count <= 40 { return label }
+        return String(label.prefix(40)) + "…"
+    }
+
+    var inlineURL: URL? {
+        if let raw = url, let parsed = URL(string: raw),
+           let scheme = parsed.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            return parsed
+        }
+        if meetingID != nil || sourceID != nil {
+            return URL(string: "nomi-cite://\(id.uuidString)")
+        }
+        return nil
+    }
 }
 
 struct ChatTurn: Codable, Equatable, Identifiable, Sendable {

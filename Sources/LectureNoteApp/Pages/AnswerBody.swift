@@ -5,7 +5,13 @@ import WebKit
 struct AnswerBody: View {
     var source: String
     var streaming = false
+    var citations: [ChatCitation] = []
+    var onOpenCitation: (ChatCitation) -> Void = { _ in }
     @Environment(\.colorScheme) private var colorScheme
+
+    private var linked: [Int: ChatCitation] {
+        ChatContext.linkedCitations(in: source, citations: citations)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
@@ -27,11 +33,7 @@ struct AnswerBody: View {
             } else {
                 let pieces = AnswerDocument.pieces(in: source)
                 if pieces.isEmpty {
-                    Text(source)
-                        .font(AppFont.body)
-                        .foregroundStyle(AppColor.textPrimary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    answerText(AnswerInline.render(source, citations: linked))
                 } else {
                     ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
                         pieceView(piece)
@@ -40,19 +42,38 @@ struct AnswerBody: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .environment(\.openURL, OpenURLAction { url in
+            open(url)
+            return .handled
+        })
+    }
+
+    private func open(_ url: URL) {
+        let scheme = url.scheme?.lowercased()
+        if scheme == "nomi-cite" {
+            let token = url.host ?? String(url.path.drop(while: { $0 == "/" }))
+            if let id = UUID(uuidString: token), let citation = citations.first(where: { $0.id == id }) {
+                onOpenCitation(citation)
+            }
+            return
+        }
+        if scheme == "http" || scheme == "https" {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func answerText(_ text: AttributedString) -> some View {
+        AnswerText(attributed: text, onOpen: open)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private func pieceView(_ piece: AnswerDocument.Piece) -> some View {
         switch piece {
         case .heading(let level, let text):
-            Text(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: linked))
         case .paragraph(let text):
-            Text(AnswerInline.render(text))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            answerText(AnswerInline.render(text, citations: linked))
         case .list(let ordered, let items):
             VStack(alignment: .leading, spacing: Space.s1) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
@@ -60,9 +81,7 @@ struct AnswerBody: View {
                         Text(ordered ? "\(index + 1)." : "•")
                             .font(AppFont.body)
                             .foregroundStyle(AppColor.textSecondary)
-                        Text(AnswerInline.render(item))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        answerText(AnswerInline.render(item, citations: linked))
                     }
                 }
             }
@@ -78,15 +97,13 @@ struct AnswerBody: View {
             Grid(alignment: .leading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        Text(AnswerInline.render(cell, size: 13, weight: .semibold))
-                            .textSelection(.enabled)
+                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: linked))
                     }
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(AnswerInline.render(cell, size: 13))
-                                .textSelection(.enabled)
+                            answerText(AnswerInline.render(cell, size: 13, citations: linked))
                         }
                     }
                 }
@@ -222,5 +239,116 @@ private struct HtmlAnswerWebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             nil
         }
+    }
+}
+
+/// Selectable answer text. Ordinary characters keep the text cursor; a link uses the pointing hand.
+private struct AnswerText: NSViewRepresentable {
+    var attributed: AttributedString
+    var onOpen: (URL) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onOpen: onOpen)
+    }
+
+    func makeNSView(context: Context) -> LinkTextView {
+        let view = LinkTextView()
+        view.drawsBackground = false
+        view.isEditable = false
+        view.isSelectable = true
+        view.isRichText = true
+        view.importsGraphics = false
+        view.isAutomaticLinkDetectionEnabled = false
+        view.isAutomaticDataDetectionEnabled = false
+        view.textContainerInset = .zero
+        view.textContainer?.lineFragmentPadding = 0
+        view.textContainer?.widthTracksTextView = false
+        view.isVerticallyResizable = true
+        view.isHorizontallyResizable = false
+        view.focusRingType = .none
+        view.delegate = context.coordinator
+        view.textStorage?.setAttributedString(NSAttributedString(attributed))
+        return view
+    }
+
+    func updateNSView(_ view: LinkTextView, context: Context) {
+        context.coordinator.onOpen = onOpen
+        let next = NSAttributedString(attributed)
+        if view.attributedString() != next {
+            view.textStorage?.setAttributedString(next)
+        }
+        view.window?.invalidateCursorRects(for: view)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: LinkTextView, context: Context) -> CGSize? {
+        let proposed = proposal.width ?? .infinity
+        let width = proposed.isFinite ? max(proposed, 1) : 10_000
+        guard let container = nsView.textContainer, let layout = nsView.layoutManager else {
+            return CGSize(width: width, height: 20)
+        }
+        container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        let used = layout.usedRect(for: container)
+        return CGSize(width: width, height: max(ceil(used.height), 1))
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var onOpen: (URL) -> Void
+
+        init(onOpen: @escaping (URL) -> Void) {
+            self.onOpen = onOpen
+        }
+
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            let url: URL?
+            if let value = link as? URL {
+                url = value
+            } else if let value = link as? String {
+                url = URL(string: value)
+            } else {
+                url = nil
+            }
+            guard let url else { return false }
+            onOpen(url)
+            return true
+        }
+    }
+}
+
+private final class LinkTextView: NSTextView {
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .iBeam)
+        guard let layoutManager, let container = textContainer, let storage = textStorage, storage.length > 0 else { return }
+        layoutManager.ensureLayout(for: container)
+        let origin = textContainerOrigin
+        storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard value != nil, range.length > 0 else { return }
+            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            layoutManager.enumerateEnclosingRects(
+                forGlyphRange: glyphs,
+                withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                in: container
+            ) { rect, _ in
+                var hit = rect
+                hit.origin.x += origin.x
+                hit.origin.y += origin.y
+                self.addCursorRect(hit, cursor: .pointingHand)
+            }
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        window?.invalidateCursorRects(for: self)
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        guard let container = textContainer else { return }
+        if abs(container.containerSize.width - newSize.width) > 0.5 {
+            container.containerSize = NSSize(width: max(newSize.width, 1), height: CGFloat.greatestFiniteMagnitude)
+            layoutManager?.ensureLayout(for: container)
+        }
+        window?.invalidateCursorRects(for: self)
     }
 }

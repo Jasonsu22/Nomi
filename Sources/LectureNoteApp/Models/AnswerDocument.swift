@@ -455,19 +455,41 @@ enum AnswerDocument {
 }
 
 enum AnswerInline {
-    static func render(_ source: String, size: CGFloat = 15, weight: Font.Weight = .regular) -> AttributedString {
+    static func render(
+        _ source: String,
+        size: CGFloat = 15,
+        weight: Font.Weight = .regular,
+        citations: [Int: ChatCitation] = [:]
+    ) -> AttributedString {
         var result = AttributedString()
         var index = source.startIndex
         while index < source.endIndex {
+            if source[index] == "[" || source[index] == "【" {
+                if source[index] == "[", let linked = link(source, from: index, size: size, weight: weight) {
+                    result.append(linked.text)
+                    index = linked.next
+                    continue
+                }
+                if let cited = citation(source, from: index, size: size, citations: citations) {
+                    result.append(cited.text)
+                    index = cited.next
+                    continue
+                }
+            }
+            if let bare = bareLink(source, from: index, size: size, weight: weight) {
+                result.append(bare.text)
+                index = bare.next
+                continue
+            }
             if source[index...].hasPrefix("**"),
                let end = closing(source, from: source.index(index, offsetBy: 2), marker: "**") {
-                result.append(styled(String(source[source.index(index, offsetBy: 2)..<end]), size: size, weight: .semibold))
+                result.append(render(String(source[source.index(index, offsetBy: 2)..<end]), size: size, weight: .semibold, citations: citations))
                 index = source.index(end, offsetBy: 2)
                 continue
             }
             if source[index...].hasPrefix("__"),
                let end = closing(source, from: source.index(index, offsetBy: 2), marker: "__") {
-                result.append(styled(String(source[source.index(index, offsetBy: 2)..<end]), size: size, weight: .semibold))
+                result.append(render(String(source[source.index(index, offsetBy: 2)..<end]), size: size, weight: .semibold, citations: citations))
                 index = source.index(end, offsetBy: 2)
                 continue
             }
@@ -478,13 +500,10 @@ enum AnswerInline {
             }
             if source[index] == "*", !source[index...].hasPrefix("**"),
                let end = closing(source, from: source.index(after: index), marker: "*") {
-                result.append(styled(String(source[source.index(after: index)..<end]), size: size, weight: weight, italic: true))
+                var inner = render(String(source[source.index(after: index)..<end]), size: size, weight: weight, citations: citations)
+                inner.font = Font.system(size: size, weight: weight).italic()
+                result.append(inner)
                 index = source.index(after: end)
-                continue
-            }
-            if source[index] == "[", let linked = link(source, from: index, size: size, weight: weight) {
-                result.append(linked.text)
-                index = linked.next
                 continue
             }
             result.append(styled(String(source[index]), size: size, weight: weight))
@@ -500,6 +519,58 @@ enum AnswerInline {
             index = source.index(after: index)
         }
         return nil
+    }
+
+    private static func citation(
+        _ source: String,
+        from start: String.Index,
+        size: CGFloat,
+        citations: [Int: ChatCitation]
+    ) -> (text: AttributedString, next: String.Index)? {
+        let opener = source[start]
+        let closer: Character = opener == "【" ? "】" : "]"
+        guard opener == "[" || opener == "【" else { return nil }
+        let digitsStart = source.index(after: start)
+        guard digitsStart < source.endIndex else { return nil }
+        var index = digitsStart
+        while index < source.endIndex, source[index].isNumber {
+            index = source.index(after: index)
+        }
+        guard index > digitsStart, index < source.endIndex, source[index] == closer else { return nil }
+        let next = source.index(after: index)
+        if opener == "[", next < source.endIndex, source[next] == "(" { return nil }
+        guard let number = Int(source[digitsStart..<index]),
+              let citation = citations[number],
+              !citation.inlineLabel.isEmpty else { return nil }
+        var text = styled(citation.inlineLabel, size: max(size - 1, 12), weight: .medium)
+        text.foregroundColor = AppColor.accent
+        text.underlineStyle = .single
+        if let url = citation.inlineURL { text.link = url }
+        return (text, next)
+    }
+
+    private static func bareLink(
+        _ source: String,
+        from start: String.Index,
+        size: CGFloat,
+        weight: Font.Weight
+    ) -> (text: AttributedString, next: String.Index)? {
+        let rest = source[start...]
+        guard rest.hasPrefix("https://") || rest.hasPrefix("http://") else { return nil }
+        var end = start
+        while end < source.endIndex, !source[end].isWhitespace, !"<>\"'".contains(source[end]) {
+            end = source.index(after: end)
+        }
+        while end > start, ".,);]】".contains(source[source.index(before: end)]) {
+            end = source.index(before: end)
+        }
+        let urlText = String(source[start..<end])
+        guard let url = URL(string: urlText),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
+        var text = styled(urlText, size: size, weight: weight)
+        text.link = url
+        text.foregroundColor = AppColor.accent
+        return (text, end)
     }
 
     private static func link(_ source: String, from start: String.Index, size: CGFloat, weight: Font.Weight) -> (text: AttributedString, next: String.Index)? {
