@@ -22,7 +22,7 @@ cargo "${cargo_args[@]}"
 swift build -c "$config"
 bin_dir="$(swift build -c "$config" --show-bin-path)"
 binary="$bin_dir/LectureNoteApp"
-resource_bundle="$(find "$bin_dir" -maxdepth 1 -name '*.bundle' -print -quit)"
+app_bundle="$bin_dir/LectureNoteApp_LectureNoteApp.bundle"
 engine_dir="$root/Backend/target/$config"
 for name in moxin-engine asr-worker llm-worker; do
     if [[ ! -x "$engine_dir/$name" ]]; then
@@ -30,7 +30,7 @@ for name in moxin-engine asr-worker llm-worker; do
         exit 1
     fi
 done
-if [[ ! -x "$binary" || -z "$resource_bundle" || ! -f "$engine_dir/mlx.metallib" ]]; then
+if [[ ! -x "$binary" || ! -d "$app_bundle" || ! -f "$engine_dir/mlx.metallib" ]]; then
     echo "缺少应用资源或 MLX Metal 库，停止打包。" >&2
     exit 1
 fi
@@ -40,7 +40,10 @@ rm -rf "$app" "$root/build/LectureNote.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 
 cp "$binary" "$app/Contents/MacOS/Nomi"
-cp -R "$resource_bundle" "$app/Contents/Resources/"
+for bundle in "$bin_dir"/*.bundle; do
+    [[ -d "$bundle" ]] || continue
+    cp -R "$bundle" "$app/Contents/Resources/"
+done
 for name in moxin-engine asr-worker llm-worker; do
     cp "$engine_dir/$name" "$app/Contents/MacOS/$name"
 done

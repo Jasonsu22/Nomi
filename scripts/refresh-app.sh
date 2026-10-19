@@ -15,15 +15,18 @@ fi
 swift build -c debug
 bin_dir="$(swift build -c debug --show-bin-path)"
 binary="$bin_dir/LectureNoteApp"
-bundle="$(find "$bin_dir" -maxdepth 1 -name '*.bundle' -print -quit)"
-if [[ ! -x "$binary" || -z "$bundle" ]]; then
+app_bundle="$bin_dir/LectureNoteApp_LectureNoteApp.bundle"
+if [[ ! -x "$binary" || ! -d "$app_bundle" ]]; then
     echo "Swift 构建没有产出程序或资源包。" >&2
     exit 1
 fi
 
 cp "$binary" "$app/Contents/MacOS/Nomi"
 rm -rf "$app/Contents/Resources/"*.bundle
-cp -R "$bundle" "$app/Contents/Resources/"
+for bundle in "$bin_dir"/*.bundle; do
+    [[ -d "$bundle" ]] || continue
+    cp -R "$bundle" "$app/Contents/Resources/"
+done
 touch "$app"
 "$root/scripts/sign-app.sh" "$app"
 echo "$app"

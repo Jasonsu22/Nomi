@@ -10,30 +10,13 @@ struct AnswerBody: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            if streaming {
-                ForEach(Array(AnswerDocument.streamingPieces(in: source).enumerated()), id: \.offset) { _, piece in
-                    switch piece {
-                    case .text(let text):
-                        Text(text)
-                            .font(AppFont.body)
-                            .foregroundStyle(AppColor.textPrimary)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    case .preparing:
-                        Text(tr("正在准备图示…"))
-                            .font(AppFont.secondary)
-                            .foregroundStyle(AppColor.textSecondary)
-                    }
-                }
+        let pieces = AnswerDocument.pieces(in: source, streaming: streaming)
+        return VStack(alignment: .leading, spacing: Space.s3) {
+            if pieces.isEmpty {
+                answerText(AnswerInline.render(source, citations: linkedCitations, streaming: streaming))
             } else {
-                let pieces = AnswerDocument.pieces(in: source)
-                if pieces.isEmpty {
-                    answerText(AnswerInline.render(source, citations: linkedCitations))
-                } else {
-                    ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
-                        pieceView(piece)
-                    }
+                ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
+                    pieceView(piece)
                 }
             }
         }
@@ -74,7 +57,7 @@ struct AnswerBody: View {
             marker.font = Font.system(size: 15)
             marker.foregroundColor = AppColor.textSecondary
             text.append(NSAttributedString(marker))
-            text.append(NSAttributedString(AnswerInline.render(item, citations: linkedCitations)))
+            text.append(NSAttributedString(AnswerInline.render(item, citations: linkedCitations, streaming: streaming)))
             if index + 1 < items.count {
                 text.append(NSAttributedString(string: "\n"))
             }
@@ -84,38 +67,47 @@ struct AnswerBody: View {
     }
 
     private func answerText(_ text: AttributedString) -> some View {
-        CiteText(attributed: text, citations: citations, colorScheme: colorScheme, onOpen: open)
+        CiteText(attributed: text, citations: citations, colorScheme: colorScheme, streaming: streaming, onOpen: open)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func codeText(_ code: String) -> AttributedString {
+        var text = AttributedString(code)
+        text.font = .system(size: 13, design: .monospaced)
+        text.foregroundColor = AppColor.textPrimary
+        return text
     }
 
     @ViewBuilder
     private func pieceView(_ piece: AnswerDocument.Piece) -> some View {
         switch piece {
         case .heading(let level, let text):
-            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: linkedCitations))
+            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: linkedCitations, streaming: streaming))
         case .paragraph(let text):
-            answerText(AnswerInline.render(text, citations: linkedCitations))
+            answerText(AnswerInline.render(text, citations: linkedCitations, streaming: streaming))
         case .list(let ordered, let items):
             answerText(listText(ordered: ordered, items: items))
         case .code(let code):
-            Text(code)
-                .font(.system(size: 13, design: .monospaced))
-                .foregroundStyle(AppColor.textPrimary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            answerText(codeText(code))
                 .padding(Space.s2)
                 .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.tag, style: .continuous))
+        case .math(let latex):
+            answerText(MathFormula.block(latex))
+        case .preparing:
+            Text(tr("正在准备图示…"))
+                .font(AppFont.secondary)
+                .foregroundStyle(AppColor.textSecondary)
         case .table(let header, let rows):
             Grid(alignment: .leading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: linkedCitations))
+                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: linkedCitations, streaming: streaming))
                     }
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            answerText(AnswerInline.render(cell, size: 13, citations: linkedCitations))
+                            answerText(AnswerInline.render(cell, size: 13, citations: linkedCitations, streaming: streaming))
                         }
                     }
                 }
@@ -336,6 +328,7 @@ private struct CiteText: NSViewRepresentable {
     var attributed: AttributedString
     var citations: [ChatCitation]
     var colorScheme: ColorScheme
+    var streaming = false
     var onOpen: (URL) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -359,14 +352,14 @@ private struct CiteText: NSViewRepresentable {
         view.focusRingType = .none
         view.delegate = context.coordinator
         view.hover = context.coordinator
-        context.coordinator.apply(attributed, citations: citations, colorScheme: colorScheme, to: view)
+        context.coordinator.apply(attributed, citations: citations, colorScheme: colorScheme, streaming: streaming, to: view)
         return view
     }
 
     func updateNSView(_ view: CiteTextView, context: Context) {
         context.coordinator.onOpen = onOpen
         view.hover = context.coordinator
-        context.coordinator.apply(attributed, citations: citations, colorScheme: colorScheme, to: view)
+        context.coordinator.apply(attributed, citations: citations, colorScheme: colorScheme, streaming: streaming, to: view)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: CiteTextView, context: Context) -> CGSize? {
@@ -386,7 +379,15 @@ private struct CiteText: NSViewRepresentable {
         var onOpen: (URL) -> Void
         private var citations: [ChatCitation] = []
         private var colorScheme: ColorScheme = .light
+        private var streaming = false
         private var source: AttributedString?
+        private var layoutWidth: CGFloat = 0
+        private var born: [Int: TimeInterval] = [:]
+        private var baseColors: [Int: NSColor] = [:]
+        private var baseImages: [Int: NSImage] = [:]
+        private var fadeTimer: Timer?
+        private weak var textView: CiteTextView?
+        private let fadeDuration = 0.18
         private var underlined: NSRange?
         private var shownURL: URL?
         private var pendingURL: URL?
@@ -405,10 +406,13 @@ private struct CiteText: NSViewRepresentable {
             popover.contentViewController = host
         }
 
-        func apply(_ attributed: AttributedString, citations: [ChatCitation], colorScheme: ColorScheme, to view: CiteTextView) {
+        func apply(_ attributed: AttributedString, citations: [ChatCitation], colorScheme: ColorScheme, streaming: Bool, to view: CiteTextView) {
             self.citations = citations
-            let changed = source != attributed || self.colorScheme != colorScheme
+            textView = view
+            let width = view.bounds.width
+            let changed = source != attributed || self.colorScheme != colorScheme || self.streaming != streaming || abs(layoutWidth - width) > 8
             self.colorScheme = colorScheme
+            self.streaming = streaming
             source = attributed
             let color = CiteLink.accent(colorScheme)
             view.linkTextAttributes = [
@@ -419,7 +423,19 @@ private struct CiteText: NSViewRepresentable {
             guard changed else { return }
             underlined = nil
             view.clearUnderline()
-            view.textStorage?.setAttributedString(decorated(attributed, color: color))
+            let next = decorated(attributed, color: color, maxWidth: width > 40 ? width : 640)
+            if !streaming {
+                stopFade()
+                view.textStorage?.setAttributedString(next)
+            } else {
+                let previous = view.textStorage?.string ?? ""
+                if abs(layoutWidth - width) > 8 { baseImages.removeAll() }
+                syncBirths(from: previous, to: next.string)
+                view.textStorage?.setAttributedString(next)
+                rememberBases(next)
+                if paintFade(in: view) { scheduleFade() }
+            }
+            layoutWidth = width
             view.window?.invalidateCursorRects(for: view)
         }
 
@@ -533,8 +549,139 @@ private struct CiteText: NSViewRepresentable {
             }
         }
 
-        private func decorated(_ source: AttributedString, color: NSColor) -> NSAttributedString {
+        private func stopFade() {
+            fadeTimer?.invalidate()
+            fadeTimer = nil
+            born.removeAll()
+            baseColors.removeAll()
+            baseImages.removeAll()
+        }
+
+        private func syncBirths(from old: String, to new: String) {
+            let oldText = old as NSString
+            let newText = new as NSString
+            let limit = min(oldText.length, newText.length)
+            var prefix = 0
+            while prefix < limit, oldText.character(at: prefix) == newText.character(at: prefix) {
+                prefix += 1
+            }
+            born = born.filter { $0.key < prefix }
+            baseColors = baseColors.filter { $0.key < prefix }
+            baseImages = baseImages.filter { $0.key < prefix }
+            let extra = newText.length - prefix
+            guard extra > 0 else { return }
+            let now = Date().timeIntervalSinceReferenceDate
+            let lagCap = 0.16
+            var cursor = born.values.max() ?? now
+            if cursor < now { cursor = now }
+            if cursor > now + lagCap {
+                for index in born.keys where (born[index] ?? 0) > now {
+                    born[index] = now
+                }
+                cursor = now
+            }
+            let room = max(0, now + lagCap - cursor)
+            let step = extra > 1 ? min(0.012, room / Double(extra)) : 0
+            for offset in 0..<extra {
+                born[prefix + offset] = cursor + Double(offset) * step
+            }
+        }
+
+        private func rememberBases(_ text: NSAttributedString) {
+            for index in 0..<text.length where born[index] != nil {
+                if baseColors[index] == nil {
+                    baseColors[index] = text.attribute(.foregroundColor, at: index, effectiveRange: nil) as? NSColor
+                }
+                if baseImages[index] == nil,
+                   let attachment = text.attribute(.attachment, at: index, effectiveRange: nil) as? NSTextAttachment,
+                   let image = attachment.image {
+                    baseImages[index] = image
+                }
+            }
+        }
+
+        private func opacity(at index: Int, now: TimeInterval) -> CGFloat {
+            guard let birth = born[index] else { return 1 }
+            let t = (now - birth) / fadeDuration
+            if t >= 1 { return 1 }
+            if t <= 0 { return 0 }
+            return CGFloat(1 - (1 - t) * (1 - t))
+        }
+
+        @discardableResult
+        private func paintFade(in view: CiteTextView) -> Bool {
+            guard let storage = view.textStorage else { return false }
+            let now = Date().timeIntervalSinceReferenceDate
+            var pending = false
+            storage.beginEditing()
+            var finished: [Int] = []
+            for index in born.keys where index < storage.length {
+                let alpha = opacity(at: index, now: now)
+                let range = NSRange(location: index, length: 1)
+                if alpha >= 0.999 {
+                    if let color = baseColors[index] {
+                        storage.addAttribute(.foregroundColor, value: color, range: range)
+                    }
+                    if let image = baseImages[index],
+                       let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil) as? NSTextAttachment {
+                        attachment.image = image
+                    }
+                    finished.append(index)
+                    continue
+                }
+                pending = true
+                if let color = baseColors[index] {
+                    storage.addAttribute(.foregroundColor, value: color.withAlphaComponent(color.alphaComponent * alpha), range: range)
+                }
+                if let image = baseImages[index],
+                   let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil) as? NSTextAttachment {
+                    attachment.image = faded(image, alpha: alpha)
+                }
+            }
+            storage.endEditing()
+            if let layout = view.layoutManager, storage.length > 0 {
+                layout.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: storage.length))
+            }
+            view.needsDisplay = true
+            for index in finished {
+                born[index] = nil
+                baseColors[index] = nil
+                baseImages[index] = nil
+            }
+            return pending
+        }
+
+        private func faded(_ image: NSImage, alpha: CGFloat) -> NSImage {
+            let result = NSImage(size: image.size)
+            result.lockFocus()
+            image.draw(in: NSRect(origin: .zero, size: image.size), from: .zero, operation: .sourceOver, fraction: max(alpha, 0))
+            result.unlockFocus()
+            return result
+        }
+
+        private func scheduleFade() {
+            guard fadeTimer == nil else { return }
+            let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] timer in
+                let finished = MainActor.assumeIsolated { () -> Bool in
+                    guard let self, let view = self.textView else { return true }
+                    return !self.paintFade(in: view)
+                }
+                guard finished else { return }
+                timer.invalidate()
+                MainActor.assumeIsolated {
+                    self?.fadeTimer = nil
+                    self?.born.removeAll()
+                    self?.baseColors.removeAll()
+                    self?.baseImages.removeAll()
+                }
+            }
+            fadeTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+
+        private func decorated(_ source: AttributedString, color: NSColor, maxWidth: CGFloat) -> NSAttributedString {
             let text = NSMutableAttributedString(attributedString: NSAttributedString(source))
+            replaceMath(in: text, maxWidth: maxWidth)
             var ranges: [NSRange] = []
             text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
                 if value != nil { ranges.append(range) }
@@ -554,6 +701,38 @@ private struct CiteText: NSViewRepresentable {
                 text.removeAttribute(.underlineStyle, range: whole)
             }
             return text
+        }
+
+        private func replaceMath(in text: NSMutableAttributedString, maxWidth: CGFloat) {
+            let ink = colorScheme == .dark ? NSColor(hex: 0xE6E8EB) : NSColor(hex: 0x111418)
+            var found: [(NSRange, URL)] = []
+            text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+                guard let url = CiteLink.url(from: value), url.scheme == "nomi-math" else { return }
+                found.append((range, url))
+            }
+            let centers = found.count == 1 && found[0].0.location == 0 && found[0].0.length == text.length
+                && MathFormula.latex(from: found[0].1)?.display == true
+            for (range, url) in found.reversed() {
+                guard let parsed = MathFormula.latex(from: url) else { continue }
+                let font = text.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 15)
+                let fontSize = parsed.display ? 18 : font.pointSize
+                if let raster = MathRaster.raster(latex: parsed.latex, fontSize: fontSize, color: ink, display: parsed.display, maxWidth: maxWidth) {
+                    let attachment = NSTextAttachment()
+                    attachment.image = raster.image
+                    attachment.bounds = CGRect(x: 0, y: -raster.descent, width: raster.image.size.width, height: raster.image.size.height)
+                    text.replaceCharacters(in: range, with: NSAttributedString(attachment: attachment))
+                } else {
+                    text.replaceCharacters(in: range, with: NSAttributedString(string: parsed.latex, attributes: [
+                        .font: NSFont.monospacedSystemFont(ofSize: max(font.pointSize - 1, 12), weight: .regular),
+                        .foregroundColor: ink,
+                    ]))
+                }
+            }
+            if centers, text.length > 0 {
+                let style = NSMutableParagraphStyle()
+                style.alignment = .center
+                text.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: text.length))
+            }
         }
 
         /// One ordinary space before a link that sits against the previous word. The space stays outside the link.

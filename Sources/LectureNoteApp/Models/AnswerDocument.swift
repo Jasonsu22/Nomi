@@ -11,23 +11,24 @@ enum AnswerDocument {
         case list(ordered: Bool, items: [String])
         case code(String)
         case table(header: [String], rows: [[String]])
+        case math(String)
         case widget(title: String, html: String)
-    }
-
-    enum StreamPiece: Equatable {
-        case text(String)
         case preparing
     }
 
-    static func pieces(in source: String) -> [Piece] {
+    static func pieces(in source: String, streaming: Bool = false) -> [Piece] {
         var result: [Piece] = []
         var widgets = 0
         for region in regions(in: source) {
             switch region.kind {
             case .text:
-                result.append(contentsOf: markdown(region.body))
+                result.append(contentsOf: markdown(region.body, streaming: streaming))
             case .fence:
                 let body = region.body
+                if streaming, htmlTitle(region.info) != nil {
+                    result.append(.preparing)
+                    continue
+                }
                 guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                 if region.closed,
                    body.utf8.count <= widgetByteLimit,
@@ -43,34 +44,6 @@ enum AnswerDocument {
             }
         }
         return result
-    }
-
-    static func streamingPieces(in source: String) -> [StreamPiece] {
-        var pieces: [StreamPiece] = []
-        var text: [String] = []
-        func flush() {
-            guard !text.isEmpty else { return }
-            pieces.append(.text(text.joined(separator: "\n")))
-            text.removeAll()
-        }
-        for region in regions(in: source) {
-            switch region.kind {
-            case .text:
-                text.append(region.body)
-            case .fence:
-                if htmlTitle(region.info) != nil {
-                    flush()
-                    pieces.append(.preparing)
-                } else {
-                    var block = "```" + region.info
-                    if !region.body.isEmpty { block += "\n" + region.body }
-                    if region.closed { block += "\n```" }
-                    text.append(block)
-                }
-            }
-        }
-        flush()
-        return pieces
     }
 
     /// A fragment, or a complete page reduced to the styles, inline scripts, and body.
@@ -308,7 +281,7 @@ enum AnswerDocument {
         return String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces)
     }
 
-    private static func markdown(_ source: String) -> [Piece] {
+    private static func markdown(_ source: String, streaming: Bool) -> [Piece] {
         let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         var pieces: [Piece] = []
         var paragraph: [String] = []
@@ -323,6 +296,15 @@ enum AnswerDocument {
             if line.trimmingCharacters(in: .whitespaces).isEmpty {
                 flushParagraph()
                 index += 1
+                continue
+            }
+            if streaming, index == lines.count - 1, incompleteMarker(line) {
+                index += 1
+                continue
+            }
+            if let math = displayMath(lines, from: &index, streaming: streaming) {
+                flushParagraph()
+                if !math.isEmpty { pieces.append(.math(math)) }
                 continue
             }
             if let heading = heading(line) {
@@ -346,6 +328,71 @@ enum AnswerDocument {
         }
         flushParagraph()
         return pieces
+    }
+
+    /// A display formula on its own lines: `\[ ... \]` or `$$ ... $$`.
+    /// Returns the latex and advances `index`. Empty means the opener is still unfinished.
+    private static func displayMath(_ lines: [String], from index: inout Int, streaming: Bool) -> String? {
+        let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+        let pair: (String, String)
+        if trimmed.hasPrefix("\\[") {
+            pair = ("\\[", "\\]")
+        } else if trimmed.hasPrefix("$$") {
+            pair = ("$$", "$$")
+        } else {
+            return nil
+        }
+        let first = String(trimmed.dropFirst(pair.0.count))
+        if let range = first.range(of: pair.1) {
+            let after = first[range.upperBound...].trimmingCharacters(in: .whitespaces)
+            guard after.isEmpty else { return nil }
+            index += 1
+            return String(first[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        var body = [first]
+        var cursor = index + 1
+        var closed = false
+        while cursor < lines.count {
+            let raw = lines[cursor]
+            if let range = raw.range(of: pair.1), raw[range.upperBound...].trimmingCharacters(in: .whitespaces).isEmpty {
+                body.append(String(raw[..<range.lowerBound]))
+                closed = true
+                cursor += 1
+                break
+            }
+            body.append(raw)
+            cursor += 1
+        }
+        guard closed else {
+            guard streaming else { return nil }
+            index = lines.count
+            return ""
+        }
+        index = cursor
+        return body.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The last line of a stream that is only a heading or list marker, not yet a sentence.
+    private static func incompleteMarker(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed == "-" || trimmed == "*" || trimmed == "+" { return true }
+        var count = 0
+        for character in trimmed {
+            if character == "#" { count += 1 } else { break }
+        }
+        if (1...6).contains(count) {
+            let rest = trimmed.dropFirst(count)
+            if rest.isEmpty || rest.allSatisfy({ $0 == " " || $0 == "\t" }) { return true }
+        }
+        var digits = 0
+        for character in trimmed {
+            if character.isNumber { digits += 1 } else { break }
+        }
+        if (1...4).contains(digits) {
+            let rest = trimmed.dropFirst(digits)
+            if rest == "." || rest == ". " { return true }
+        }
+        return false
     }
 
     private static func heading(_ line: String) -> Piece? {
@@ -454,16 +501,61 @@ enum AnswerDocument {
     }
 }
 
+enum MathFormula {
+    static func url(latex: String, display: Bool) -> URL? {
+        let encoded = latex.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        guard !encoded.isEmpty else { return nil }
+        return URL(string: "nomi-math://\(display ? "display" : "inline")/\(encoded)")
+    }
+
+    static func latex(from url: URL) -> (latex: String, display: Bool)? {
+        guard url.scheme == "nomi-math" else { return nil }
+        let path = url.path
+        let latex = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        guard !latex.isEmpty else { return nil }
+        return (latex, url.host == "display")
+    }
+
+    static func block(_ latex: String) -> AttributedString {
+        var text = AttributedString("\u{FFFC}")
+        text.link = url(latex: latex, display: true)
+        text.font = .system(size: 18)
+        return text
+    }
+}
+
 enum AnswerInline {
     static func render(
         _ source: String,
         size: CGFloat = 15,
         weight: Font.Weight = .regular,
-        citations: [Int: ChatCitation] = [:]
+        citations: [Int: ChatCitation] = [:],
+        streaming: Bool = false
     ) -> AttributedString {
         var result = AttributedString()
         var index = source.startIndex
         while index < source.endIndex {
+            if source[index] == "`" {
+                let content = source.index(after: index)
+                if let end = source[content...].firstIndex(of: "`") {
+                    result.append(styled(String(source[content..<end]), size: size - 2, weight: weight, code: true))
+                    index = source.index(after: end)
+                    continue
+                }
+                if streaming {
+                    result.append(styled(String(source[content...]), size: size - 2, weight: weight, code: true))
+                    break
+                }
+            }
+            if let math = mathSpan(source, from: index, streaming: streaming) {
+                if let url = math.url {
+                    var text = styled("\u{FFFC}", size: size, weight: weight)
+                    text.link = url
+                    result.append(text)
+                }
+                index = math.next
+                continue
+            }
             if source[index] == "[" || source[index] == "【" {
                 if source[index] == "[", let linked = link(source, from: index, size: size, weight: weight) {
                     result.append(linked.text)
@@ -481,35 +573,74 @@ enum AnswerInline {
                 index = bare.next
                 continue
             }
-            if source[index...].hasPrefix("**"),
-               let end = closing(source, from: source.index(index, offsetBy: 2), marker: "**") {
-                result.append(render(String(source[source.index(index, offsetBy: 2)..<end]), size: size, weight: .semibold, citations: citations))
-                index = source.index(end, offsetBy: 2)
-                continue
+            if source[index...].hasPrefix("**") || source[index...].hasPrefix("__") {
+                let marker = source[index...].hasPrefix("**") ? "**" : "__"
+                let content = source.index(index, offsetBy: marker.count)
+                if let end = closing(source, from: content, marker: marker) {
+                    result.append(render(String(source[content..<end]), size: size, weight: .semibold, citations: citations, streaming: streaming))
+                    index = source.index(end, offsetBy: marker.count)
+                    continue
+                }
+                if streaming {
+                    result.append(render(String(source[content...]), size: size, weight: .semibold, citations: citations, streaming: true))
+                    break
+                }
             }
-            if source[index...].hasPrefix("__"),
-               let end = closing(source, from: source.index(index, offsetBy: 2), marker: "__") {
-                result.append(render(String(source[source.index(index, offsetBy: 2)..<end]), size: size, weight: .semibold, citations: citations))
-                index = source.index(end, offsetBy: 2)
-                continue
-            }
-            if source[index] == "`", let end = source[source.index(after: index)...].firstIndex(of: "`") {
-                result.append(styled(String(source[source.index(after: index)..<end]), size: size - 2, weight: weight, code: true))
-                index = source.index(after: end)
-                continue
-            }
-            if source[index] == "*", !source[index...].hasPrefix("**"),
-               let end = closing(source, from: source.index(after: index), marker: "*") {
-                var inner = render(String(source[source.index(after: index)..<end]), size: size, weight: weight, citations: citations)
-                inner.font = Font.system(size: size, weight: weight).italic()
-                result.append(inner)
-                index = source.index(after: end)
-                continue
+            if source[index] == "*", !source[index...].hasPrefix("**") {
+                let content = source.index(after: index)
+                if let end = closing(source, from: content, marker: "*") {
+                    var inner = render(String(source[content..<end]), size: size, weight: weight, citations: citations, streaming: streaming)
+                    inner.font = Font.system(size: size, weight: weight).italic()
+                    result.append(inner)
+                    index = source.index(after: end)
+                    continue
+                }
+                if streaming, content < source.endIndex, source[content] != " ", source[content] != "\n" {
+                    var inner = render(String(source[content...]), size: size, weight: weight, citations: citations, streaming: true)
+                    inner.font = Font.system(size: size, weight: weight).italic()
+                    result.append(inner)
+                    break
+                }
             }
             result.append(styled(String(source[index]), size: size, weight: weight))
             index = source.index(after: index)
         }
         return result
+    }
+
+    /// A finished formula, or an unfinished one while streaming (then `url` is nil and the tail is hidden).
+    private static func mathSpan(
+        _ source: String,
+        from start: String.Index,
+        streaming: Bool
+    ) -> (url: URL?, next: String.Index)? {
+        let pairs: [(String, String, Bool)] = [
+            ("\\[", "\\]", true),
+            ("$$", "$$", true),
+            ("\\(", "\\)", false),
+        ]
+        let rest = source[start...]
+        for (open, close, display) in pairs where rest.hasPrefix(open) {
+            let content = source.index(start, offsetBy: open.count)
+            if let range = source[content...].range(of: close) {
+                let latex = String(source[content..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let url = latex.isEmpty ? nil : MathFormula.url(latex: latex, display: display)
+                return (url, range.upperBound)
+            }
+            if streaming { return (nil, source.endIndex) }
+            return nil
+        }
+        guard source[start] == "$", !rest.hasPrefix("$$") else { return nil }
+        let content = source.index(after: start)
+        guard content < source.endIndex, source[content] != " ", source[content] != "\n" else { return nil }
+        var end = content
+        while end < source.endIndex, source[end] != "$", source[end] != "\n" {
+            end = source.index(after: end)
+        }
+        guard end < source.endIndex, source[end] == "$", source[source.index(before: end)] != " " else { return nil }
+        let latex = String(source[content..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !latex.isEmpty, let url = MathFormula.url(latex: latex, display: false) else { return nil }
+        return (url, source.index(after: end))
     }
 
     private static func closing(_ source: String, from start: String.Index, marker: String) -> String.Index? {

@@ -110,15 +110,72 @@ struct AnswerDocumentTests {
         #expect(pieces.contains { if case .code(let body) = $0 { return body.contains("print") } else { return false } })
     }
 
-    @Test func streamingHidesHtmlFencesUntilTheAnswerFinishes() {
-        let open = AnswerDocument.streamingPieces(in: "说明\n```html 图\n<svg>")
-        #expect(open.contains { if case .text(let text) = $0 { return text.contains("说明") } else { return false } })
+    @Test func streamingKeepsMarkdownAndHidesAnOpenHtmlFence() {
+        let open = AnswerDocument.pieces(in: "说明\n\n# 标题\n\n- 第一\n```html 图\n<svg>", streaming: true)
+        #expect(open.contains { if case .paragraph("说明") = $0 { return true } else { return false } })
+        #expect(open.contains { if case .heading(1, "标题") = $0 { return true } else { return false } })
+        #expect(open.contains { if case .list(false, ["第一"]) = $0 { return true } else { return false } })
         #expect(open.contains { if case .preparing = $0 { return true } else { return false } })
-        #expect(!open.contains { if case .text(let text) = $0 { return text.contains("<svg>") } else { return false } })
+        #expect(!open.contains { if case .code(let body) = $0 { return body.contains("<svg>") } else { return false } })
+        #expect(!open.contains { if case .paragraph(let text) = $0 { return text.contains("<svg>") || text.contains("#") } else { return false } })
 
-        let closed = AnswerDocument.streamingPieces(in: "```html\n<input type=\"range\">\n```\n结尾")
+        let closed = AnswerDocument.pieces(in: "```html\n<input type=\"range\">\n```\n结尾", streaming: true)
         #expect(closed.first == .preparing)
-        #expect(closed.contains { if case .text(let text) = $0 { return text.contains("结尾") } else { return false } })
+        #expect(!closed.contains { if case .widget = $0 { return true } else { return false } })
+        #expect(closed.contains { if case .paragraph("结尾") = $0 { return true } else { return false } })
+    }
+
+    @Test func formulaDelimitersBecomeMath() {
+        let pieces = AnswerDocument.pieces(in: """
+        二、焦点在 \\(x\\) 轴上的双曲线
+
+        \\[
+        \\boxed{\\frac{x^2}{a^2}-\\frac{y^2}{b^2}=1}
+        \\]
+
+        其中 \\(a>0,\\ b>0\\)。
+        """)
+        #expect(pieces.contains { if case .paragraph(let text) = $0 { return text.contains("\\(x\\)") } else { return false } })
+        #expect(pieces.contains { if case .math(let latex) = $0 { return latex.contains("\\frac") && latex.contains("\\boxed") } else { return false } })
+
+        let inline = AnswerInline.render("焦点在 \\(x\\) 轴上，其中 $a>0$。价格 $20 和 $30 不动。")
+        let plain = String(inline.characters)
+        #expect(plain.contains("焦点在"))
+        #expect(plain.contains("轴上"))
+        #expect(!plain.contains("\\("))
+        #expect(!plain.contains("\\)"))
+        #expect(plain.contains("$20"))
+        #expect(plain.contains("$30"))
+        #expect(inline.runs.contains { $0.link?.scheme == "nomi-math" && $0.link?.host == "inline" })
+
+        let url = MathFormula.url(latex: "\\frac{x}{a}\nb", display: true)
+        #expect(url.flatMap { MathFormula.latex(from: $0) }?.latex == "\\frac{x}{a}\nb")
+        #expect(url?.host == "display")
+    }
+
+    @Test func streamingHidesUnclosedMarkers() {
+        let bold = String(AnswerInline.render("这是 **重点", streaming: true).characters)
+        #expect(bold == "这是 重点")
+        #expect(!bold.contains("*"))
+        let open = AnswerDocument.pieces(in: "正文\n\\[\n\\frac{1}{2}", streaming: true)
+        #expect(open.contains { if case .paragraph("正文") = $0 { return true } else { return false } })
+        #expect(!open.contains { if case .paragraph(let text) = $0 { return text.contains("\\frac") || text.contains("\\[") } else { return false } })
+        #expect(!open.contains { if case .math = $0 { return true } else { return false } })
+    }
+
+    @Test @MainActor func boxedFractionRenders() {
+        let image = MathRaster.raster(
+            latex: "\\boxed{\\frac{x^{2}}{a^{2}}-\\frac{y^{2}}{b^{2}}=1}",
+            fontSize: 18,
+            color: .black,
+            display: true,
+            maxWidth: 640
+        )
+        #expect(image != nil)
+        #expect((image?.image.size.height ?? 0) > 24)
+        #expect((image?.image.size.width ?? 0) > 40)
+        let inline = MathRaster.raster(latex: "x", fontSize: 15, color: .black, display: false, maxWidth: 640)
+        #expect(inline != nil)
     }
 
     @Test func passageNumberBecomesTheSourceName() {

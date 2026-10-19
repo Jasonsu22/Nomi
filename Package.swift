@@ -8,9 +8,13 @@ let package = Package(
     products: [
         .executable(name: "LectureNoteApp", targets: ["LectureNoteApp"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/mgriebling/SwiftMath.git", from: "1.7.3"),
+    ],
     targets: [
         .executableTarget(
             name: "LectureNoteApp",
+            dependencies: ["SwiftMath"],
             resources: [
                 .copy("Fixtures"),
                 .process("Resources"),
