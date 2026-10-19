@@ -16,6 +16,8 @@ struct ChatPerformanceTests {
         window.isReleasedWhenClosed = false
         defer { window.close() }
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let renderOutput = ProcessInfo.processInfo.environment["NOMI_CHAT_PERF_OUTPUT"].map { URL(fileURLWithPath: $0) }
+        if let renderOutput { try FileManager.default.createDirectory(at: renderOutput, withIntermediateDirectories: true) }
         for file in files {
             var session = try JSONDecoder().decode(ChatSession.self, from: Data(contentsOf: file))
             guard !session.turns.isEmpty else { continue }
@@ -38,7 +40,21 @@ struct ChatPerformanceTests {
             for index in session.turns.indices.reversed() {
                 table.scrollRowToVisible(index)
                 try await Task.sleep(for: .milliseconds(80))
-                #expect(descendants(host).contains { $0 is NSTextView && !($0 is SubmitTextView) && !$0.visibleRect.isEmpty })
+                checkTextHeights(in: host)
+                if let renderOutput {
+                    let cell = table.view(atColumn: 0, row: index, makeIfNecessary: false)
+                    let visible = descendants(host).compactMap { $0 as? NSTextView }.filter { !($0 is SubmitTextView) && !$0.visibleRect.isEmpty }
+                    let diagnostic = "table=\(table.frame) visible=\(table.visibleRect) row=\(table.rect(ofRow: index)) cell=\(String(describing: cell?.frame))\n" + visible.map { text in
+                        let container = text.textContainer!
+                        return "text=\(text.string.prefix(35)) frame=\(text.frame) container=\(container.containerSize) used=\(text.layoutManager!.usedRect(for: container)) visible=\(text.visibleRect) window=\(text.convert(text.bounds, to: nil))"
+                    }.joined(separator: "\n")
+                    let stem = "\(file.deletingPathExtension().lastPathComponent)-\(index)"
+                    try diagnostic.write(to: renderOutput.appendingPathComponent(stem + ".txt"), atomically: true, encoding: .utf8)
+                    if let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                        host.cacheDisplay(in: host.bounds, to: bitmap)
+                        try bitmap.representation(using: .png, properties: [:])?.write(to: renderOutput.appendingPathComponent(stem + ".png"))
+                    }
+                }
             }
             FileHandle.standardError.write(Data("CHAT_REAL: finished \(session.turns.count) turns in \(start.duration(to: .now))\n".utf8))
         }
@@ -124,6 +140,7 @@ struct ChatPerformanceTests {
         let nativeTexts = descendants(host).filter { $0 is NSTextView && !($0 is SubmitTextView) }.count
         #expect(nativeTexts > 0)
         #expect(nativeTexts < 40, "200 轮历史不能一次创建全部富文本视图")
+        checkTextHeights(in: host)
         #expect(descendants(host).compactMap { ($0 as? NSTextView)?.string }.contains { $0.contains("回答 199") })
         print("CHAT_PERF: 200 turns, \(nativeTexts) mounted answer text views after \(start.duration(to: .now)) (includes 700 ms settle)")
         let table = try #require(descendants(host).compactMap { $0 as? ChatTableView }.first)
@@ -132,9 +149,13 @@ struct ChatPerformanceTests {
             try await Task.sleep(for: .milliseconds(80))
             host.layoutSubtreeIfNeeded()
             let visibleText = descendants(host).compactMap { $0 as? NSTextView }.filter {
-                !($0 is SubmitTextView) && !$0.visibleRect.isEmpty && !$0.string.isEmpty
+                guard !($0 is SubmitTextView), let layout = $0.layoutManager, let container = $0.textContainer else { return false }
+                layout.ensureLayout(for: container)
+                let glyphs = layout.usedRect(for: container).offsetBy(dx: $0.textContainerOrigin.x, dy: $0.textContainerOrigin.y)
+                return $0.convert(glyphs, to: table).intersects(table.visibleRect)
             }
             #expect(!visibleText.isEmpty, "快速跳到历史的第 \(index) 轮不能整屏空白")
+            checkTextHeights(in: host)
         }
         // Re-entering the page uses the same completed-answer cache.
         window.contentView = NSHostingView(rootView: AskView(model: model))
@@ -169,5 +190,24 @@ struct ChatPerformanceTests {
         for demo in demos { demo.deactivate() }
         try await Task.sleep(for: .milliseconds(650))
         #expect(DemoWebPool.shared.activeCount == 0)
+    }
+
+    @MainActor private func checkTextHeights(in root: NSView, sourceLocation: SourceLocation = #_sourceLocation) {
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        for text in descendants(root).compactMap({ $0 as? NSTextView }) where !(text is SubmitTextView) && !text.string.isEmpty && text.bounds.width > 1 {
+            // Fresh TextKit layout is independent of the live view and SwiftUI's
+            // width probes. Merely checking visibleRect was a false positive:
+            // NSHostingView can propagate a visible rect outside the text bounds.
+            let storage = NSTextStorage(attributedString: text.attributedString())
+            let layout = NSLayoutManager()
+            let container = NSTextContainer(size: NSSize(width: text.bounds.width, height: CGFloat.greatestFiniteMagnitude))
+            container.lineFragmentPadding = text.textContainer?.lineFragmentPadding ?? 0
+            storage.addLayoutManager(layout)
+            layout.addTextContainer(container)
+            layout.ensureLayout(for: container)
+            let expected = max(1, ceil(layout.usedRect(for: container).height))
+            #expect(abs(text.bounds.height - expected) <= 2,
+                    "文本实际行高 \(expected)，却占位 \(text.bounds.height)，会留下大块空白", sourceLocation: sourceLocation)
+        }
     }
 }

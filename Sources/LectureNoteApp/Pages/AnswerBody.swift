@@ -329,7 +329,9 @@ private struct CiteText: NSViewRepresentable {
         view.textContainer?.lineFragmentPadding = 0
         view.textContainer?.widthTracksTextView = false
         view.font = .systemFont(ofSize: 15)
-        view.isVerticallyResizable = true
+        // SwiftUI supplies the measured frame; NSTextView must not resize itself
+        // while SwiftUI probes other widths during layout.
+        view.isVerticallyResizable = false
         view.isHorizontallyResizable = false
         view.focusRingType = .none
         view.delegate = context.coordinator
@@ -347,19 +349,8 @@ private struct CiteText: NSViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: CiteTextView, context: Context) -> CGSize? {
         let proposed = proposal.width ?? .infinity
         let width = proposed.isFinite ? max(proposed, 1) : 10_000
-        guard let container = nsView.textContainer, let layout = nsView.layoutManager else {
-            return CGSize(width: width, height: 20)
-        }
         context.coordinator.apply(attributed, citations: citations, colorScheme: colorScheme, streaming: streaming, to: nsView, width: width)
-        if let cached = context.coordinator.measuredSize, cached.width == width { return cached }
-        if container.containerSize.width != width {
-            container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-        }
-        layout.ensureLayout(for: container)
-        let used = layout.usedRect(for: container)
-        let result = CGSize(width: width, height: max(ceil(used.height), 1))
-        context.coordinator.measuredSize = result
-        return result
+        return context.coordinator.measure(width: width)
     }
 
     @MainActor
@@ -370,7 +361,10 @@ private struct CiteText: NSViewRepresentable {
         private var streaming = false
         private var source: AttributedString?
         private var layoutWidth: CGFloat = 0
-        var measuredSize: CGSize?
+        private var measuredSize: CGSize?
+        private let measurementStorage = NSTextStorage()
+        private let measurementLayout = NSLayoutManager()
+        private let measurementContainer = NSTextContainer(size: NSSize(width: 680, height: CGFloat.greatestFiniteMagnitude))
         private var born: [Int: TimeInterval] = [:]
         private var baseColors: [Int: NSColor] = [:]
         private var baseImages: [Int: NSImage] = [:]
@@ -390,10 +384,22 @@ private struct CiteText: NSViewRepresentable {
         init(onOpen: @escaping (URL) -> Void) {
             self.onOpen = onOpen
             super.init()
+            measurementContainer.lineFragmentPadding = 0
+            measurementStorage.addLayoutManager(measurementLayout)
+            measurementLayout.addTextContainer(measurementContainer)
             popover.behavior = .applicationDefined
             popover.animates = false
             host.sizingOptions = .preferredContentSize
             popover.contentViewController = host
+        }
+
+        func measure(width: CGFloat) -> CGSize {
+            if let measuredSize, measuredSize.width == width { return measuredSize }
+            measurementContainer.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+            measurementLayout.ensureLayout(for: measurementContainer)
+            let result = CGSize(width: width, height: max(1, ceil(measurementLayout.usedRect(for: measurementContainer).height)))
+            measuredSize = result
+            return result
         }
 
         func apply(_ attributed: AttributedString, citations: [ChatCitation], colorScheme: ColorScheme, streaming: Bool, to view: CiteTextView, width proposedWidth: CGFloat? = nil) {
@@ -415,6 +421,9 @@ private struct CiteText: NSViewRepresentable {
             underlined = nil
             view.clearUnderline()
             let next = decorated(attributed, color: color, maxWidth: width > 40 ? width : 640)
+            // Measurement is independent of the on-screen text view's frame and
+            // container, which AppKit can change between SwiftUI size probes.
+            measurementStorage.setAttributedString(next)
             if !streaming {
                 stopFade()
                 view.textStorage?.setAttributedString(next)
