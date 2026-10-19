@@ -9,6 +9,10 @@ struct AskComposerField: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 240, height: proposal.height ?? 36)
+    }
+
     func makeNSView(context: Context) -> NSScrollView {
         let textView = SubmitTextView()
         textView.bridge = context.coordinator
@@ -40,6 +44,8 @@ struct AskComposerField: NSViewRepresentable {
         scroll.borderType = .noBorder
         scroll.focusRingType = .none
         scroll.documentView = textView
+        scroll.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        scroll.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return scroll
     }
 

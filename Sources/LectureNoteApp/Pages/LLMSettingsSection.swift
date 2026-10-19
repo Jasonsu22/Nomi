@@ -128,6 +128,7 @@ private struct APIProfileEditor: View {
     init(profile: LLMAPIProfile, configuration: LLMConfiguration) {
         self.configuration = configuration
         _draft = State(initialValue: profile)
+        _key = State(initialValue: (try? LLMKeychain.read(profile)) ?? "")
     }
 
     var body: some View {
@@ -177,17 +178,11 @@ private struct APIProfileEditor: View {
                             TextField(tr("模型 ID"), text: $modelEntry)
                                 .onSubmit(addEnteredModel)
                                 .frame(maxWidth: .infinity)
-                            Button(action: addEnteredModel) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .frame(width: 22, height: 22)
-                            }
-                            .buttonStyle(.borderless.clicking())
-                            .disabled(modelEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            .help(tr("添加模型"))
+                            modelActionButton(systemName: "plus", help: tr("添加模型"), action: addEnteredModel)
+                                .disabled(modelEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                         ForEach(modelChoices, id: \.self) { id in
-                            HStack(spacing: 8) {
+                            HStack(spacing: 6) {
                                 Button {
                                     draft.modelID = id
                                 } label: {
@@ -202,14 +197,7 @@ private struct APIProfileEditor: View {
                                     }
                                 }
                                 .buttonStyle(.plain.clicking())
-                                Button {
-                                    removeModel(id)
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(AppColor.textSecondary)
-                                }
-                                .buttonStyle(.plain.clicking())
+                                modelActionButton(systemName: "xmark", tint: AppColor.textSecondary) { removeModel(id) }
                             }
                         }
                     }
@@ -253,6 +241,19 @@ private struct APIProfileEditor: View {
     }
 
     private static let labelWidth: CGFloat = 148
+    private static let modelActionWidth: CGFloat = 22
+
+    private func modelActionButton(systemName: String, tint: Color = .primary, help: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: Self.modelActionWidth, height: Self.modelActionWidth)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain.clicking())
+        .modifier(HelpIfPresent(text: help))
+    }
 
     private func fieldRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         HStack(spacing: 12) {
@@ -318,5 +319,17 @@ private struct APIProfileEditor: View {
             }
             if availableModels.isEmpty { error = tr("服务未返回模型列表，可以手动填写模型 ID。") }
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+private struct HelpIfPresent: ViewModifier {
+    var text: String?
+
+    func body(content: Content) -> some View {
+        if let text, !text.isEmpty {
+            content.help(text)
+        } else {
+            content
+        }
     }
 }

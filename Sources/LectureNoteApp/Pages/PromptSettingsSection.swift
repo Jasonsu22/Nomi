@@ -349,6 +349,20 @@ private final class SkillBodyTextView: NSTextView {
     }
 
     var placeholder = ""
+    /// Where the blinking caret actually is, captured while this view is first responder.
+    private var caretRect: NSRect = .zero
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        needsDisplay = true
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        needsDisplay = true
+        return resigned
+    }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
@@ -360,24 +374,47 @@ private final class SkillBodyTextView: NSTextView {
         needsDisplay = true
     }
 
+    override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
+        caretRect = rect
+        super.drawInsertionPoint(in: rect, color: color, turnedOn: flag)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        guard !hasMarkedText(), string.isEmpty, !placeholder.isEmpty,
-              let layoutManager, let container = textContainer else { return }
-        layoutManager.ensureLayout(for: container)
-        var line = layoutManager.extraLineFragmentUsedRect
-        if line.isEmpty { line = layoutManager.extraLineFragmentRect }
-        line.origin.x += textContainerInset.width
-        line.origin.y += textContainerInset.height
-        line.size.width = max(line.width, bounds.width - line.minX - textContainerInset.width)
+        // A blinking caret means the field is focused. The hint must be gone then,
+        // including while a Chinese candidate is still being composed.
+        guard placeholderNeedsDrawing, let line = placeholderLine else { return }
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font ?? Self.editorFont,
             .foregroundColor: NSColor.placeholderTextColor,
         ]
-        (placeholder as NSString).draw(
-            with: line,
-            options: [.usesLineFragmentOrigin],
-            attributes: attributes
+        (placeholder as NSString).draw(with: line, options: [.usesLineFragmentOrigin], attributes: attributes)
+    }
+
+    private var placeholderNeedsDrawing: Bool {
+        !placeholder.isEmpty && string.isEmpty && !hasMarkedText() && window?.firstResponder !== self
+    }
+
+    /// Same line the caret uses, so the hint and the first typed line share an origin.
+    private var placeholderLine: NSRect? {
+        let anchor: NSRect
+        if caretRect.height > 0 {
+            anchor = caretRect
+        } else if let layoutManager, let container = textContainer {
+            layoutManager.ensureLayout(for: container)
+            var line = layoutManager.extraLineFragmentRect
+            guard line.height > 0 else { return nil }
+            line.origin.x += textContainerOrigin.x
+            line.origin.y += textContainerOrigin.y
+            anchor = line
+        } else {
+            return nil
+        }
+        return NSRect(
+            x: anchor.minX,
+            y: anchor.minY,
+            width: max(bounds.width - anchor.minX - textContainerOrigin.x, 0),
+            height: anchor.height
         )
     }
 }

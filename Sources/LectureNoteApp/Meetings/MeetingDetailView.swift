@@ -1,11 +1,18 @@
+import AppKit
 import SwiftUI
 
 struct MeetingDetailView: View {
+    private static let sideWidthKey = "nomi.meetingSideWidth"
+
     @Bindable var model: AppModel
     var meetingID: UUID
     var reduceMotion: Bool
     @State private var titleDraft = ""
     @State private var sidePreference: Bool?
+    @State private var sideWidth: CGFloat = {
+        let stored = UserDefaults.standard.double(forKey: MeetingDetailView.sideWidthKey)
+        return stored > 0 ? stored : 340
+    }()
     @State private var showingLanguages = false
     @State private var showingStartTime = false
     @State private var creatingCategory = false
@@ -28,7 +35,7 @@ struct MeetingDetailView: View {
                     .padding(.horizontal, 24)
                     .padding(.top, Space.s4)
                     .padding(.bottom, Space.s4)
-                HStack(alignment: .top, spacing: 16) {
+                HStack(alignment: .top, spacing: 0) {
                     TranscriptCard(
                         meeting: meeting,
                         transcript: model.engine.transcript,
@@ -38,13 +45,24 @@ struct MeetingDetailView: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     if showSide {
-                        DetailSidePanel(model: model, meeting: meeting, reduceMotion: reduceMotion) {
+                        let range = sideRange(total: proxy.size.width)
+                        let width = min(max(sideWidth, range.lowerBound), range.upperBound)
+                        ColumnSplitHandle(width: $sideWidth, range: range) {
+                            persistSideWidth()
+                        }
+                        .frame(width: 16)
+                        .frame(maxHeight: .infinity)
+                        .pointerStyle(.columnResize)
+                        DetailSidePanel(model: model, meeting: meeting, reduceMotion: reduceMotion, onPreferredSideWidth: { needed in
+                            ensureSideWidth(needed, total: proxy.size.width)
+                        }) {
                             withAnimation(Motion.layout(reduceMotion)) {
                                 sidePreference = false
                             }
                         }
-                        .frame(width: 340, alignment: .top)
+                        .frame(width: width, alignment: .top)
                         .frame(maxHeight: .infinity)
+                        .clipped()
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
@@ -239,6 +257,101 @@ struct MeetingDetailView: View {
         let preferred = sidePreference ?? (width >= 1100)
         return preferred && width >= 760
     }
+
+    private func sideRange(total: CGFloat) -> ClosedRange<CGFloat> {
+        let chrome: CGFloat = 48 + 16
+        let sideMin: CGFloat = 300
+        let sideMax = max(sideMin, total - chrome - 340)
+        return sideMin...sideMax
+    }
+
+    /// Ask content takes width from the transcript instead of drawing over it.
+    private func ensureSideWidth(_ needed: CGFloat, total: CGFloat) {
+        let resolved = min(sideRange(total: total).upperBound, needed)
+        guard sideWidth < resolved - 0.5 else { return }
+        withAnimation(Motion.layout(reduceMotion)) {
+            sideWidth = resolved
+        }
+        persistSideWidth()
+    }
+
+    private func persistSideWidth() {
+        UserDefaults.standard.set(Double(sideWidth), forKey: Self.sideWidthKey)
+    }
+}
+
+private struct ColumnSplitHandle: NSViewRepresentable {
+    @Binding var width: CGFloat
+    var range: ClosedRange<CGFloat>
+    var onEnd: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(width: $width, onEnd: onEnd)
+    }
+
+    func makeNSView(context: Context) -> SplitHandleView {
+        let view = SplitHandleView()
+        view.coordinator = context.coordinator
+        return view
+    }
+
+    func updateNSView(_ view: SplitHandleView, context: Context) {
+        context.coordinator.width = $width
+        context.coordinator.onEnd = onEnd
+        view.range = range
+        view.coordinator = context.coordinator
+    }
+
+    final class Coordinator {
+        var width: Binding<CGFloat>
+        var onEnd: () -> Void
+
+        init(width: Binding<CGFloat>, onEnd: @escaping () -> Void) {
+            self.width = width
+            self.onEnd = onEnd
+        }
+    }
+}
+
+private final class SplitHandleView: NSView {
+    var range: ClosedRange<CGFloat> = 300...640
+    var coordinator: ColumnSplitHandle.Coordinator?
+    private var start: CGFloat = 0
+    private var startX: CGFloat = 0
+
+    override var isFlipped: Bool { true }
+    override var isOpaque: Bool { false }
+
+    override func resetCursorRects() {
+        discardCursorRects()
+        addCursorRect(bounds, cursor: .resizeLeftRight)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        start = coordinator?.width.wrappedValue ?? 0
+        startX = event.locationInWindow.x
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        let next = min(range.upperBound, max(range.lowerBound, start - (event.locationInWindow.x - startX)))
+        coordinator?.width.wrappedValue = next
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        coordinator?.onEnd()
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let pill = NSRect(x: (bounds.width - 4) / 2, y: (bounds.height - 36) / 2, width: 4, height: 36)
+        NSColor.tertiaryLabelColor.setFill()
+        NSBezierPath(roundedRect: pill, xRadius: 2, yRadius: 2).fill()
+    }
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .splitter }
+
+    override func accessibilityLabel() -> String? { tr("调整侧栏宽度") }
 }
 
 struct StartTimeEditor: View {

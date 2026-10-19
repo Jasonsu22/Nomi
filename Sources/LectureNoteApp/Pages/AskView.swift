@@ -1,14 +1,16 @@
-import AppKit
 import SwiftUI
 
 struct AskView: View {
     var model: AppModel
     var anchorMeetingID: UUID? = nil
+    var onHistoryChange: (Bool) -> Void = { _ in }
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var draft = ""
     @State private var composerFocused = false
     @State private var scopePresented = false
     @State private var historyPresented = false
+    @State private var historyShield = ClickShield()
+    @State private var historyGate = HistoryClickGate()
     @State private var renaming = false
     @State private var renameID: UUID?
     @State private var renameDraft = ""
@@ -26,18 +28,31 @@ struct AskView: View {
             if embedded {
                 VStack(spacing: 0) {
                     embeddedHeader
-                    conversation
+                    HStack(alignment: .top, spacing: historyPresented ? Space.s2 : 0) {
+                        conversation
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if historyPresented {
+                            historyPanel
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
+                    }
                 }
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     header
                         .padding(.top, 28)
                         .padding(.bottom, Space.s4)
-                    conversation
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .layoutPriority(1)
-                        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                        .padding(.bottom, Space.s5)
+                    HStack(alignment: .top, spacing: historyPresented ? Space.s3 : 0) {
+                        conversation
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .layoutPriority(1)
+                            .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                        if historyPresented {
+                            historyPanel
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
+                    }
+                    .padding(.bottom, Space.s5)
                 }
                 .pageColumn()
             }
@@ -89,13 +104,10 @@ struct AskView: View {
             Spacer(minLength: Space.s3)
                 .contentShape(Rectangle())
                 .onTapGesture { dismissPanels() }
-            AskIconButton(symbol: "clock.arrow.circlepath", help: tr("历史会话"), reduceMotion: reduceMotion) {
-                scopePresented = false
-                historyPresented.toggle()
-            }
+            historyButton
             AskIconButton(symbol: "plus", help: tr("新会话"), reduceMotion: reduceMotion) {
                 scopePresented = false
-                historyPresented = false
+                setHistory(false)
                 model.beginNewChat(anchor: anchorMeetingID)
             }
         }
@@ -105,13 +117,10 @@ struct AskView: View {
     private var embeddedHeader: some View {
         HStack(spacing: Space.s2) {
             Spacer(minLength: 0)
-            AskIconButton(symbol: "clock.arrow.circlepath", help: tr("历史会话"), reduceMotion: reduceMotion) {
-                scopePresented = false
-                historyPresented.toggle()
-            }
+            historyButton
             AskIconButton(symbol: "plus", help: tr("新会话"), reduceMotion: reduceMotion) {
                 scopePresented = false
-                historyPresented = false
+                setHistory(false)
                 model.beginNewChat(anchor: anchorMeetingID)
             }
         }
@@ -142,29 +151,15 @@ struct AskView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if scopePresented || historyPresented {
+                if scopePresented {
                     Color.clear
                         .contentShape(Rectangle())
-                        .onTapGesture { dismissPanels() }
+                        .onTapGesture { scopePresented = false }
                 }
                 if scopePresented, !embedded {
                     AskScopePopover(model: model) { scopePresented = false }
                         .padding(.leading, Space.s4)
                         .padding(.bottom, Space.s3)
-                }
-                if historyPresented {
-                    HistoryPanelAnchor {
-                        AskHistoryPopover(
-                            model: model,
-                            anchorMeetingID: anchorMeetingID,
-                            currentID: session?.id,
-                            onRename: beginRename,
-                            onDelete: beginDelete
-                        ) {
-                            historyPresented = false
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             if let error = model.chatError, model.chatGeneratingID == nil {
@@ -256,7 +251,7 @@ struct AskView: View {
             categories: model.chatCategoryNames()
         ) ?? tr("选择范围")
         return Button {
-            historyPresented = false
+            setHistory(false)
             scopePresented.toggle()
         } label: {
             HStack(spacing: 6) {
@@ -338,10 +333,13 @@ struct AskView: View {
             }
             .font(AppFont.secondary)
             .foregroundStyle(AppColor.textSecondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .fixedSize()
+        .frame(maxWidth: embedded ? .infinity : nil, alignment: .trailing)
+        .fixedSize(horizontal: !embedded, vertical: true)
         .clickCursor()
         .disabled(model.chatGeneratingID != nil || modelMenuIsEmpty)
     }
@@ -493,10 +491,54 @@ struct AskView: View {
         .disabled(!openable)
     }
 
+    private var historyButton: some View {
+        AskIconButton(symbol: "clock.arrow.circlepath", help: tr("历史会话"), reduceMotion: reduceMotion) {
+            scopePresented = false
+            if historyGate.suppressButton {
+                historyGate.suppressButton = false
+                return
+            }
+            setHistory(!historyPresented)
+        }
+        .background { ClickShieldAnchor(shield: historyShield) }
+    }
+
+    private var historyPanel: some View {
+        AskHistoryPopover(
+            model: model,
+            anchorMeetingID: anchorMeetingID,
+            currentID: session?.id,
+            onRename: beginRename,
+            onDelete: beginDelete
+        ) {
+            setHistory(false)
+        }
+        .padding(.top, Space.s2)
+        .padding(.trailing, embedded ? Space.s2 : 0)
+        .padding(.bottom, Space.s2)
+        .fixedSize(horizontal: true, vertical: false)
+        .background {
+            OutsideClickObserver(isActive: true, shield: historyShield) {
+                historyGate.suppressButton = true
+                setHistory(false)
+                DispatchQueue.main.async { historyGate.suppressButton = false }
+            }
+        }
+    }
+
+    private func setHistory(_ shown: Bool) {
+        guard shown != historyPresented else { return }
+        if shown { onHistoryChange(true) }
+        withAnimation(Motion.layout(reduceMotion)) {
+            historyPresented = shown
+        }
+        if !shown { onHistoryChange(false) }
+    }
+
     private func dismissPanels() {
         guard scopePresented || historyPresented else { return }
         scopePresented = false
-        historyPresented = false
+        if historyPresented { setHistory(false) }
     }
 
     private func send() {
@@ -527,42 +569,6 @@ struct AskView: View {
             deleteID = session.id
             deletingChat = true
         }
-    }
-}
-
-/// Puts a panel in the top-trailing corner and lets clicks on the empty area fall through.
-private struct HistoryPanelAnchor<Content: View>: NSViewRepresentable {
-    var content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    func makeNSView(context: Context) -> PanelHoleView {
-        let hole = PanelHoleView()
-        let host = NSHostingView(rootView: content)
-        host.translatesAutoresizingMaskIntoConstraints = false
-        host.setContentHuggingPriority(.required, for: .horizontal)
-        host.setContentHuggingPriority(.required, for: .vertical)
-        hole.addSubview(host)
-        NSLayoutConstraint.activate([
-            host.topAnchor.constraint(equalTo: hole.topAnchor, constant: Space.s3),
-            host.trailingAnchor.constraint(equalTo: hole.trailingAnchor, constant: -Space.s4),
-        ])
-        return hole
-    }
-
-    func updateNSView(_ hole: PanelHoleView, context: Context) {
-        guard let host = hole.subviews.first as? NSHostingView<Content> else { return }
-        host.rootView = content
-        host.invalidateIntrinsicContentSize()
-    }
-}
-
-private final class PanelHoleView: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let hit = super.hitTest(point)
-        return hit === self ? nil : hit
     }
 }
 

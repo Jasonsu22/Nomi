@@ -3,6 +3,8 @@ import SwiftUI
 struct TopBar: View {
     var model: AppModel
     var reduceMotion: Bool
+    @State private var recordingChoice = false
+    @State private var stopArmed = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -26,7 +28,13 @@ struct TopBar: View {
                     .foregroundStyle(AppColor.textPrimary)
             }
             .frame(width: leadingWidth, alignment: .leading)
-            StatusChip(title: model.statusTitle, live: model.statusIsLive)
+            HeaderStatus(
+                title: model.statusTitle,
+                live: model.statusIsLive,
+                stays: model.statusStays,
+                isError: model.statusIsError,
+                reduceMotion: reduceMotion
+            )
             Spacer(minLength: Space.s3)
             SessionControl(
                 session: model.engine.session,
@@ -34,14 +42,101 @@ struct TopBar: View {
                 canStart: model.canStart,
                 startTitle: model.recordingActionTitle,
                 reduceMotion: reduceMotion,
-                onStart: model.performRecordingAction,
+                stopArmed: stopArmed,
+                onStart: beginRecording,
                 onStop: {
+                    stopArmed = false
                     model.stopTranscription()
                 },
-                onTogglePause: model.togglePause
+                onTogglePause: model.togglePause,
+                onAsk: { recordingChoice = true }
             )
         }
         .padding(.trailing, Space.s4)
         .frame(maxHeight: .infinity)
+        .onChange(of: model.engine.session.phase) { _, phase in
+            if phase == .idle { stopArmed = false }
+        }
+        .alert(tr("继续录制还是停止？"), isPresented: $recordingChoice) {
+            Button(tr("继续录制")) { continueRecording() }
+            Button(tr("停止"), role: .destructive) { chooseStop() }
+        } message: {
+            Text(model.engine.session.phase == .idle
+                 ? tr("继续会开始录制这场会议。")
+                 : tr("停止后需要再点一次红色按钮，才会结束录制。"))
+        }
+    }
+
+    private func beginRecording() {
+        if model.resumableMeeting != nil {
+            recordingChoice = true
+        } else {
+            model.performRecordingAction()
+        }
+    }
+
+    private func continueRecording() {
+        stopArmed = false
+        guard model.engine.session.phase == .idle else { return }
+        model.performRecordingAction()
+    }
+
+    private func chooseStop() {
+        guard model.engine.session.phase != .idle else { return }
+        stopArmed = true
+    }
+}
+
+/// Errors stay put, in red. A ready engine shows for two seconds, then the
+/// words slide left and fade.
+private struct HeaderStatus: View {
+    var title: String
+    var live: Bool
+    var stays: Bool
+    var isError: Bool
+    var reduceMotion: Bool
+
+    @State private var visible = false
+    @State private var offset: CGFloat = 0
+    @State private var opacity: Double = 1
+    @State private var dismissTask: Task<Void, Never>?
+
+    var body: some View {
+        StatusChip(title: title, live: live, isError: isError)
+            .padding(.leading, -StatusChip.textLead)
+            .offset(x: offset)
+            .opacity(visible ? opacity : 0)
+            .accessibilityHidden(!visible)
+            .onAppear { sync(title, stays: stays) }
+            .onChange(of: title) { _, new in sync(new, stays: stays) }
+            .onChange(of: stays) { _, new in sync(title, stays: new) }
+            .onDisappear { dismissTask?.cancel() }
+    }
+
+    private func sync(_ title: String, stays: Bool) {
+        dismissTask?.cancel()
+        var reset = Transaction()
+        reset.disablesAnimations = true
+        withTransaction(reset) {
+            visible = true
+            offset = 0
+            opacity = 1
+        }
+        guard !stays else { return }
+        dismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            if reduceMotion {
+                visible = false
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.32)) { offset = -20 }
+            try? await Task.sleep(for: .milliseconds(320))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { opacity = 0 }
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            visible = false
+        }
     }
 }

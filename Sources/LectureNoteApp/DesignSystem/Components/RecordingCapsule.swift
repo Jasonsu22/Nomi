@@ -6,15 +6,17 @@ struct SessionControl: View {
     var canStart: Bool
     var startTitle: String
     var reduceMotion: Bool
+    var stopArmed: Bool
     var onStart: () -> Void
     var onStop: () -> Void
     var onTogglePause: () -> Void
+    var onAsk: () -> Void
     var body: some View {
         control
             // Tinted glass, not the interactive kind. The interactive hover tracker
             // crashes on macOS 26 when this control is replaced during the click.
             .glassEffect(.regular.tint(fill), in: Capsule())
-            .clickCursor(enabled: session.phase == .listening || (session.phase == .idle && canStart))
+            .clickCursor(enabled: stopArmed || session.phase == .listening || (session.phase == .idle && canStart))
     }
 
     private var listening: Bool {
@@ -22,15 +24,37 @@ struct SessionControl: View {
     }
 
     private var fill: Color {
-        listening ? AppColor.selection : AppColor.accent
+        if stopArmed { return .red }
+        return listening ? AppColor.selection : AppColor.accent
     }
 
     private var ink: Color {
-        listening ? AppColor.onSelection : AppColor.onAccent
+        if stopArmed { return .white }
+        return listening ? AppColor.onSelection : AppColor.onAccent
     }
 
     @ViewBuilder
     private var control: some View {
+        if stopArmed {
+            Button(action: onStop) {
+                HStack(spacing: Space.s2) {
+                    Image(systemName: "stop.fill")
+                    Text(tr("停止"))
+                }
+                .font(AppFont.secondary.weight(.semibold))
+                .foregroundStyle(ink)
+                .padding(.horizontal, 16)
+                .frame(height: 40)
+            }
+            .buttonStyle(.plain.clicking())
+            .accessibilityLabel(tr("停止"))
+        } else {
+            phaseControl
+        }
+    }
+
+    @ViewBuilder
+    private var phaseControl: some View {
         switch session.phase {
         case .idle:
             Button(action: onStart) {
@@ -83,20 +107,20 @@ struct SessionControl: View {
                 filled: false,
                 action: onTogglePause
             )
-            iconButton(systemName: "stop.fill", label: tr("停止"), filled: true, action: onStop)
+            iconButton(systemName: "stop.fill", label: tr("停止"), filled: true, danger: true, action: onAsk)
         }
         .padding(.leading, 14)
         .padding(.trailing, 8)
         .frame(height: 40)
     }
 
-    private func iconButton(systemName: String, label: String, filled: Bool, action: @escaping () -> Void) -> some View {
+    private func iconButton(systemName: String, label: String, filled: Bool, danger: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(filled ? AppColor.onAccent : ink)
+                .foregroundStyle(filled ? Color.white : ink)
                 .frame(width: 22, height: 22)
-                .background(filled ? AppColor.accent : AppColor.surface, in: Circle())
+                .background(danger ? Color.red : (filled ? AppColor.accent : AppColor.surface), in: Circle())
         }
         .buttonStyle(.plain.clicking())
         .accessibilityLabel(label)

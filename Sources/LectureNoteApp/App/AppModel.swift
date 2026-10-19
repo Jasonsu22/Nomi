@@ -208,6 +208,30 @@ final class AppModel {
         engine.session.phase == .listening && !engine.session.isPaused
     }
 
+    /// Failures stay on screen. A finished, healthy load is allowed to leave.
+    var statusStays: Bool {
+        switch engine.session.phase {
+        case .preparing, .listening, .stopping:
+            return true
+        case .idle:
+            if engine.loadError != nil { return true }
+            switch engine.readiness {
+            case .ready: return false
+            case .preview, .preparing, .sourceOnly, .asrMissing, .unavailable:
+                return true
+            }
+        }
+    }
+
+    var statusIsError: Bool {
+        guard engine.session.phase == .idle else { return false }
+        if engine.loadError != nil { return true }
+        switch engine.readiness {
+        case .asrMissing, .unavailable: return true
+        case .preview, .preparing, .ready, .sourceOnly: return false
+        }
+    }
+
     var visibleMeetings: [Meeting] {
         meetings.filter { matches($0) }
     }

@@ -13,6 +13,7 @@ struct DetailSidePanel: View {
     @Bindable var model: AppModel
     var meeting: Meeting
     var reduceMotion: Bool
+    var onPreferredSideWidth: (CGFloat) -> Void = { _ in }
     var onClose: () -> Void
     @State private var tab: DetailTab = .info
     @State private var confirmingDelete = false
@@ -63,7 +64,9 @@ struct DetailSidePanel: View {
                 case .info:
                     info
                 case .ask:
-                    AskView(model: model, anchorMeetingID: meeting.id)
+                    AskView(model: model, anchorMeetingID: meeting.id) { shown in
+                        if shown { onPreferredSideWidth(640) }
+                    }
                 case .summary:
                     MeetingAssistantPanel(model: model, meeting: meeting, summary: true)
                 case .sources:
@@ -76,6 +79,9 @@ struct DetailSidePanel: View {
         }
         .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .clipped()
+        .onChange(of: tab) { _, newValue in
+            if newValue == .ask { onPreferredSideWidth(480) }
+        }
         .alert(tr("删除这场会议？"), isPresented: $confirmingDelete) {
             Button(tr("删除"), role: .destructive) {
                 let id = meeting.id

@@ -166,9 +166,8 @@ final class LLMConfiguration {
         let existing = profiles.first { $0.id == value.id }
         let replacement = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if !value.isLoopback && replacement.isEmpty {
-            guard existing?.baseURL == value.baseURL, !(try LLMKeychain.read(value)).isEmpty else {
-                throw llmError(tr("请输入 API 密钥。修改地址后需要重新输入密钥。"))
-            }
+            let kept = existing?.baseURL == value.baseURL ? ((try? LLMKeychain.read(value)) ?? "") : ""
+            guard !kept.isEmpty else { throw llmError(tr("请输入 API 密钥。")) }
         }
         if !replacement.isEmpty { try LLMKeychain.save(replacement, profile: value) }
         if let existing, existing.baseURL != value.baseURL { try LLMKeychain.delete(existing) }

@@ -53,6 +53,7 @@
 "停止转录" = "Stop Transcription";
 "全部 %d" = "All %d";
 "关闭侧栏" = "Hide Sidebar";
+"调整侧栏宽度" = "Resize Sidebar";
 "准备中" = "Preparing";
 "分类" = "Category";
 "分类名称" = "Category Name";
@@ -120,6 +121,9 @@
 "开始时间" = "Start Time";
 "修改开始时间" = "Edit Start Time";
 "继续录制" = "Resume";
+"继续录制还是停止？" = "Resume recording or stop?";
+"继续会开始录制这场会议。" = "Resume will start recording this meeting.";
+"停止后需要再点一次红色按钮，才会结束录制。" = "After you choose Stop, click the red button once more to end the recording.";
 "会议存储" = "Meeting Storage";
 "无法读取本地会议记录，原文件已保留。" = "Could not read saved meetings. The original file has been preserved.";
 "会议保存失败，请导出备份后重试。" = "Could not save meetings. Export a backup and try again.";
