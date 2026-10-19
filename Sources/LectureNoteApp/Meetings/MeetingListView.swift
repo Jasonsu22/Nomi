@@ -330,10 +330,8 @@ struct MeetingListView: View {
             }
             guard leaveManageMode else { return }
             try? await Task.sleep(for: .seconds(reduceMotion ? 0.2 : 0.32))
-            withAnimation(Motion.fade(reduceMotion)) {
-                managing = false
-                selectedIDs.removeAll()
-            }
+            managing = false
+            selectedIDs.removeAll()
         }
     }
 

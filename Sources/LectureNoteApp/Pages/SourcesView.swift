@@ -393,13 +393,12 @@ struct SourcesView: View {
             Button {
                 activate(source)
             } label: {
-                HStack(spacing: Space.s3) {
-                    if managing {
-                        Image(systemName: selectedIDs.contains(source.id) ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 18))
-                            .foregroundStyle(selectedIDs.contains(source.id) ? AppColor.accent : AppColor.textSecondary)
-                            .frame(width: 22)
-                    }
+                HStack(spacing: 0) {
+                    SelectionMark(
+                        selected: managing ? selectedIDs.contains(source.id) : nil,
+                        reduceMotion: reduceMotion
+                    )
+                    HStack(spacing: Space.s3) {
                     sourceIcon(source.fileName)
                     Text(source.title)
                         .font(AppFont.secondary.weight(.semibold))
@@ -408,7 +407,9 @@ struct SourcesView: View {
                     Spacer(minLength: 0)
                     Text(formatRelativeTime(source.importedAt))
                         .frame(width: 110, alignment: .leading)
+                    }
                 }
+                .animation(Motion.layout(reduceMotion), value: managing)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -505,10 +506,8 @@ struct SourcesView: View {
             }
             guard leaveManageMode else { return }
             try? await Task.sleep(for: .seconds(reduceMotion ? 0.2 : 0.32))
-            withAnimation(Motion.fade(reduceMotion)) {
-                managing = false
-                selectedIDs.removeAll()
-            }
+            managing = false
+            selectedIDs.removeAll()
         }
     }
 

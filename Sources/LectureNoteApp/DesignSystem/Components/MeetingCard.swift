@@ -12,38 +12,36 @@ struct MeetingCard: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .center, spacing: Space.s3) {
-                if let selected {
-                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 18))
-                        .foregroundStyle(selected ? AppColor.accent : AppColor.textSecondary)
-                        .frame(width: 22)
-                }
-                CategoryIcon(symbol: symbol, colorIndex: colorIndex, size: 32)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(meeting.title)
-                        .font(AppFont.sectionTitle)
-                        .foregroundStyle(AppColor.textPrimary)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(AppFont.secondary)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: Space.s3)
-                if meeting.isLive {
-                    HStack(spacing: 6) {
-                        LiveDot(reduceMotion: reduceMotion)
-                        Text(tr("进行中"))
+            HStack(alignment: .center, spacing: 0) {
+                SelectionMark(selected: selected, reduceMotion: reduceMotion)
+                HStack(alignment: .center, spacing: Space.s3) {
+                    CategoryIcon(symbol: symbol, colorIndex: colorIndex, size: 32)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(meeting.title)
+                            .font(AppFont.sectionTitle)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(AppFont.secondary)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .lineLimit(1)
                     }
-                    .font(AppFont.caption)
-                    .foregroundStyle(AppColor.accent)
-                } else {
-                    Text(formatDuration(meeting.duration))
+                    Spacer(minLength: Space.s3)
+                    if meeting.isLive {
+                        HStack(spacing: 6) {
+                            LiveDot(reduceMotion: reduceMotion)
+                            Text(tr("进行中"))
+                        }
                         .font(AppFont.caption)
-                        .foregroundStyle(AppColor.textSecondary)
+                        .foregroundStyle(AppColor.accent)
+                    } else {
+                        Text(formatDuration(meeting.duration))
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
                 }
             }
+            .animation(Motion.layout(reduceMotion), value: selected != nil)
             .padding(Space.s4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
@@ -59,6 +57,27 @@ struct MeetingCard: View {
     private var subtitle: String {
         let length = meeting.isLive ? tr("进行中") : formatDuration(meeting.duration)
         return "\(formatStartStamp(meeting.startedAt)) · \(length)"
+    }
+}
+
+/// The circle grows in from the left and pushes the title across, then closes the other way.
+struct SelectionMark: View {
+    var selected: Bool?
+    var reduceMotion: Bool
+
+    private var shown: Bool { selected != nil }
+
+    var body: some View {
+        Image(systemName: selected == true ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: 18))
+            .foregroundStyle(selected == true ? AppColor.accent : AppColor.textSecondary)
+            .frame(width: 22, height: 22)
+            .padding(.trailing, Space.s3)
+            .frame(width: shown ? 22 + Space.s3 : 0, alignment: .leading)
+            .clipped()
+            .opacity(shown ? 1 : 0)
+            .accessibilityHidden(!shown)
+            .animation(Motion.layout(reduceMotion), value: shown)
     }
 }
 
