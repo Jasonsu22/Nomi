@@ -193,7 +193,7 @@ struct MeetingListView: View {
                 .frame(height: 30)
                 .background(selected ? AppColor.selection : Color.clear, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
     }
 
     private var chips: some View {
@@ -263,7 +263,7 @@ struct MeetingListView: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
     }
 
     private var newCategoryButton: some View {
@@ -284,7 +284,7 @@ struct MeetingListView: View {
                     Capsule().strokeBorder(AppColor.outline, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .popover(isPresented: $creating, arrowEdge: .bottom) {
             CategoryEditor(title: tr("新建分类"), draft: $draft) {
                 model.addCategory(name: draft.name, colorIndex: draft.colorIndex, symbol: draft.symbol)

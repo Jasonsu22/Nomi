@@ -127,6 +127,7 @@ struct AudioInputPicker: View {
             }
         }
         .labelsHidden()
+        .clickCursor()
         .disabled(!enabled)
         .accessibilityLabel(tr("输入源"))
     }

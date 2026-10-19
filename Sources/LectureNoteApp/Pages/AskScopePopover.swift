@@ -28,11 +28,11 @@ struct AskScopePopover: View {
             HStack(spacing: Space.s3) {
                 Spacer()
                 Button(tr("清空")) { change { $0.clear() } }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain.clicking())
                     .font(AppFont.secondary.weight(.medium))
                     .foregroundStyle(AppColor.textSecondary)
                 Button(tr("完成")) { onClose() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain.clicking())
                     .font(AppFont.secondary.weight(.medium))
                     .foregroundStyle(AppColor.onAccent)
                     .padding(.horizontal, 14)
@@ -103,7 +103,7 @@ struct AskScopePopover: View {
                 Spacer(minLength: Space.s3)
                 if column != .all {
                     Button(tr("全选这个分类")) { toggleBrowsedCategory() }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.plain.clicking())
                         .font(AppFont.secondary.weight(.medium))
                         .foregroundStyle(AppColor.accent)
                 }
@@ -236,7 +236,7 @@ struct AskScopePopover: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain.clicking())
         }
         .padding(.horizontal, Space.s2)
         .padding(.vertical, 6)
@@ -265,7 +265,7 @@ struct AskScopePopover: View {
             .padding(.vertical, 5)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.55)
     }
@@ -304,7 +304,7 @@ struct ScopeCheckBox: View {
                 .foregroundStyle(state == .off ? AppColor.textSecondary : AppColor.accent)
                 .frame(width: 22, height: 22)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.35)
     }

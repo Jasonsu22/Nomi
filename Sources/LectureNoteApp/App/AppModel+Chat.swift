@@ -14,6 +14,19 @@ extension AppModel {
         chats.filter { !$0.turns.isEmpty }.sorted { $0.updatedAt > $1.updatedAt }
     }
 
+    func chatHistory(anchoredTo meetingID: UUID?) -> [ChatSession] {
+        guard let meetingID else { return chatHistory }
+        return chatHistory.filter { $0.anchorMeetingID == meetingID }
+    }
+
+    func chat(anchoredTo meetingID: UUID?) -> ChatSession? {
+        if let meetingID {
+            guard let id = meetingChatID[meetingID] else { return nil }
+            return chats.first { $0.id == id }
+        }
+        return currentChat
+    }
+
     var webSearchSupport: WebSearchSupport {
         guard llmConfiguration.mode == .api else { return .local }
         guard let profile = llmConfiguration.activeProfile else { return .unsupported }
@@ -23,19 +36,54 @@ extension AppModel {
     }
 
     func ensureChat() {
-        if currentChat != nil { return }
-        let session = ChatSession(scope: currentChat?.scope ?? ChatScope())
+        if let current = currentChat, current.anchorMeetingID == nil { return }
+        if let existing = chats.first(where: { $0.anchorMeetingID == nil }) {
+            currentChatID = existing.id
+            return
+        }
+        let session = ChatSession()
         chats.insert(session, at: 0)
         currentChatID = session.id
     }
 
+    func ensureMeetingChat(_ meetingID: UUID) {
+        if let id = meetingChatID[meetingID], chats.contains(where: { $0.id == id && $0.anchorMeetingID == meetingID }) {
+            return
+        }
+        if let existing = chats.first(where: { $0.anchorMeetingID == meetingID }) {
+            meetingChatID[meetingID] = existing.id
+            return
+        }
+        let session = ChatSession(anchorMeetingID: meetingID)
+        chats.insert(session, at: 0)
+        meetingChatID[meetingID] = session.id
+    }
+
     func beginNewChat() {
-        if let current = currentChat, current.turns.isEmpty {
+        beginNewChat(anchor: nil)
+    }
+
+    func beginNewChat(anchor: UUID?) {
+        if let anchor {
+            if let id = meetingChatID[anchor],
+               let current = chats.first(where: { $0.id == id }), current.turns.isEmpty {
+                chatFocusRequest += 1
+                return
+            }
+            chats.removeAll { $0.anchorMeetingID == anchor && $0.turns.isEmpty && $0.id != chatGeneratingID }
+            let session = ChatSession(anchorMeetingID: anchor)
+            chats.insert(session, at: 0)
+            meetingChatID[anchor] = session.id
+            chatError = nil
             chatFocusRequest += 1
             return
         }
-        let scope = currentChat?.scope ?? ChatScope()
-        chats.removeAll { $0.turns.isEmpty && $0.id != chatGeneratingID }
+        if let current = currentChat, current.anchorMeetingID == nil, current.turns.isEmpty {
+            chatFocusRequest += 1
+            return
+        }
+        let scope = (currentChat?.anchorMeetingID == nil ? currentChat?.scope : nil) ?? ChatScope()
+        chats.removeAll { $0.anchorMeetingID == nil && $0.turns.isEmpty && $0.id != chatGeneratingID }
         let session = ChatSession(scope: scope)
         chats.insert(session, at: 0)
         currentChatID = session.id
@@ -43,9 +91,13 @@ extension AppModel {
         chatFocusRequest += 1
     }
 
-    func openChat(_ id: UUID) {
+    func openChat(_ id: UUID, forAnchor: UUID? = nil) {
         guard let session = chats.first(where: { $0.id == id }) else { return }
-        currentChatID = id
+        if let forAnchor, session.anchorMeetingID == forAnchor {
+            meetingChatID[forAnchor] = id
+        } else {
+            currentChatID = id
+        }
         chatError = nil
         applyStoredModel(session)
         chatFocusRequest += 1
@@ -53,15 +105,19 @@ extension AppModel {
 
     func deleteChat(_ id: UUID) {
         guard chatGeneratingID != id else { return }
+        let anchor = chats.first { $0.id == id }?.anchorMeetingID
         chats.removeAll { $0.id == id }
         if chatsReady { ChatStore.delete(id) }
+        if let anchor, meetingChatID[anchor] == id {
+            meetingChatID[anchor] = chats.first { $0.anchorMeetingID == anchor }?.id
+        }
         guard currentChatID == id else { return }
-        currentChatID = chatHistory.first?.id
+        currentChatID = chats.first { $0.anchorMeetingID == nil }?.id
         if let current = chats.first(where: { $0.id == currentChatID }) {
             applyStoredModel(current)
         } else {
             let session = ChatSession()
-            chats = [session]
+            chats.insert(session, at: 0)
             currentChatID = session.id
         }
         chatError = nil
@@ -98,6 +154,36 @@ extension AppModel {
         }
     }
 
+    var apiModelChoices: [String] {
+        guard let profile = llmConfiguration.activeProfile else { return [] }
+        var choices = profile.savedModelIDs
+        for id in llmConfiguration.listedModels[profile.id] ?? [] where !choices.contains(id) {
+            choices.append(id)
+        }
+        if !profile.modelID.isEmpty, !choices.contains(profile.modelID) {
+            choices.insert(profile.modelID, at: 0)
+        }
+        return choices
+    }
+
+    func refreshActiveAPIModels() async {
+        guard llmConfiguration.mode == .api, let profile = llmConfiguration.activeProfile else { return }
+        let key = (try? LLMKeychain.read(profile)) ?? ""
+        guard profile.isLoopback || !key.isEmpty else { return }
+        guard let models = try? await RemoteLLMClient.models(profile: profile, key: key), !models.isEmpty else { return }
+        llmConfiguration.setListedModels(models, for: profile.id)
+    }
+
+    func useAPIModel(_ modelID: String) {
+        llmConfiguration.selectModel(modelID)
+        ensureChat()
+        guard let id = currentChatID else { return }
+        mutate(id) {
+            $0.modelMode = LLMMode.api.rawValue
+            $0.profileID = llmConfiguration.activeID
+        }
+    }
+
     func useChatProfile(_ id: UUID) {
         guard llmConfiguration.profiles.contains(where: { $0.id == id }) else { return }
         llmConfiguration.setMode(.api)
@@ -131,29 +217,41 @@ extension AppModel {
     }
 
     @discardableResult
-    func ask(_ question: String) -> Bool {
+    func ask(_ question: String, anchor: UUID? = nil) -> Bool {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return false }
-        ensureChat()
-        guard chatGeneratingID == nil, canGenerateAssistant, let id = currentChatID,
+        if let anchor { ensureMeetingChat(anchor) } else { ensureChat() }
+        let resolvedID = anchor.flatMap { meetingChatID[$0] } ?? currentChatID
+        guard chatGeneratingID == nil, canGenerateAssistant, let id = resolvedID,
               let session = chats.first(where: { $0.id == id }) else {
             chatError = tr("现在不能提问。")
             return false
         }
+        let boundMeeting = anchor ?? session.anchorMeetingID
         let meetingItems = chatMeetingItems()
         let sourceItems = chatSourceItems()
-        let chosenMeetings = session.scope.selectedMeetings(meetingItems)
-        let chosenSources = session.scope.selectedSources(sourceItems)
-        guard !chosenMeetings.isEmpty || !chosenSources.isEmpty else {
-            chatError = tr("先选择会议或资料。")
-            return false
+        let chosenMeetings: Set<UUID>
+        let chosenSources: Set<UUID>
+        let hasScope: Bool
+        if let boundMeeting {
+            chosenMeetings = [boundMeeting]
+            chosenSources = Set(meetingLinks[boundMeeting] ?? [])
+            let meeting = meetings.first { $0.id == boundMeeting }
+            let hasText = meeting?.paragraphs.contains {
+                !$0.renderedSource(language: meeting?.sourceLanguage ?? "zh").isEmpty
+            } ?? false
+            hasScope = hasText || !chosenSources.isEmpty
+        } else {
+            chosenMeetings = session.scope.selectedMeetings(meetingItems)
+            chosenSources = session.scope.selectedSources(sourceItems)
+            hasScope = !chosenMeetings.isEmpty || !chosenSources.isEmpty
         }
         chatError = nil
         let allowsWeb = session.allowsWeb && webSearchSupport == .available
         let mode = llmConfiguration.mode
         let profile = llmConfiguration.activeProfile
         let name = assistantModelName
-        let language = InterfaceLanguage.current == .chinese ? "Simplified Chinese" : "English"
+        let language = prompts.modelLanguageName
         let history = session.turns
         let pickedMeetings = meetings.filter { chosenMeetings.contains($0.id) }
         let pickedSources = sources.filter { chosenSources.contains($0.id) }
@@ -174,9 +272,17 @@ extension AppModel {
             }
             do {
                 let packed = ChatContext.pack(await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources), question: question)
-                guard !packed.isEmpty else { throw llmError(tr("所选范围里还没有可以阅读的文字。")) }
+                if hasScope && packed.isEmpty { throw llmError(tr("所选范围里还没有可以阅读的文字。")) }
                 try Task.checkCancellation()
                 let text: String
+                let system = ChatContext.composedSystemPrompt(
+                    override: self.prompts.systemOverride,
+                    language: language,
+                    allowsWeb: allowsWeb,
+                    hasPassages: !packed.isEmpty,
+                    skills: self.prompts.skills
+                )
+                let prompt = ChatContext.userPrompt(question: question, history: history, blocks: packed)
                 if mode == .api {
                     guard let profile else { throw llmError(tr("请先在设置中选择 API 配置。")) }
                     let key = try LLMKeychain.read(profile)
@@ -184,16 +290,13 @@ extension AppModel {
                     text = try await RemoteLLMClient.generate(
                         profile: profile,
                         key: key,
-                        system: ChatContext.systemPrompt(language: language, allowsWeb: allowsWeb),
-                        prompt: ChatContext.userPrompt(question: question, history: history, blocks: packed),
+                        system: system,
+                        prompt: prompt,
                         allowsWeb: allowsWeb
                     )
                 } else {
                     guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
-                    text = try await engine.generate(
-                        system: ChatContext.systemPrompt(language: language, allowsWeb: false),
-                        prompt: ChatContext.userPrompt(question: question, history: history, blocks: packed)
-                    )
+                    text = try await engine.generate(system: system, prompt: prompt)
                 }
                 try Task.checkCancellation()
                 self.finishChat(id, question: question, answer: text, modelName: name, citations: ChatContext.citations(in: text, blocks: packed), error: nil)

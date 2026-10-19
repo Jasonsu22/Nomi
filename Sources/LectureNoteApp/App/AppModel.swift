@@ -65,9 +65,16 @@ final class AppModel {
     let audioInputs = AudioInputs()
     let localModels = LocalModelLibrary()
     let llmConfiguration = LLMConfiguration()
+    let prompts = PromptPreferences()
     var assistantStates: [UUID: MeetingAssistantState] = [:]
     var chats: [ChatSession] = []
     var currentChatID: UUID?
+    /// The open chat for each meeting's own ask panel.
+    var meetingChatID: [UUID: UUID] = [:]
+    var meetingLinks: [UUID: [UUID]] = [:] {
+        didSet { persistMeetingLinks() }
+    }
+    private var meetingLinksReady = false
     var chatGeneratingID: UUID?
     var pendingQuestion: String?
     var chatError: String?
@@ -120,10 +127,12 @@ final class AppModel {
             do {
                 chats = try ChatStore.load().sorted { $0.updatedAt > $1.updatedAt }
                 chatsReady = true
-                currentChatID = chats.first?.id
+                currentChatID = chats.first { $0.anchorMeetingID == nil }?.id
             } catch {
                 chatError = tr("无法读取对话记录，原文件已保留。")
             }
+            meetingLinks = MeetingSourceLinkStore.load()
+            meetingLinksReady = true
         }
         if case .category(let id) = self.filter, self.category(for: id) == nil {
             self.filter = .all
@@ -427,6 +436,77 @@ final class AppModel {
         }
         guard changed else { return }
         meetings = updated
+        syncLinkedSources(of: ids, to: categoryID)
+    }
+
+    func linkedSources(for meetingID: UUID) -> [KnowledgeSource] {
+        let ids = meetingLinks[meetingID] ?? []
+        return ids.compactMap { id in sources.first { $0.id == id } }
+    }
+
+    func importLinkedSources(_ urls: [URL], meetingID: UUID) {
+        guard let meeting = meetings.first(where: { $0.id == meetingID }) else { return }
+        var added: [UUID] = []
+        var rejected = false
+        for url in urls {
+            guard SourceStore.accepts(url) else {
+                rejected = true
+                continue
+            }
+            do {
+                let source = try SourceStore.stage(url, categoryID: meeting.categoryID)
+                sources.append(source)
+                added.append(source.id)
+            } catch {
+                sourceError = error.localizedDescription
+            }
+        }
+        if rejected {
+            sourceError = tr("暂时只收 PDF、幻灯片、文档和图片。")
+        }
+        guard !added.isEmpty else { return }
+        var links = meetingLinks[meetingID] ?? []
+        links.append(contentsOf: added)
+        meetingLinks[meetingID] = links
+    }
+
+    func linkSource(_ sourceID: UUID, to meetingID: UUID) {
+        guard let meeting = meetings.first(where: { $0.id == meetingID }),
+              sources.contains(where: { $0.id == sourceID }) else { return }
+        var links = meetingLinks[meetingID] ?? []
+        guard !links.contains(sourceID) else { return }
+        links.append(sourceID)
+        meetingLinks[meetingID] = links
+        guard let index = sources.firstIndex(where: { $0.id == sourceID }),
+              sources[index].categoryID != meeting.categoryID else { return }
+        sources[index].categoryID = meeting.categoryID
+    }
+
+    func unlinkSource(_ sourceID: UUID, from meetingID: UUID) {
+        meetingLinks[meetingID]?.removeAll { $0 == sourceID }
+        if meetingLinks[meetingID]?.isEmpty == true {
+            meetingLinks[meetingID] = nil
+        }
+    }
+
+    private func syncLinkedSources(of meetingIDs: Set<UUID>, to categoryID: UUID?) {
+        var updated = sources
+        var changed = false
+        for meetingID in meetingIDs {
+            for sourceID in meetingLinks[meetingID] ?? [] {
+                guard let index = updated.firstIndex(where: { $0.id == sourceID }),
+                      updated[index].categoryID != categoryID else { continue }
+                updated[index].categoryID = categoryID
+                changed = true
+            }
+        }
+        if changed { sources = updated }
+    }
+
+    private func persistMeetingLinks() {
+        guard meetingLinksReady else { return }
+        do { try MeetingSourceLinkStore.save(meetingLinks) }
+        catch { sourceError = tr("资料保存失败，请重试。") }
     }
 
     func deleteMeetings(_ ids: Set<UUID>) {
@@ -440,6 +520,8 @@ final class AppModel {
         if let meeting = meetings.first(where: { $0.id == id }) { removeAudio(of: meeting) }
         meetings.removeAll { $0.id == id }
         assistantStates[id] = nil
+        meetingLinks[id] = nil
+        meetingChatID[id] = nil
         if openMeetingID == id {
             openMeetingID = nil
         }
@@ -530,6 +612,12 @@ final class AppModel {
             SourceStore.remove(source)
         }
         sources.removeAll { ids.contains($0.id) }
+        var links = meetingLinks
+        for key in links.keys {
+            links[key]?.removeAll { ids.contains($0) }
+            if links[key]?.isEmpty == true { links[key] = nil }
+        }
+        meetingLinks = links
     }
 
     func downloadSourcesByCategory(_ ids: Set<UUID>? = nil, prompt: String? = nil) {

@@ -203,18 +203,80 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
 }
 
 struct ChatSession: Codable, Equatable, Identifiable, Sendable {
-    var id = UUID()
-    var title = ""
-    var titleCustom = false
-    var createdAt = Date()
-    var updatedAt = Date()
-    var scope = ChatScope()
-    var allowsWeb = false
+    var id: UUID
+    var title: String
+    var titleCustom: Bool
+    var createdAt: Date
+    var updatedAt: Date
+    var scope: ChatScope
+    var allowsWeb: Bool
     var modelMode: String?
     var profileID: UUID?
-    var turns: [ChatTurn] = []
+    var turns: [ChatTurn]
+    /// Set when the chat was started from one meeting. The meeting page only lists these.
+    var anchorMeetingID: UUID?
 
     var displayTitle: String {
         title.isEmpty ? tr("新会话") : title
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, titleCustom, createdAt, updatedAt, scope, allowsWeb, modelMode, profileID, turns, anchorMeetingID
+    }
+
+    init(
+        id: UUID = UUID(),
+        title: String = "",
+        titleCustom: Bool = false,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date(),
+        scope: ChatScope = ChatScope(),
+        allowsWeb: Bool = false,
+        modelMode: String? = nil,
+        profileID: UUID? = nil,
+        turns: [ChatTurn] = [],
+        anchorMeetingID: UUID? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.titleCustom = titleCustom
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.scope = scope
+        self.allowsWeb = allowsWeb
+        self.modelMode = modelMode
+        self.profileID = profileID
+        self.turns = turns
+        self.anchorMeetingID = anchorMeetingID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        titleCustom = try container.decodeIfPresent(Bool.self, forKey: .titleCustom) ?? false
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
+        scope = try container.decodeIfPresent(ChatScope.self, forKey: .scope) ?? ChatScope()
+        allowsWeb = try container.decodeIfPresent(Bool.self, forKey: .allowsWeb) ?? false
+        modelMode = try container.decodeIfPresent(String.self, forKey: .modelMode)
+        profileID = try container.decodeIfPresent(UUID.self, forKey: .profileID)
+        turns = try container.decodeIfPresent([ChatTurn].self, forKey: .turns) ?? []
+        anchorMeetingID = try container.decodeIfPresent(UUID.self, forKey: .anchorMeetingID)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(titleCustom, forKey: .titleCustom)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(scope, forKey: .scope)
+        try container.encode(allowsWeb, forKey: .allowsWeb)
+        try container.encodeIfPresent(modelMode, forKey: .modelMode)
+        try container.encodeIfPresent(profileID, forKey: .profileID)
+        try container.encode(turns, forKey: .turns)
+        try container.encodeIfPresent(anchorMeetingID, forKey: .anchorMeetingID)
     }
 }

@@ -105,6 +105,44 @@ struct ChatScopeTests {
         #expect(picked[0].body.count <= 40)
     }
 
+    @Test func aQuestionWithoutPassagesDoesNotAttachThem() {
+        let prompt = ChatContext.userPrompt(question: "什么是注意力？", history: [], blocks: [])
+        #expect(prompt == "Question: 什么是注意力？")
+        #expect(!prompt.contains("passages"))
+        let system = ChatContext.systemPrompt(language: "Simplified Chinese", allowsWeb: false, hasPassages: false)
+        #expect(system.contains("You are Nomi"))
+        #expect(system.contains("No meeting transcript"))
+    }
+
+    @Test func aCustomSystemPromptReplacesTheDefaultAndDisabledSkillsStayOut() {
+        let custom = "Answer only in haiku."
+        let on = PromptSkill(name: "术语表", body: "Prefer the course glossary.", enabled: true)
+        let off = PromptSkill(name: "忽略", body: "Do not use this.", enabled: false)
+        let system = ChatContext.composedSystemPrompt(
+            override: custom,
+            language: "Simplified Chinese",
+            allowsWeb: false,
+            hasPassages: true,
+            skills: [on, off]
+        )
+        #expect(system.contains("Answer only in haiku."))
+        #expect(system.contains("Answer in Simplified Chinese."))
+        #expect(system.contains("术语表"))
+        #expect(system.contains("Prefer the course glossary."))
+        #expect(!system.contains("Do not use this."))
+        #expect(!system.contains("You are Nomi"))
+
+        let untouched = ChatContext.composedSystemPrompt(
+            override: ChatContext.defaultSystemText,
+            language: "English",
+            allowsWeb: false,
+            hasPassages: false,
+            skills: []
+        )
+        #expect(untouched.contains("You are Nomi"))
+        #expect(untouched.contains("No meeting transcript"))
+    }
+
     @Test func citationsKeepPassageNumbersAndWebLinks() {
         let block = ContextBlock(title: "计算机网络", detail: "12:30", body: "窗口", meetingID: UUID())
         let citations = ChatContext.citations(in: "见 [1]，以及 https://example.com/a.", blocks: [block])

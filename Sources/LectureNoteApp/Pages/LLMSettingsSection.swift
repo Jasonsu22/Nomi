@@ -28,11 +28,16 @@ struct LLMSettingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             Text(tr("提问与摘要大模型")).font(AppFont.sectionTitle).foregroundStyle(AppColor.textPrimary)
-            Picker(tr("大模型来源"), selection: Binding(get: { model.llmConfiguration.mode }, set: { confirmation = .mode($0) })) {
-                ForEach(LLMMode.allCases) { mode in Text(mode.title).tag(mode) }
+            HStack {
+                Picker(tr("大模型来源"), selection: Binding(get: { model.llmConfiguration.mode }, set: { confirmation = .mode($0) })) {
+                    ForEach(LLMMode.allCases) { mode in Text(mode.title).tag(mode) }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .clickCursor()
+                .disabled(model.assistantIsBusy)
+                Spacer(minLength: 0)
             }
-            .pickerStyle(.segmented).frame(width: 260)
-            .disabled(model.assistantIsBusy)
             if model.llmConfiguration.mode == .local {
                 LocalModelPicker(model: model, role: .assistant)
                     .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
@@ -53,13 +58,15 @@ struct LLMSettingsSection: View {
                                 }
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.plain.clicking())
                             Spacer()
                             Button(tr("编辑")) { editingProfile = profile }
+                                .clickCursor()
                             Button(role: .destructive) { confirmation = .delete(profile) } label: {
                                 Label(tr("删除"), systemImage: "trash")
                                     .foregroundStyle(.red)
                             }
+                            .clickCursor()
                             .tint(.red)
                         }
                         .disabled(model.assistantIsBusy)
@@ -67,12 +74,15 @@ struct LLMSettingsSection: View {
                     Button {
                         editingProfile = LLMAPIProfile(providerID: "openai", name: "OpenAI", baseURL: "https://api.openai.com/v1")
                     } label: { Label(tr("添加 API 配置"), systemImage: "plus") }
+                    .clickCursor()
                     .disabled(model.assistantIsBusy)
                     if model.llmConfiguration.activeProfile == nil {
                         Text(tr("添加并选择一个 API 配置后，即可使用提问和摘要。"))
                             .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Space.s4)
                 .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
             }
@@ -108,6 +118,7 @@ private struct APIProfileEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: LLMAPIProfile
     @State private var key = ""
+    @State private var modelEntry = ""
     @State private var availableModels: [String] = []
     @State private var fetching = false
     @State private var error: String?
@@ -122,9 +133,13 @@ private struct APIProfileEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             Text(tr("API 配置")).font(AppFont.sectionTitle)
-            Form {
-                Picker(tr("服务商预设"), selection: $draft.providerID) {
-                    ForEach(LLMProviderPreset.all) { item in Text(tr(item.name)).tag(item.id) }
+            VStack(alignment: .leading, spacing: 12) {
+                fieldRow(tr("服务商预设")) {
+                    Picker(tr("服务商预设"), selection: $draft.providerID) {
+                        ForEach(LLMProviderPreset.all) { item in Text(tr(item.name)).tag(item.id) }
+                    }
+                    .labelsHidden()
+                    .clickCursor()
                 }
                 .onChange(of: draft.providerID) { _, value in
                     guard let preset = LLMProviderPreset.all.first(where: { $0.id == value }) else { return }
@@ -132,37 +147,94 @@ private struct APIProfileEditor: View {
                     draft.baseURL = preset.baseURL
                     draft.format = preset.format
                     draft.modelID = ""
+                    draft.savedModelIDs = []
                     key = ""
+                    modelEntry = ""
                     availableModels = []
                 }
-                TextField(tr("配置名称"), text: $draft.name)
-                TextField("API Base URL", text: $draft.baseURL)
-                Picker(tr("接口格式"), selection: $draft.format) {
-                    ForEach(LLMAPIFormat.allCases) { format in Text(format.title).tag(format) }
+                fieldRow(tr("配置名称")) {
+                    TextField(tr("配置名称"), text: $draft.name)
                 }
-                SecureField(tr("API 密钥（已保存时留空保留）"), text: $key)
-                TextField(tr("模型 ID"), text: $draft.modelID)
-                if !availableModels.isEmpty {
-                    Picker(tr("可用模型"), selection: $draft.modelID) {
-                        if !availableModels.contains(draft.modelID) { Text(draft.modelID.isEmpty ? tr("请选择") : draft.modelID).tag(draft.modelID) }
-                        ForEach(availableModels, id: \.self) { Text($0).tag($0) }
+                fieldRow("API Base URL") {
+                    TextField("API Base URL", text: $draft.baseURL)
+                }
+                fieldRow(tr("接口格式")) {
+                    Picker(tr("接口格式"), selection: $draft.format) {
+                        ForEach(LLMAPIFormat.allCases) { format in Text(format.title).tag(format) }
                     }
+                    .labelsHidden()
+                    .clickCursor()
+                }
+                fieldRow(tr("API 密钥")) {
+                    SecureField(tr("API 密钥"), text: $key)
+                }
+                HStack(alignment: .top, spacing: 12) {
+                    Text(tr("模型列表"))
+                        .frame(width: Self.labelWidth, alignment: .trailing)
+                        .padding(.top, 6)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            TextField(tr("模型 ID"), text: $modelEntry)
+                                .onSubmit(addEnteredModel)
+                                .frame(maxWidth: .infinity)
+                            Button(action: addEnteredModel) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .frame(width: 22, height: 22)
+                            }
+                            .buttonStyle(.borderless.clicking())
+                            .disabled(modelEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .help(tr("添加模型"))
+                        }
+                        ForEach(modelChoices, id: \.self) { id in
+                            HStack(spacing: 8) {
+                                Button {
+                                    draft.modelID = id
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: draft.modelID == id ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(AppColor.accent)
+                                        Text(id)
+                                            .font(AppFont.secondary)
+                                            .foregroundStyle(AppColor.textPrimary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 0)
+                                    }
+                                }
+                                .buttonStyle(.plain.clicking())
+                                Button {
+                                    removeModel(id)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(AppColor.textSecondary)
+                                }
+                                .buttonStyle(.plain.clicking())
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .disabled(fetching)
+            .onAppear {
+                if !draft.modelID.isEmpty, !draft.savedModelIDs.contains(draft.modelID) {
+                    draft.savedModelIDs.insert(draft.modelID, at: 0)
+                }
+            }
+            if let error { Text(error).font(AppFont.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
             HStack {
                 Button(tr("获取模型列表")) { prepare(.fetch) }
+                    .clickCursor()
                     .disabled(fetching)
                 if fetching { ProgressView().controlSize(.small) }
                 Spacer()
-            }
-            Text(tr("API 密钥保存到 macOS 钥匙串。支持手动填写模型 ID；本机 Ollama 可以不填密钥。"))
-                .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
-            if let error { Text(error).font(AppFont.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
-            HStack {
-                Spacer()
-                Button(tr("取消")) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(tr("保存")) { prepare(.save) }.buttonStyle(.borderedProminent).disabled(fetching)
+                Button(tr("取消")) { dismiss() }
+                    .clickCursor()
+                    .keyboardShortcut(.cancelAction)
+                Button(tr("保存")) { prepare(.save) }
+                    .buttonStyle(.borderedProminent.clicking())
+                    .disabled(fetching)
             }
         }
         .padding(Space.s5)
@@ -180,7 +252,45 @@ private struct APIProfileEditor: View {
         }
     }
 
+    private static let labelWidth: CGFloat = 148
+
+    private func fieldRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .frame(width: Self.labelWidth, alignment: .trailing)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var modelChoices: [String] {
+        var choices = draft.savedModelIDs
+        for id in availableModels where !choices.contains(id) {
+            choices.append(id)
+        }
+        return choices
+    }
+
+    private func addEnteredModel() {
+        let id = modelEntry.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return }
+        if !draft.savedModelIDs.contains(id) {
+            draft.savedModelIDs.append(id)
+        }
+        draft.modelID = id
+        modelEntry = ""
+    }
+
+    private func removeModel(_ id: String) {
+        draft.savedModelIDs.removeAll { $0 == id }
+        availableModels.removeAll { $0 == id }
+        if draft.modelID == id {
+            draft.modelID = modelChoices.first ?? ""
+        }
+    }
+
     private func prepare(_ action: Action) {
+        addEnteredModel()
         do { draft = try draft.validated(requireModel: action == .save); error = nil; confirmation = action }
         catch { self.error = error.localizedDescription }
     }
@@ -200,6 +310,12 @@ private struct APIProfileEditor: View {
             }
             guard draft.isLoopback || !secret.isEmpty else { throw llmError(tr("请输入 API 密钥。")) }
             availableModels = try await RemoteLLMClient.models(profile: draft, key: secret)
+            for id in availableModels where !draft.savedModelIDs.contains(id) {
+                draft.savedModelIDs.append(id)
+            }
+            if draft.modelID.isEmpty, let first = draft.savedModelIDs.first {
+                draft.modelID = first
+            }
             if availableModels.isEmpty { error = tr("服务未返回模型列表，可以手动填写模型 ID。") }
         } catch { self.error = error.localizedDescription }
     }

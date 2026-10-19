@@ -20,7 +20,7 @@ struct SearchField: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(AppColor.textSecondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain.clicking())
                 .accessibilityLabel(tr("清除搜索"))
             }
         }

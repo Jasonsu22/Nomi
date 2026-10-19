@@ -4,6 +4,7 @@ enum DetailTab: String, CaseIterable, Identifiable {
     case info = "信息"
     case ask = "提问"
     case summary = "摘要"
+    case sources = "资料"
 
     var id: String { rawValue }
 }
@@ -15,6 +16,7 @@ struct DetailSidePanel: View {
     var onClose: () -> Void
     @State private var tab: DetailTab = .info
     @State private var confirmingDelete = false
+    @State private var importingSources = false
     @Namespace private var tabNamespace
 
     var body: some View {
@@ -29,7 +31,7 @@ struct DetailSidePanel: View {
                         Text(tr(item.rawValue))
                             .font(AppFont.caption.weight(.medium))
                             .foregroundStyle(tab == item ? AppColor.onSelection : AppColor.textSecondary)
-                            .padding(.horizontal, 10)
+                            .padding(.horizontal, 8)
                             .frame(height: 26)
                             .background {
                                 if tab == item {
@@ -39,7 +41,7 @@ struct DetailSidePanel: View {
                                 }
                             }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain.clicking())
                     .accessibilityAddTraits(tab == item ? .isSelected : [])
                 }
                 Spacer(minLength: 0)
@@ -49,7 +51,7 @@ struct DetailSidePanel: View {
                         .foregroundStyle(AppColor.textSecondary)
                         .frame(width: 24, height: 24)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain.clicking())
                 .accessibilityLabel(tr("关闭侧栏"))
             }
             .padding(.horizontal, Space.s4)
@@ -61,9 +63,11 @@ struct DetailSidePanel: View {
                 case .info:
                     info
                 case .ask:
-                    MeetingAssistantPanel(model: model, meeting: meeting)
+                    AskView(model: model, anchorMeetingID: meeting.id)
                 case .summary:
                     MeetingAssistantPanel(model: model, meeting: meeting, summary: true)
+                case .sources:
+                    sources
                 }
             }
             .id(tab)
@@ -85,24 +89,25 @@ struct DetailSidePanel: View {
         } message: {
             Text(tr("转写会一起删掉。"))
         }
+        .fileImporter(isPresented: $importingSources, allowedContentTypes: SourceStore.allowedTypes, allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            model.importLinkedSources(urls, meetingID: meeting.id)
+        }
     }
 
     private var info: some View {
-        VStack(alignment: .leading, spacing: Space.s4) {
-            VStack(spacing: 0) {
-                categoryRow
-                hairline
-                infoRow(tr("输入源"), meeting.inputTitle)
-                hairline
-                infoRow(tr("语言"), "\(languageName(meeting.sourceLanguage)) → \(languageName(meeting.targetLanguage))")
-                hairline
-                durationRow
-                hairline
-                infoRow(tr("字数"), "\(meeting.characterCount)")
-            }
-            .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                VStack(spacing: 0) {
+                    categoryRow
+                    hairline
+                    durationRow
+                    hairline
+                    infoRow(tr("字数"), "\(meeting.characterCount)")
+                }
+                .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
 
-            Button {
+                Button {
                 model.export([meeting])
             } label: {
                 Text(tr("导出 Markdown"))
@@ -112,7 +117,7 @@ struct DetailSidePanel: View {
                     .frame(height: 34)
                     .background(AppColor.surfaceInset, in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain.clicking())
 
             if !meeting.isLive {
                 Button {
@@ -124,12 +129,101 @@ struct DetailSidePanel: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 34)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain.clicking())
                 .disabled(model.assistantStates[meeting.id]?.isGenerating == true)
             }
-            Spacer(minLength: 0)
+            }
+            .padding(Space.s4)
         }
-        .padding(Space.s4)
+    }
+
+    private var linkedSources: [KnowledgeSource] {
+        model.linkedSources(for: meeting.id)
+    }
+
+    private var linkableSources: [KnowledgeSource] {
+        let linked = Set(linkedSources.map(\.id))
+        return model.sources.filter { source in
+            !linked.contains(source.id) && (source.categoryID == meeting.categoryID || source.categoryID == nil)
+        }
+    }
+
+    private var sources: some View {
+        ScrollView {
+            materials
+                .padding(Space.s4)
+        }
+    }
+
+    private var materials: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text(tr("资料"))
+                    .font(AppFont.body)
+                    .foregroundStyle(AppColor.textPrimary)
+                Spacer()
+                if !linkableSources.isEmpty {
+                    Menu {
+                        ForEach(linkableSources) { source in
+                            Button(source.title) {
+                                model.linkSource(source.id, to: meeting.id)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "link")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .clickCursor()
+                    .help(tr("关联已有资料"))
+                }
+            }
+            if linkedSources.isEmpty {
+                Text(tr("导入 PDF 或文档，提问时会一并阅读，并放进这个分类的资料库。"))
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(linkedSources) { source in
+                        HStack(spacing: Space.s2) {
+                            Image(systemName: source.fileName.lowercased().hasSuffix("pdf") ? "doc.richtext" : "doc")
+                                .foregroundStyle(AppColor.textSecondary)
+                            Text(source.title)
+                                .font(AppFont.secondary)
+                                .foregroundStyle(AppColor.textPrimary)
+                                .lineLimit(1)
+                            Spacer(minLength: Space.s2)
+                            Button {
+                                model.unlinkSource(source.id, from: meeting.id)
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(AppColor.textSecondary)
+                            }
+                            .buttonStyle(.plain.clicking())
+                            .help(tr("取消关联"))
+                        }
+                        .padding(.horizontal, Space.s3)
+                        .padding(.vertical, 8)
+                    }
+                }
+                .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
+            }
+            Button {
+                importingSources = true
+            } label: {
+                Text(tr("添加资料"))
+                    .font(AppFont.secondary.weight(.medium))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 34)
+                    .background(AppColor.surfaceInset, in: Capsule())
+            }
+            .buttonStyle(.plain.clicking())
+        }
     }
 
     private var categoryRow: some View {
@@ -161,6 +255,7 @@ struct DetailSidePanel: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .clickCursor()
     }
 
     private var durationRow: some View {

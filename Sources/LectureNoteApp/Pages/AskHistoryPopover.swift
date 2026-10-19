@@ -2,6 +2,8 @@ import SwiftUI
 
 struct AskHistoryPopover: View {
     var model: AppModel
+    var anchorMeetingID: UUID? = nil
+    var currentID: UUID? = nil
     var onRename: (ChatSession) -> Void
     var onDelete: (ChatSession) -> Void
     var onClose: () -> Void
@@ -39,17 +41,21 @@ struct AskHistoryPopover: View {
                 }
             }
         }
-        .frame(width: 360, height: filtered.isEmpty ? 260 : 420)
+        .frame(width: anchorMeetingID == nil ? 360 : 300, height: filtered.isEmpty ? 220 : (anchorMeetingID == nil ? 420 : 320))
         .background(AppColor.surface)
         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(AppColor.separator))
         .shadow(color: .black.opacity(0.16), radius: 22, y: 10)
     }
 
+    private var pool: [ChatSession] {
+        model.chatHistory(anchoredTo: anchorMeetingID)
+    }
+
     private var filtered: [ChatSession] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty else { return model.chatHistory }
-        return model.chatHistory.filter { session in
+        guard !needle.isEmpty else { return pool }
+        return pool.filter { session in
             session.displayTitle.localizedStandardContains(needle)
                 || session.turns.contains { $0.question.localizedStandardContains(needle) || $0.answer.localizedStandardContains(needle) }
         }
@@ -68,10 +74,21 @@ struct AskHistoryPopover: View {
         }
     }
 
+    private func subtitle(_ session: ChatSession) -> String {
+        if let id = session.anchorMeetingID, let meeting = model.meetings.first(where: { $0.id == id }) {
+            return meeting.title
+        }
+        return session.scope.chipTitle(
+            meetings: model.chatMeetingItems(),
+            sources: model.chatSourceItems(),
+            categories: model.chatCategoryNames()
+        )
+    }
+
     private func historyRow(_ session: ChatSession) -> some View {
-        let current = session.id == model.currentChatID
+        let current = session.id == (currentID ?? model.currentChatID)
         return Button {
-            model.openChat(session.id)
+            model.openChat(session.id, forAnchor: anchorMeetingID)
             onClose()
         } label: {
             HStack(alignment: .top, spacing: Space.s2) {
@@ -80,11 +97,7 @@ struct AskHistoryPopover: View {
                         .font(AppFont.secondary.weight(.medium))
                         .foregroundStyle(AppColor.textPrimary)
                         .lineLimit(1)
-                    Text(session.scope.chipTitle(
-                        meetings: model.chatMeetingItems(),
-                        sources: model.chatSourceItems(),
-                        categories: model.chatCategoryNames()
-                    ))
+                    Text(subtitle(session))
                     .font(AppFont.caption)
                     .foregroundStyle(AppColor.textSecondary)
                     .lineLimit(1)
@@ -106,7 +119,7 @@ struct AskHistoryPopover: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(current ? AppColor.accentSoft : Color.clear, in: RoundedRectangle(cornerRadius: Radius.tag, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .contextMenu {
             Button(tr("重命名")) { onRename(session) }
             Button(tr("删除"), role: .destructive) { onDelete(session) }

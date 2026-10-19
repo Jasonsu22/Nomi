@@ -50,7 +50,7 @@ struct TranscriptCard: View {
                         .padding(.horizontal, 8)
                         .frame(height: 24)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain.clicking())
             }
             Button {
                 onCopy(snapshot)
@@ -64,7 +64,7 @@ struct TranscriptCard: View {
                     .font(AppFont.caption)
                     .foregroundStyle(AppColor.textSecondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain.clicking())
         }
         .padding(.horizontal, Space.s4)
         .padding(.top, Space.s4)
@@ -78,7 +78,7 @@ struct TranscriptCard: View {
                 .foregroundStyle(AppColor.textSecondary)
                 .frame(width: 28, height: 24)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
     }
 
     private func transcript(_ paragraphs: [Paragraph]) -> some View {

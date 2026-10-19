@@ -14,33 +14,24 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: Space.s5) {
                     VStack(spacing: 0) {
                         settingRow(tr("界面语言")) {
-                            Picker(tr("界面语言"), selection: $interfaceLanguage) {
-                                ForEach(InterfaceLanguage.allCases) { language in
-                                    Text(language.title).tag(language.rawValue)
-                                }
-                            }
-                            .labelsHidden()
-                            .selectedTextPickerWidth((InterfaceLanguage(rawValue: interfaceLanguage) ?? .system).title)
+                            valueMenu(
+                                selection: $interfaceLanguage,
+                                options: InterfaceLanguage.allCases.map { ($0.rawValue, $0.title) }
+                            )
                         }
                         divider
                         settingRow(tr("外观")) {
-                            Picker(tr("外观"), selection: $appearance) {
-                                ForEach(InterfaceAppearance.allCases) { item in
-                                    Text(item.title).tag(item.rawValue)
-                                }
-                            }
-                            .labelsHidden()
-                            .selectedTextPickerWidth((InterfaceAppearance(rawValue: appearance) ?? .system).title)
+                            valueMenu(
+                                selection: $appearance,
+                                options: InterfaceAppearance.allCases.map { ($0.rawValue, $0.title) }
+                            )
                         }
                         divider
                         settingRow(tr("麦克风权限")) {
-                            Picker(tr("麦克风权限"), selection: $microphonePrompt) {
-                                ForEach(MicrophonePrompt.allCases) { item in
-                                    Text(item.title).tag(item.rawValue)
-                                }
-                            }
-                            .labelsHidden()
-                            .selectedTextPickerWidth((MicrophonePrompt(rawValue: microphonePrompt) ?? .ask).title)
+                            valueMenu(
+                                selection: $microphonePrompt,
+                                options: MicrophonePrompt.allCases.map { ($0.rawValue, $0.title) }
+                            )
                             .onChange(of: microphonePrompt) { _, value in
                                 guard value == MicrophonePrompt.allow.rawValue else { return }
                                 Task { await allowMicrophoneNow() }
@@ -51,6 +42,7 @@ struct SettingsView: View {
 
                     LocalModelsSection(model: model)
                     LLMSettingsSection(model: model)
+                    PromptSettingsSection(model: model)
 
                     HStack(spacing: Space.s3) {
                         BrandLogo(side: 64)
@@ -78,10 +70,38 @@ struct SettingsView: View {
         HStack {
             Text(title).font(AppFont.body).foregroundStyle(AppColor.textPrimary)
             Spacer()
-            content().font(AppFont.secondary).foregroundStyle(AppColor.textSecondary)
+            content()
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, 14)
+    }
+
+    private func valueMenu(selection: Binding<String>, options: [(value: String, title: String)]) -> some View {
+        let current = options.first { $0.value == selection.wrappedValue }?.title ?? ""
+        return Menu {
+            Picker("", selection: selection) {
+                ForEach(options, id: \.value) { option in
+                    Text(option.title).tag(option.value)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            HStack(spacing: 6) {
+                Text(current)
+                    .font(AppFont.secondary.weight(.medium))
+                    .foregroundStyle(AppColor.textPrimary)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppColor.textSecondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain.clicking())
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .clickCursor()
     }
 
     private func allowMicrophoneNow() async {

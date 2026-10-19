@@ -180,7 +180,7 @@ struct SourcesView: View {
                 .padding(3)
                 .background(AppColor.surface, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .help(tr("按分类分组"))
     }
 
@@ -195,7 +195,7 @@ struct SourcesView: View {
                 .frame(height: 40)
                 .background(AppColor.accent, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
     }
 
     private var chips: some View {
@@ -235,7 +235,7 @@ struct SourcesView: View {
                             Capsule().strokeBorder(AppColor.outline, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                         }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain.clicking())
                 .popover(isPresented: $creating, arrowEdge: .bottom) {
                     CategoryEditor(title: tr("新建分类"), draft: $draft) {
                         if let id = model.addCategory(name: draft.name, colorIndex: draft.colorIndex, symbol: draft.symbol, select: false) {
@@ -273,7 +273,7 @@ struct SourcesView: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
     }
 
     private var summary: some View {
@@ -287,7 +287,7 @@ struct SourcesView: View {
                     model.openMeetingID = nil
                     model.page = .meetings
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain.clicking())
                 .font(AppFont.secondary.weight(.medium))
                 .foregroundStyle(AppColor.accent)
             }
@@ -329,7 +329,7 @@ struct SourcesView: View {
                 .frame(height: 30)
                 .background(selected ? AppColor.selection : Color.clear, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
     }
 
     private var empty: some View {
@@ -413,7 +413,7 @@ struct SourcesView: View {
                 .animation(Motion.layout(reduceMotion), value: managing)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain.clicking())
             .contextMenu { sourceMenu(source) }
             if !managing {
                 HStack(spacing: Space.s2) {
@@ -426,7 +426,7 @@ struct SourcesView: View {
                         .frame(width: 20, height: 20)
                 }
                 .menuStyle(.button)
-                .buttonStyle(.plain)
+                .buttonStyle(.plain.clicking())
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .help(tr("移到分类"))
@@ -436,7 +436,7 @@ struct SourcesView: View {
                     Image(systemName: "trash")
                         .foregroundStyle(.red)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain.clicking())
                 .help(tr("删除"))
                 }
             }
@@ -718,9 +718,10 @@ private struct AddSourceSheet: View {
             HStack {
                 Spacer()
                 Button(tr("取消")) { dismiss() }
+                    .clickCursor()
                     .keyboardShortcut(.cancelAction)
                 Button(tr("添加")) { onCommit() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent.clicking())
                     .disabled(staged.isEmpty || staged.contains { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
                     .keyboardShortcut(.defaultAction)
             }
@@ -797,6 +798,7 @@ private struct AddSourceSheet: View {
                         Text(category.name).tag(Optional(category.id))
                     }
                 }
+                .clickCursor()
                 .labelsHidden()
                 .fixedSize()
             }
@@ -811,7 +813,7 @@ private struct AddSourceSheet: View {
             } label: {
                 Image(systemName: "folder.badge.plus")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain.clicking())
             .foregroundStyle(AppColor.textSecondary)
             .help(tr("新建分类"))
             Button {
@@ -821,7 +823,7 @@ private struct AddSourceSheet: View {
                 Image(systemName: "trash")
                     .foregroundStyle(.red)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain.clicking())
             .help(tr("删除"))
         }
         .padding(Space.s4)

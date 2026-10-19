@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import Security
 
-enum LLMMode: String, CaseIterable, Identifiable {
+enum LLMMode: String, CaseIterable, Identifiable, Equatable {
     case local, api
     var id: String { rawValue }
     var title: String { self == .local ? tr("本地模型") : "API" }
@@ -21,6 +21,51 @@ struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
     var baseURL = ""
     var modelID = ""
     var format = LLMAPIFormat.openAI
+    var savedModelIDs: [String] = []
+
+    init(
+        id: UUID = UUID(),
+        providerID: String = "custom",
+        name: String = "",
+        baseURL: String = "",
+        modelID: String = "",
+        format: LLMAPIFormat = .openAI,
+        savedModelIDs: [String] = []
+    ) {
+        self.id = id
+        self.providerID = providerID
+        self.name = name
+        self.baseURL = baseURL
+        self.modelID = modelID
+        self.format = format
+        self.savedModelIDs = savedModelIDs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, providerID, name, baseURL, modelID, format, savedModelIDs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        providerID = try container.decodeIfPresent(String.self, forKey: .providerID) ?? "custom"
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? ""
+        modelID = try container.decodeIfPresent(String.self, forKey: .modelID) ?? ""
+        format = try container.decodeIfPresent(LLMAPIFormat.self, forKey: .format) ?? .openAI
+        savedModelIDs = try container.decodeIfPresent([String].self, forKey: .savedModelIDs) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(providerID, forKey: .providerID)
+        try container.encode(name, forKey: .name)
+        try container.encode(baseURL, forKey: .baseURL)
+        try container.encode(modelID, forKey: .modelID)
+        try container.encode(format, forKey: .format)
+        try container.encode(savedModelIDs, forKey: .savedModelIDs)
+    }
 
     var isLoopback: Bool {
         guard let host = URL(string: baseURL)?.host?.lowercased() else { return false }
@@ -32,6 +77,16 @@ struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
         value.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         value.baseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         value.modelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        var models: [String] = []
+        for raw in savedModelIDs {
+            let id = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty, !models.contains(id) else { continue }
+            models.append(id)
+        }
+        if !value.modelID.isEmpty, !models.contains(value.modelID) {
+            models.insert(value.modelID, at: 0)
+        }
+        value.savedModelIDs = models
         guard !value.name.isEmpty, let url = URL(string: value.baseURL),
               ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
               url.host != nil, url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
@@ -67,6 +122,7 @@ final class LLMConfiguration {
     private(set) var mode: LLMMode
     private(set) var profiles: [LLMAPIProfile]
     private(set) var activeID: UUID?
+    private(set) var listedModels: [UUID: [String]] = [:]
     var activeProfile: LLMAPIProfile? { profiles.first { $0.id == activeID } }
 
     init() {
@@ -79,6 +135,24 @@ final class LLMConfiguration {
     func setMode(_ value: LLMMode) {
         mode = value
         UserDefaults.standard.set(value.rawValue, forKey: "nomi.llm.mode")
+    }
+
+    func selectModel(_ modelID: String) {
+        let modelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !modelID.isEmpty, var profile = activeProfile,
+              let index = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
+        profile.modelID = modelID
+        if !profile.savedModelIDs.contains(modelID) {
+            profile.savedModelIDs.append(modelID)
+        }
+        profiles[index] = profile
+        persist()
+    }
+
+    func setListedModels(_ models: [String], for id: UUID) {
+        var next = listedModels
+        next[id] = models
+        listedModels = next
     }
 
     func activate(_ id: UUID) {

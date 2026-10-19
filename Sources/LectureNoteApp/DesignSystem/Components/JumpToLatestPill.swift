@@ -15,7 +15,7 @@ struct JumpToLatestPill: View {
             .padding(.vertical, 8)
             .glassEffect(.regular.interactive(), in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .accessibilityLabel(tr("回到最新"))
     }
 }

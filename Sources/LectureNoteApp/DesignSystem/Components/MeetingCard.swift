@@ -49,7 +49,7 @@ struct MeetingCard: View {
                 in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .onHover { hovering = $0 }
         .animation(Motion.fade(reduceMotion), value: hovering)
     }

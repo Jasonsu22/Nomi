@@ -14,6 +14,7 @@ struct SessionControl: View {
             // Tinted glass, not the interactive kind. The interactive hover tracker
             // crashes on macOS 26 when this control is replaced during the click.
             .glassEffect(.regular.tint(fill), in: Capsule())
+            .clickCursor(enabled: session.phase == .listening || (session.phase == .idle && canStart))
     }
 
     private var listening: Bool {
@@ -35,7 +36,7 @@ struct SessionControl: View {
             Button(action: onStart) {
                 label(title: startTitle, pulsing: false)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain.clicking())
             .disabled(!canStart)
             .opacity(canStart ? 1 : 0.4)
             .accessibilityLabel(startTitle)
@@ -97,7 +98,7 @@ struct SessionControl: View {
                 .frame(width: 22, height: 22)
                 .background(filled ? AppColor.accent : AppColor.surface, in: Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .accessibilityLabel(label)
     }
 }

@@ -7,6 +7,32 @@ struct SourceExportFile: Sendable {
     var fileName: String
 }
 
+enum MeetingSourceLinkStore {
+    private static var root: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Nomi", isDirectory: true)
+    }
+
+    private static var file: URL { root.appendingPathComponent("meeting-links.json") }
+
+    static func load() -> [UUID: [UUID]] {
+        guard let data = try? Data(contentsOf: file),
+              let raw = try? JSONDecoder().decode([String: [UUID]].self, from: data) else { return [:] }
+        var links: [UUID: [UUID]] = [:]
+        for (key, value) in raw {
+            guard let id = UUID(uuidString: key) else { continue }
+            links[id] = value
+        }
+        return links
+    }
+
+    static func save(_ links: [UUID: [UUID]]) throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let raw = Dictionary(uniqueKeysWithValues: links.map { ($0.key.uuidString, $0.value) })
+        try JSONEncoder().encode(raw).write(to: file, options: .atomic)
+    }
+}
+
 enum SourceStore {
     static let allowedExtensions: Set<String> = [
         "pdf", "ppt", "pptx", "key", "doc", "docx", "txt", "md", "png", "jpg", "jpeg", "heic",

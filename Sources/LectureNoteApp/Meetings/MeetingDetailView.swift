@@ -73,7 +73,7 @@ struct MeetingDetailView: View {
                         .frame(width: 32, height: 32)
                         .background(AppColor.surface, in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain.clicking())
                 .accessibilityLabel(tr("返回会议列表"))
 
                 CategoryIcon(
@@ -107,7 +107,7 @@ struct MeetingDetailView: View {
                             .frame(width: 32, height: 32)
                             .background(AppColor.surface, in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain.clicking())
                     .accessibilityLabel(tr("打开侧栏"))
                     .help(width < 760 ? tr("窗口再宽一点才能打开侧栏") : tr("打开侧栏"))
                     .disabled(width < 760)
@@ -120,7 +120,7 @@ struct MeetingDetailView: View {
                 } label: {
                     metaChip(formatStartStamp(meeting.startedAt))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain.clicking())
                 .help(tr("重设时间"))
                 .popover(isPresented: $showingStartTime, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
                     StartTimeEditor(date: startTimeBinding(meeting)) {
@@ -133,7 +133,7 @@ struct MeetingDetailView: View {
                 } label: {
                     metaChip("\(languageName(model.recordingSourceLanguage)) → \(languageName(model.recordingTargetLanguage))")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain.clicking())
                 .popover(isPresented: $showingLanguages, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
                     VStack(alignment: .leading, spacing: Space.s4) {
                         RecordingLanguagePicker(source: $model.recordingSourceLanguage, target: $model.recordingTargetLanguage)
@@ -177,9 +177,10 @@ struct MeetingDetailView: View {
             metaLabel(model.categoryName(for: meeting) ?? tr("未分类"))
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .menuIndicator(.hidden)
         .fixedSize()
+        .clickCursor()
         .popover(isPresented: $creatingCategory, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
             CategoryEditor(title: tr("新建分类"), draft: $categoryDraft) {
                 if let categoryID = model.addCategory(name: categoryDraft.name, colorIndex: categoryDraft.colorIndex, symbol: categoryDraft.symbol) {
@@ -207,9 +208,10 @@ struct MeetingDetailView: View {
             metaLabel(model.audioInputs.selectionTitle, symbol: "mic")
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .menuIndicator(.hidden)
         .fixedSize()
+        .clickCursor()
         .disabled(model.engine.session.phase != .idle)
         .accessibilityLabel(tr("输入源"))
         .help(model.audioInputs.selectionTitle)

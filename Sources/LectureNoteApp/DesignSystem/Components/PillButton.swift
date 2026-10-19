@@ -16,7 +16,7 @@ struct PillButton: View {
                 .padding(.vertical, 8)
                 .background(hovering ? AppColor.surfaceInset : AppColor.surface, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .fixedSize(horizontal: true, vertical: false)
         .onHover { hovering = $0 }
         .animation(Motion.fade(reduceMotion), value: hovering)
@@ -40,9 +40,10 @@ struct PillMenu<Content: View>: View {
                 .background(hovering && enabled ? AppColor.surfaceInset : AppColor.surface, in: Capsule())
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .menuIndicator(.hidden)
         .fixedSize()
+        .clickCursor()
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.4)
         .onHover { hovering = $0 }

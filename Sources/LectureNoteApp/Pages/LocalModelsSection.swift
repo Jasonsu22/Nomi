@@ -23,7 +23,7 @@ struct LocalModelsSection: View {
                     try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
                     NSWorkspace.shared.open(root)
                 }
-                .buttonStyle(.link)
+                .buttonStyle(.link.clicking())
             }
             .font(AppFont.caption)
             .foregroundStyle(AppColor.textSecondary)
@@ -86,7 +86,7 @@ struct LocalModelPicker: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain.clicking())
             .accessibilityLabel(trf("选择%@", role.title))
             .popover(isPresented: $showingModels, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -133,6 +133,7 @@ struct LocalModelPicker: View {
                         .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
                     Link(tr("查看模型"), destination: URL(string: "https://huggingface.co/\(item.repository)")!)
                         .font(AppFont.caption)
+                        .clickCursor()
                 }
                 Spacer()
                 VStack(alignment: .center, spacing: Space.s2) {
@@ -176,7 +177,7 @@ struct LocalModelPicker: View {
                 }
                 .font(AppFont.caption)
                 .controlSize(.small)
-                .buttonStyle(.bordered)
+                .buttonStyle(.bordered.clicking())
             }
             if let progress {
                 if progress.total > 0 {

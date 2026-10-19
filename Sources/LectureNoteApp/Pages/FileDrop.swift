@@ -73,6 +73,11 @@ final class FileDropNSView: NSView {
         addCursorRect(bounds, cursor: .pointingHand)
     }
 
+    override func layout() {
+        super.layout()
+        window?.invalidateCursorRects(for: self)
+    }
+
     override func mouseDown(with event: NSEvent) {
         suppressClick = false
     }

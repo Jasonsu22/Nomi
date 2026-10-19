@@ -39,7 +39,7 @@ struct CategoryEditor: View {
                                 }
                             }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain.clicking())
                     .accessibilityLabel(trf("颜色 %d", index + 1))
                 }
             }
@@ -61,7 +61,7 @@ struct CategoryEditor: View {
                                 in: RoundedRectangle(cornerRadius: Radius.tag, style: .continuous)
                             )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain.clicking())
                     .accessibilityLabel(symbol)
                 }
             }
@@ -73,7 +73,7 @@ struct CategoryEditor: View {
                     .frame(height: 32)
                     .background(canSubmit ? AppColor.accent : AppColor.outline, in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain.clicking())
             .disabled(!canSubmit)
         }
         .padding(16)

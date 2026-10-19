@@ -16,6 +16,7 @@ struct RecordingLanguagePicker: View {
                 Text(languageName(code)).tag(code)
             }
         }
+        .clickCursor()
     }
 
     fileprivate var translationPicker: some View {
@@ -25,6 +26,7 @@ struct RecordingLanguagePicker: View {
                 Text(languageName(code)).tag(code)
             }
         }
+        .clickCursor()
     }
 }
 
@@ -89,11 +91,12 @@ struct RecordingSetupView: View {
             HStack {
                 Spacer()
                 Button(tr("取消")) { model.cancelRecordingSetup() }
+                    .clickCursor()
                     .keyboardShortcut(.cancelAction)
                 Button(model.recordingResumeID == nil ? tr("开始录制") : tr("继续录制")) {
                     model.startTranscription(title: title, categoryID: categoryID)
                 }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent.clicking())
                     .disabled(!model.canRecord)
                     .keyboardShortcut(.defaultAction)
             }

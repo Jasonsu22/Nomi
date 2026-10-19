@@ -26,7 +26,7 @@ struct RailItem: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .accessibilityLabel(page.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

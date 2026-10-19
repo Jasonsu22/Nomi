@@ -57,7 +57,7 @@ struct MeetingAssistantPanel: View {
                     let value = question.trimmingCharacters(in: .whitespacesAndNewlines)
                     model.generateAssistant(for: meeting.id, question: summary ? nil : value)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent.clicking())
                 .disabled(!model.canGenerateAssistant || (!summary && question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             }
             if model.llmConfiguration.mode == .api {
@@ -69,7 +69,7 @@ struct MeetingAssistantPanel: View {
                     Text(tr("录制结束后可生成回答和摘要。"))
                         .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
                 } else {
-                    Button(tr("配置大模型")) { model.page = .settings }.buttonStyle(.link)
+                    Button(tr("配置大模型")) { model.page = .settings }.buttonStyle(.link.clicking())
                 }
             }
         }

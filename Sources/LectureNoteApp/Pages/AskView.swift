@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 struct AskView: View {
     var model: AppModel
+    var anchorMeetingID: UUID? = nil
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var draft = ""
     @State private var composerFocused = false
@@ -15,22 +17,48 @@ struct AskView: View {
 
     private let examples = ["这门课的重点是什么？", "有哪些需要记住的术语？", "作业或下一步是什么？"]
 
+    private var embedded: Bool { anchorMeetingID != nil }
+
+    private var session: ChatSession? { model.chat(anchoredTo: anchorMeetingID) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(.top, 28)
-                .padding(.bottom, Space.s4)
-            conversation
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                .padding(.bottom, Space.s5)
+        Group {
+            if embedded {
+                VStack(spacing: 0) {
+                    embeddedHeader
+                    conversation
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                        .padding(.top, 28)
+                        .padding(.bottom, Space.s4)
+                    conversation
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .layoutPriority(1)
+                        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                        .padding(.bottom, Space.s5)
+                }
+                .pageColumn()
+            }
         }
-        .pageColumn()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            model.ensureChat()
+            if let anchorMeetingID {
+                model.ensureMeetingChat(anchorMeetingID)
+            } else {
+                model.ensureChat()
+            }
+            model.localModels.refresh()
             composerFocused = true
             restoreDraft()
+            Task { await model.refreshActiveAPIModels() }
+        }
+        .onChange(of: model.llmConfiguration.mode) { _, _ in
+            Task { await model.refreshActiveAPIModels() }
+        }
+        .onChange(of: model.llmConfiguration.activeID) { _, _ in
+            Task { await model.refreshActiveAPIModels() }
         }
         .onChange(of: model.chatFocusRequest) { _, _ in composerFocused = true }
         .onChange(of: model.chatDraftRestore) { _, _ in restoreDraft() }
@@ -56,7 +84,11 @@ struct AskView: View {
             Text(tr("提问"))
                 .font(AppFont.pageTitle)
                 .foregroundStyle(AppColor.textPrimary)
+                .contentShape(Rectangle())
+                .onTapGesture { dismissPanels() }
             Spacer(minLength: Space.s3)
+                .contentShape(Rectangle())
+                .onTapGesture { dismissPanels() }
             AskIconButton(symbol: "clock.arrow.circlepath", help: tr("历史会话"), reduceMotion: reduceMotion) {
                 scopePresented = false
                 historyPresented.toggle()
@@ -64,9 +96,27 @@ struct AskView: View {
             AskIconButton(symbol: "plus", help: tr("新会话"), reduceMotion: reduceMotion) {
                 scopePresented = false
                 historyPresented = false
-                model.beginNewChat()
+                model.beginNewChat(anchor: anchorMeetingID)
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var embeddedHeader: some View {
+        HStack(spacing: Space.s2) {
+            Spacer(minLength: 0)
+            AskIconButton(symbol: "clock.arrow.circlepath", help: tr("历史会话"), reduceMotion: reduceMotion) {
+                scopePresented = false
+                historyPresented.toggle()
+            }
+            AskIconButton(symbol: "plus", help: tr("新会话"), reduceMotion: reduceMotion) {
+                scopePresented = false
+                historyPresented = false
+                model.beginNewChat(anchor: anchorMeetingID)
+            }
+        }
+        .padding(.horizontal, Space.s3)
+        .padding(.top, Space.s2)
     }
 
     private var conversation: some View {
@@ -75,7 +125,7 @@ struct AskView: View {
                 Group {
                     if showEmpty {
                         emptyState
-                    } else if let session = model.currentChat {
+                    } else if let session {
                         ScrollView {
                             VStack(alignment: .leading, spacing: Space.s5) {
                                 ForEach(session.turns) { turn in
@@ -93,25 +143,28 @@ struct AskView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if scopePresented || historyPresented {
-                    Color.black.opacity(0.001)
-                        .onTapGesture {
-                            scopePresented = false
-                            historyPresented = false
-                        }
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissPanels() }
                 }
-                if scopePresented {
+                if scopePresented, !embedded {
                     AskScopePopover(model: model) { scopePresented = false }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                         .padding(.leading, Space.s4)
                         .padding(.bottom, Space.s3)
                 }
                 if historyPresented {
-                    AskHistoryPopover(model: model, onRename: beginRename, onDelete: beginDelete) {
-                        historyPresented = false
+                    HistoryPanelAnchor {
+                        AskHistoryPopover(
+                            model: model,
+                            anchorMeetingID: anchorMeetingID,
+                            currentID: session?.id,
+                            onRename: beginRename,
+                            onDelete: beginDelete
+                        ) {
+                            historyPresented = false
+                        }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(.top, Space.s3)
-                    .padding(.trailing, Space.s4)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             if let error = model.chatError, model.chatGeneratingID == nil {
@@ -127,7 +180,6 @@ struct AskView: View {
     }
 
     private var showEmpty: Bool {
-        let session = model.currentChat
         let pending = model.chatGeneratingID == session?.id && model.pendingQuestion != nil
         return (session?.turns.isEmpty ?? true) && !pending
     }
@@ -139,10 +191,11 @@ struct AskView: View {
                 .foregroundStyle(AppColor.accent)
                 .frame(width: 56, height: 56)
                 .background(AppColor.accentSoft, in: Circle())
-            Text(tr("根据你的会议和资料回答。"))
-                .font(AppFont.sectionTitle)
-                .foregroundStyle(AppColor.textPrimary)
+            Text(embedded ? tr("根据这场会议的转写和资料回答。") : tr("根据你的会议和资料回答。"))
+                .font(embedded ? AppFont.secondary : AppFont.sectionTitle)
+                .foregroundStyle(embedded ? AppColor.textSecondary : AppColor.textPrimary)
                 .multilineTextAlignment(.center)
+            if !embedded {
             HStack(spacing: Space.s2) {
                 ForEach(examples, id: \.self) { example in
                     Button {
@@ -157,22 +210,25 @@ struct AskView: View {
                             .padding(.vertical, 8)
                             .background(AppColor.surfaceInset, in: Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain.clicking())
                 }
             }
+            }
         }
-        .padding(.horizontal, Space.s6)
+        .padding(.horizontal, embedded ? Space.s4 : Space.s6)
     }
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             if showsCloudNotice, let name = model.llmConfiguration.activeProfile?.name {
-                Text(trf("会把所选会议和资料的文字发给 %@。", name))
+                Text(hasScope
+                    ? trf("会把所选会议和资料的文字发给 %@。", name)
+                    : trf("这次只把问题发给 %@，不附带会议和资料。", name))
                     .font(AppFont.caption)
                     .foregroundStyle(AppColor.textSecondary)
             }
             HStack(alignment: .center, spacing: Space.s2) {
-                scopeChip
+                if !embedded { scopeChip }
                 webChip
                 Spacer(minLength: Space.s2)
                 modelMenu
@@ -194,7 +250,7 @@ struct AskView: View {
     }
 
     private var scopeChip: some View {
-        let title = model.currentChat?.scope.chipTitle(
+        let title = session?.scope.chipTitle(
             meetings: model.chatMeetingItems(),
             sources: model.chatSourceItems(),
             categories: model.chatCategoryNames()
@@ -219,13 +275,13 @@ struct AskView: View {
             .overlay(Capsule().strokeBorder(hasScope || scopePresented ? Color.clear : AppColor.separator, lineWidth: 1))
             .fixedSize(horizontal: true, vertical: true)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .help(tr("选择范围"))
     }
 
     private var webChip: some View {
         let available = model.webSearchSupport == .available
-        let on = available && model.currentChat?.allowsWeb == true
+        let on = available && session?.allowsWeb == true
         return Button {
             model.setChatWeb(!on)
         } label: {
@@ -240,20 +296,37 @@ struct AskView: View {
             .background(on ? AppColor.accentSoft : AppColor.surface, in: Capsule())
             .overlay(Capsule().strokeBorder(on ? Color.clear : AppColor.separator, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .disabled(!available)
         .help(webHelp)
     }
 
     private var modelMenu: some View {
         Menu {
-            Button(LocalModelDefinition.selected(for: .assistant).name) {
-                model.useLocalChatModel()
-            }
-            if !model.llmConfiguration.profiles.isEmpty { Divider() }
-            ForEach(model.llmConfiguration.profiles) { profile in
-                Button("\(profile.name) · \(profile.modelID)") {
-                    model.useChatProfile(profile.id)
+            if model.llmConfiguration.mode == .local {
+                ForEach(localChatModels) { item in
+                    Button {
+                        Task { await model.selectLocalModel(item, for: .assistant) }
+                    } label: {
+                        if item.id == LocalModelDefinition.selected(for: .assistant).id {
+                            Label(item.name, systemImage: "checkmark")
+                        } else {
+                            Text(item.name)
+                        }
+                    }
+                    .disabled(!model.canSwitchModels)
+                }
+            } else if let profile = model.llmConfiguration.activeProfile {
+                ForEach(model.apiModelChoices, id: \.self) { modelID in
+                    Button {
+                        model.useAPIModel(modelID)
+                    } label: {
+                        if modelID == profile.modelID {
+                            Label(modelID, systemImage: "checkmark")
+                        } else {
+                            Text(modelID)
+                        }
+                    }
                 }
             }
         } label: {
@@ -269,11 +342,26 @@ struct AskView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .disabled(model.chatGeneratingID != nil)
+        .clickCursor()
+        .disabled(model.chatGeneratingID != nil || modelMenuIsEmpty)
+    }
+
+    private var localChatModels: [LocalModelDefinition] {
+        let installed = LocalModelDefinition.catalog.filter {
+            $0.supports(.assistant) && model.localModels.installed.contains($0.id)
+        }
+        let current = LocalModelDefinition.selected(for: .assistant)
+        if installed.contains(where: { $0.id == current.id }) { return installed }
+        return [current] + installed
+    }
+
+    private var modelMenuIsEmpty: Bool {
+        if model.llmConfiguration.mode == .local { return localChatModels.isEmpty }
+        return model.llmConfiguration.activeProfile == nil || model.apiModelChoices.isEmpty
     }
 
     private var sendButton: some View {
-        let generating = model.chatGeneratingID == model.currentChat?.id
+        let generating = model.chatGeneratingID == session?.id
         return Button {
             if generating { model.stopChat() } else { send() }
         } label: {
@@ -284,14 +372,21 @@ struct AskView: View {
                 .background(generating || canSend ? AppColor.accent : AppColor.surface, in: Circle())
                 .overlay(Circle().strokeBorder(generating || canSend ? Color.clear : AppColor.separator, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .disabled(!generating && !canSend)
         .help(generating ? tr("停止") : tr("发送"))
         .accessibilityLabel(generating ? tr("停止") : tr("发送"))
     }
 
     private var hasScope: Bool {
-        guard let scope = model.currentChat?.scope else { return false }
+        if let anchorMeetingID {
+            let meeting = model.meetings.first { $0.id == anchorMeetingID }
+            let hasText = meeting?.paragraphs.contains {
+                !$0.renderedSource(language: meeting?.sourceLanguage ?? "zh").isEmpty
+            } ?? false
+            return hasText || !model.linkedSources(for: anchorMeetingID).isEmpty
+        }
+        guard let scope = session?.scope else { return false }
         return scope.includeAll || !scope.categoryIDs.isEmpty || scope.includesUncategorized
             || !scope.meetingIDs.isEmpty || !scope.sourceIDs.isEmpty
     }
@@ -307,7 +402,7 @@ struct AskView: View {
 
     private var showsCloudNotice: Bool {
         guard model.llmConfiguration.mode == .api, let profile = model.llmConfiguration.activeProfile, !profile.isLoopback else { return false }
-        return (model.currentChat?.turns.isEmpty ?? true) && model.pendingQuestion == nil
+        return (session?.turns.isEmpty ?? true) && model.pendingQuestion == nil
     }
 
     private var webHelp: String {
@@ -394,14 +489,20 @@ struct AskView: View {
             .padding(.vertical, 4)
             .background(openable ? AppColor.accentSoft : AppColor.surfaceInset, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .disabled(!openable)
+    }
+
+    private func dismissPanels() {
+        guard scopePresented || historyPresented else { return }
+        scopePresented = false
+        historyPresented = false
     }
 
     private func send() {
         guard model.chatGeneratingID == nil else { return }
         let text = draft
-        guard model.ask(text) else { return }
+        guard model.ask(text, anchor: anchorMeetingID) else { return }
         draft = ""
         composerFocused = true
     }
@@ -429,6 +530,42 @@ struct AskView: View {
     }
 }
 
+/// Puts a panel in the top-trailing corner and lets clicks on the empty area fall through.
+private struct HistoryPanelAnchor<Content: View>: NSViewRepresentable {
+    var content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    func makeNSView(context: Context) -> PanelHoleView {
+        let hole = PanelHoleView()
+        let host = NSHostingView(rootView: content)
+        host.translatesAutoresizingMaskIntoConstraints = false
+        host.setContentHuggingPriority(.required, for: .horizontal)
+        host.setContentHuggingPriority(.required, for: .vertical)
+        hole.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.topAnchor.constraint(equalTo: hole.topAnchor, constant: Space.s3),
+            host.trailingAnchor.constraint(equalTo: hole.trailingAnchor, constant: -Space.s4),
+        ])
+        return hole
+    }
+
+    func updateNSView(_ hole: PanelHoleView, context: Context) {
+        guard let host = hole.subviews.first as? NSHostingView<Content> else { return }
+        host.rootView = content
+        host.invalidateIntrinsicContentSize()
+    }
+}
+
+private final class PanelHoleView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
+    }
+}
+
 private struct AskIconButton: View {
     var symbol: String
     var help: String
@@ -444,7 +581,7 @@ private struct AskIconButton: View {
                 .frame(width: 36, height: 36)
                 .background(hovering ? AppColor.surfaceInset : AppColor.surface, in: Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain.clicking())
         .help(help)
         .onHover { hovering = $0 }
         .animation(Motion.fade(reduceMotion), value: hovering)
