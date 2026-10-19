@@ -606,10 +606,11 @@ private final class MicrophoneCapture {
             throw error
         }
         self.engine = engine
+        let engineID = ObjectIdentifier(engine)
         Self.logger.info("Microphone started: device=\(deviceID), rate=\(format.sampleRate), channels=\(format.channelCount)")
-        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self, weak engine] _ in
+        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
             Task { @MainActor in
-                guard let self, let engine, self.engine === engine, !engine.isRunning else { return }
+                guard let self, let engine = self.engine, ObjectIdentifier(engine) == engineID, !engine.isRunning else { return }
                 do {
                     try self.start(deviceUID: deviceUID)
                 } catch {
@@ -617,9 +618,9 @@ private final class MicrophoneCapture {
                 }
             }
         }
-        watchdog = Task { [weak self, weak engine] in
+        watchdog = Task { [weak self] in
             try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, let self, let engine, self.engine === engine, !processor.hasReceivedAudio else { return }
+            guard !Task.isCancelled, let self, let engine = self.engine, ObjectIdentifier(engine) == engineID, !processor.hasReceivedAudio else { return }
             Self.logger.error("Microphone started but did not deliver PCM buffers")
             self.onFailure?(tr("麦克风未收到音频数据，请重新选择输入源。"))
         }
