@@ -94,6 +94,8 @@ swift test
 cargo test --manifest-path Backend/Cargo.toml --locked
 ```
 
+推送到 `main` 或打开拉取请求时，GitHub Actions 会在 macOS 26 上编译并测试 Swift 界面，并在 Linux 上测试不依赖 MLX 的引擎（`voice-core`、`moxin-engine`）。语音识别和翻译 worker 需要 Apple 的 MLX，不在这台 Linux 运行器上编译。
+
 ## 📄 许可
 
 `Backend/` 使用 Apache License 2.0，见 [Backend/LICENSE](Backend/LICENSE)。`Backend/vendor/qwen3-asr-mlx/` 同时提供 MIT 和 Apache-2.0 许可。界面源码目前没有单独的许可证文件。
