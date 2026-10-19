@@ -281,16 +281,50 @@ final class LocalEngine: TranscriptionEngine {
         apply(try JSONDecoder().decode(LocalModelRuntimeStatus.self, from: data))
     }
 
-    func generate(system: String, prompt: String) async throws -> String {
+    func generate(system: String, prompt: String, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
         guard session.phase == .idle, !isGenerating, !isChangingModel else { throw llmError(tr("请等待录制或本地模型操作结束。")) }
+        guard let port, let token else { throw llmError(tr("引擎还没准备好")) }
         isGenerating = true
         defer { isGenerating = false }
-        let data = try await modelRequest(path: "assistant/generate", body: ["system": system, "prompt": prompt, "max_tokens": 2048])
-        struct Reply: Decodable { var text: String; var status: LocalModelRuntimeStatus }
-        let reply = try JSONDecoder().decode(Reply.self, from: data)
-        apply(reply.status)
-        guard !reply.text.isEmpty else { throw llmError(tr("模型未返回文字，请重试。")) }
-        return reply.text
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/assistant/generate")!, timeoutInterval: 300)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["system": system, "prompt": prompt, "max_tokens": 2048])
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard code == 200 else {
+            var data = Data()
+            for try await byte in bytes { data.append(byte) }
+            throw llmError(String(data: data, encoding: .utf8) ?? tr("本地模型请求失败。"))
+        }
+        var accumulator = ChatStream.Accumulator()
+        var last = Date.distantPast
+        var shown = ""
+        for try await line in bytes.lines {
+            try Task.checkCancellation()
+            switch ChatStream.line(line) {
+            case .skip:
+                continue
+            case .done:
+                accumulator.finished = true
+            case .payload(let payload):
+                guard let object = ChatStream.object(from: payload) else { continue }
+                if let message = accumulator.apply(object) { throw llmError(message) }
+            }
+            let text = accumulator.display
+            if text != shown, !text.isEmpty, Date().timeIntervalSince(last) >= 0.05 {
+                last = Date()
+                shown = text
+                onUpdate(text)
+            }
+            if accumulator.finished { break }
+        }
+        accumulator.finished = true
+        let answer = accumulator.answer
+        guard !answer.isEmpty else { throw llmError(tr("模型未返回文字，请重试。")) }
+        if answer != shown { onUpdate(answer) }
+        return answer
     }
 
     private func modelRequest(path: String, body: [String: Any]) async throws -> Data {

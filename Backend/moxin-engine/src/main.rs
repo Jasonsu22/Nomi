@@ -238,11 +238,57 @@ async fn unload_path(State(app): State<App>, headers: HeaderMap, axum::Json(mode
 #[derive(Deserialize)]
 struct AssistantRequest { system: String, prompt: String, max_tokens: usize }
 
-async fn generate_assistant(State(app): State<App>, headers: HeaderMap, axum::Json(request): axum::Json<AssistantRequest>) -> impl IntoResponse {
-    exclusive_model_action(app, headers, move |pipeline| {
-        let text = pipeline.generate_assistant(request.system, request.prompt, request.max_tokens)?;
-        Ok(serde_json::json!({ "text": text, "status": pipeline.status_json() }))
-    }).await
+async fn generate_assistant(State(app): State<App>, headers: HeaderMap, axum::Json(request): axum::Json<AssistantRequest>) -> axum::response::Response {
+    if !authorized(&headers, &app.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if app.session_open.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        return (StatusCode::CONFLICT, "录制或其他本地模型操作正在进行，请稍后再试").into_response();
+    }
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let busy = app.session_open.clone();
+    let pipeline = app.pipeline.clone();
+    let joined = app.session_open.clone();
+    let task = tokio::task::spawn_blocking(move || {
+        let _clear = ClearBusy(busy);
+        let send = |value: serde_json::Value| {
+            let _ = tx.send(format!("data: {value}\n\n"));
+        };
+        let outcome = (|| -> Result<String> {
+            let mut pipeline = pipeline.lock().expect("pipeline");
+            pipeline.generate_assistant(request.system, request.prompt, request.max_tokens, &mut |text| {
+                if !text.is_empty() {
+                    send(serde_json::json!({ "text": text }));
+                }
+            })
+        })();
+        match outcome {
+            Ok(text) => send(serde_json::json!({ "done": true, "text": text })),
+            Err(error) => send(serde_json::json!({ "error": error.to_string() })),
+        }
+    });
+    tokio::spawn(async move {
+        if task.await.is_err() {
+            joined.store(false, Ordering::SeqCst);
+        }
+    });
+    let stream = futures::stream::unfold(rx, |mut rx| async move {
+        let next = rx.recv().await?;
+        Some((Ok::<_, std::io::Error>(axum::body::Bytes::from(next)), rx))
+    });
+    axum::response::Response::builder()
+        .header("content-type", "text/event-stream")
+        .header("cache-control", "no-cache")
+        .body(axum::body::Body::from_stream(stream))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+struct ClearBusy(Arc<AtomicBool>);
+
+impl Drop for ClearBusy {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
 }
 
 async fn exclusive_model_action(app: App, headers: HeaderMap, action: impl FnOnce(&mut Pipeline) -> Result<serde_json::Value> + Send + 'static) -> axum::response::Response {

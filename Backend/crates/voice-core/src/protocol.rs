@@ -15,6 +15,8 @@ pub enum WorkerRequest {
 pub enum WorkerEvent {
     Ready,
     LoadError { message: String },
+    /// Cumulative visible answer so far. A token boundary can sit inside a character, so this is the whole decoded string, not one piece.
+    Token { id: u64, text: String },
     Result { id: u64, text: String },
     Failed { id: u64, message: String },
 }

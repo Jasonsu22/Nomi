@@ -24,90 +24,165 @@ enum RemoteLLMClient {
         return result.sorted()
     }
 
-    static func generate(profile: LLMAPIProfile, key: String, system: String, prompt: String, allowsWeb: Bool = false) async throws -> String {
+    static func generate(
+        profile: LLMAPIProfile,
+        key: String,
+        system: String,
+        prompt: String,
+        allowsWeb: Bool = false,
+        onUpdate: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
         let profile = try profile.validated()
-        if allowsWeb, profile.format != .anthropic, URL(string: profile.baseURL)?.host == "api.openai.com" {
-            return try await responses(profile: profile, key: key, system: system, prompt: prompt)
-        }
-        var request = request(profile: profile, path: profile.format == .anthropic ? "messages" : "chat/completions", key: key, sendsJSON: true)
-        var body: [String: Any] = ["model": profile.modelID, "stream": false]
-        if profile.format == .anthropic {
-            body["system"] = system
-            body["max_tokens"] = 2048
-            body["messages"] = [["role": "user", "content": prompt]]
+        let openAIWeb = allowsWeb && profile.format != .anthropic && host(of: profile) == "api.openai.com"
+        var request = request(
+            profile: profile,
+            path: openAIWeb ? "responses" : (profile.format == .anthropic ? "messages" : "chat/completions"),
+            key: key,
+            sendsJSON: true
+        )
+        let body: [String: Any]
+        if openAIWeb {
+            body = [
+                "model": profile.modelID,
+                "instructions": system,
+                "input": prompt,
+                "tools": [["type": "web_search"]],
+                "max_output_tokens": 2048,
+                "store": false,
+                "stream": true,
+            ]
+        } else if profile.format == .anthropic {
+            var anthropic: [String: Any] = [
+                "model": profile.modelID,
+                "system": system,
+                "max_tokens": 2048,
+                "messages": [["role": "user", "content": prompt]],
+                "stream": true,
+            ]
             if allowsWeb {
-                body["tools"] = [["type": "web_search_20250305", "name": "web_search", "max_uses": 3]]
+                anthropic["tools"] = [["type": "web_search_20250305", "name": "web_search", "max_uses": 3]]
                 request.setValue("web-search-2025-03-05", forHTTPHeaderField: "anthropic-beta")
             }
+            body = anthropic
         } else {
-            body["messages"] = [["role": "system", "content": system], ["role": "user", "content": prompt]]
+            var chat: [String: Any] = [
+                "model": profile.modelID,
+                "messages": [["role": "system", "content": system], ["role": "user", "content": prompt]],
+                "stream": true,
+            ]
             if host(of: profile) == "api.openai.com" {
-                body["max_completion_tokens"] = 2048
-                body["store"] = false
+                chat["max_completion_tokens"] = 2048
+                chat["store"] = false
             } else if isMiniMax(profile) {
-                body["max_completion_tokens"] = 2048
+                chat["max_completion_tokens"] = 2048
             } else {
-                body["max_tokens"] = 2048
+                chat["max_tokens"] = 2048
             }
+            body = chat
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let object = try await perform(request, key: key)
-        let text: String
-        if profile.format == .anthropic {
-            let blocks = object["content"] as? [[String: Any]] ?? []
-            text = blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined(separator: "\n")
-                + webLinks(in: blocks)
-        } else {
-            let message = (object["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]
-            text = messageText(message)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 300
+        let session = URLSession(configuration: configuration, delegate: SameOriginRedirects(), delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
+        let (bytes, response) = try await session.bytes(for: request)
+        let http = response as? HTTPURLResponse
+        let code = http?.statusCode ?? 0
+        let type = http?.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+        if !(200..<300).contains(code) || (type.contains("json") && !type.contains("event-stream")) {
+            let data = try await data(from: bytes)
+            if !(200..<300).contains(code) { throw failure(data, code: code, key: key) }
+            return try await complete(data, key: key, onUpdate: onUpdate)
         }
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw llmError(tr("模型未返回文字，请检查所选模型和接口格式。")) }
-        return text
+        return try await events(bytes, key: key, onUpdate: onUpdate)
     }
 
-    private static func responses(profile: LLMAPIProfile, key: String, system: String, prompt: String) async throws -> String {
-        var request = request(profile: profile, path: "responses", key: key, sendsJSON: true)
-        let body: [String: Any] = [
-            "model": profile.modelID,
-            "instructions": system,
-            "input": prompt,
-            "tools": [["type": "web_search"]],
-            "max_output_tokens": 2048,
-            "store": false,
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let object = try await perform(request, key: key)
-        var parts: [String] = []
-        for item in object["output"] as? [[String: Any]] ?? [] {
-            guard item["type"] as? String == "message" else { continue }
-            for block in item["content"] as? [[String: Any]] ?? [] {
-                if let text = block["text"] as? String { parts.append(text) }
-                parts.append(contentsOf: annotations(in: block))
+    private static func events(_ bytes: URLSession.AsyncBytes, key: String, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
+        var iterator = bytes.lines.makeAsyncIterator()
+        var pending: String?
+        while let line = try await iterator.next() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+                var raw = line
+                while let more = try await iterator.next() { raw += "\n" + more }
+                return try await complete(Data(raw.utf8), key: key, onUpdate: onUpdate)
             }
+            pending = line
+            break
         }
-        let text = parts.joined(separator: "\n")
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw llmError(tr("模型未返回文字，请检查所选模型和接口格式。")) }
-        return text
-    }
-
-    private static func webLinks(in blocks: [[String: Any]]) -> String {
-        let links = blocks.flatMap { block in
-            (block["citations"] as? [[String: Any]] ?? []).compactMap { cite -> String? in
-                guard let url = cite["url"] as? String else { return nil }
-                let title = (cite["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                return title.isEmpty ? url : "\(title) \(url)"
+        var accumulator = ChatStream.Accumulator()
+        var last = Date.distantPast
+        var shown = ""
+        var pendingLine = pending
+        while true {
+            let line: String
+            if let queued = pendingLine {
+                line = queued
+                pendingLine = nil
+            } else if let next = try await iterator.next() {
+                line = next
+            } else {
+                break
             }
+            try Task.checkCancellation()
+            switch ChatStream.line(line) {
+            case .skip:
+                continue
+            case .done:
+                accumulator.finished = true
+            case .payload(let payload):
+                guard let object = ChatStream.object(from: payload) else { continue }
+                if let message = accumulator.apply(object) {
+                    throw llmError(redacted(message, key: key))
+                }
+            }
+            let text = accumulator.display
+            if text != shown, !text.isEmpty, Date().timeIntervalSince(last) >= 0.05 {
+                last = Date()
+                shown = text
+                await MainActor.run { onUpdate(text) }
+            }
+            if accumulator.finished { break }
         }
-        guard !links.isEmpty else { return "" }
-        return "\n" + links.joined(separator: "\n")
+        accumulator.finished = true
+        let answer = accumulator.answer
+        guard !answer.isEmpty else { throw llmError(tr("模型未返回文字，请检查所选模型和接口格式。")) }
+        if answer != shown { await MainActor.run { onUpdate(answer) } }
+        return answer
     }
 
-    private static func annotations(in block: [String: Any]) -> [String] {
-        (block["annotations"] as? [[String: Any]] ?? []).compactMap { note in
-            guard let url = note["url"] as? String else { return nil }
-            let title = (note["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return title.isEmpty ? url : "\(title) \(url)"
+    private static func complete(_ data: Data, key: String, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            throw failure(data, code: 200, key: key)
         }
+        if let failure = serviceFailure(in: object) {
+            throw llmError(redacted(trf("API 请求失败（HTTP %d）：%@", 200, String(failure.prefix(400))), key: key))
+        }
+        var accumulator = ChatStream.Accumulator()
+        if let message = accumulator.apply(object) {
+            throw llmError(redacted(message, key: key))
+        }
+        accumulator.finished = true
+        let answer = accumulator.answer
+        guard !answer.isEmpty else { throw llmError(tr("模型未返回文字，请检查所选模型和接口格式。")) }
+        await MainActor.run { onUpdate(answer) }
+        return answer
+    }
+
+    private static func data(from bytes: URLSession.AsyncBytes) async throws -> Data {
+        var data = Data()
+        for try await byte in bytes { data.append(byte) }
+        return data
+    }
+
+    private static func failure(_ data: Data, code: Int, key: String) -> Error {
+        if let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let message = serviceFailure(in: object) {
+            return llmError(redacted(trf("API 请求失败（HTTP %d）：%@", code, String(message.prefix(400))), key: key))
+        }
+        let raw = String(data: data, encoding: .utf8) ?? ""
+        return llmError(redacted(trf("API 请求失败（HTTP %d）：%@", code, String(raw.prefix(400))), key: key))
     }
 
     private static func request(profile: LLMAPIProfile, path: String, key: String, sendsJSON: Bool) -> URLRequest {
@@ -128,22 +203,6 @@ enum RemoteLLMClient {
 
     private static func isMiniMax(_ profile: LLMAPIProfile) -> Bool {
         host(of: profile).contains("minimax")
-    }
-
-    private static func messageText(_ message: [String: Any]?) -> String {
-        guard let message else { return "" }
-        if let content = message["content"] as? String, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return content
-        }
-        if let parts = message["content"] as? [[String: Any]] {
-            let joined = parts.compactMap { $0["text"] as? String }.joined(separator: "\n")
-            if !joined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return joined }
-        }
-        if let reasoning = message["reasoning_content"] as? String,
-           !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return reasoning
-        }
-        return message["refusal"] as? String ?? ""
     }
 
     private static func perform(_ request: URLRequest, key: String) async throws -> [String: Any] {
