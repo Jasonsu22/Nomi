@@ -3,10 +3,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum DetailTab: String, CaseIterable, Identifiable {
-    case info = "信息"
     case ask = "提问"
     case summary = "摘要"
     case sources = "资料"
+    case info = "信息"
 
     var id: String { rawValue }
 }
@@ -17,7 +17,7 @@ struct DetailSidePanel: View {
     var reduceMotion: Bool
     var onPreferredSideWidth: (CGFloat) -> Void = { _ in }
     var onClose: () -> Void
-    @State private var tab: DetailTab = .info
+    @State private var tab: DetailTab = .ask
     @State private var confirmingDelete = false
     @State private var importingSources = false
     @State private var linkingSources = false
@@ -83,6 +83,9 @@ struct DetailSidePanel: View {
         }
         .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .clipped()
+        .onAppear {
+            if tab == .ask { onPreferredSideWidth(480) }
+        }
         .onChange(of: tab) { _, newValue in
             if newValue == .ask { onPreferredSideWidth(480) }
         }

@@ -194,7 +194,7 @@ struct MeetingDetailView: View {
         } label: {
             metaLabel(model.categoryName(for: meeting) ?? tr("未分类"))
         }
-        .menuStyle(.button)
+        .menuStyle(.borderlessButton)
         .buttonStyle(.plain.clicking())
         .menuIndicator(.hidden)
         .fixedSize()
@@ -225,7 +225,7 @@ struct MeetingDetailView: View {
         } label: {
             metaLabel(model.audioInputs.selectionTitle, symbol: "mic")
         }
-        .menuStyle(.button)
+        .menuStyle(.borderlessButton)
         .buttonStyle(.plain.clicking())
         .menuIndicator(.hidden)
         .fixedSize()

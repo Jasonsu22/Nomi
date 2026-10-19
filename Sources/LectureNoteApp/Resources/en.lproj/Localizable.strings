@@ -101,7 +101,7 @@
 "把选中的会议存成 Markdown" = "Save the selected meetings as Markdown";
 "把选中的资料按分类复制出去。" = "Copy the selected files into one folder per category.";
 "按下右上角的「开始转录」，Nomi 会听麦克风，在本机识别，并翻译成目标语言。" = "Select Start Transcription, choose your input and languages, then start recording. Nomi transcribes and translates locally.";
-"提问" = "Ask";
+"提问" = "Chat";
 "提问会在接上 Qwen3.5-2B 之后可用。回答会附上这段话的时间。" = "Meeting questions will be available after Qwen3.5-2B is connected. Answers will include timestamps.";
 "搜索会议" = "Search Meetings";
 "搜索会议、内容或分类" = "Search meetings, content, or categories";
@@ -185,7 +185,7 @@
 "连接转录服务失败" = "Could not connect to the transcription service";
 "重命名" = "Rename";
 "重设时间" = "Reset Time";
-"针对一场会议提问" = "Ask About a Meeting";
+"针对一场会议提问" = "Chat About a Meeting";
 "阿拉伯文" = "Arabic";
 "韩文" = "Korean";
 "预览 · 示例回放" = "Preview · Sample Playback";
@@ -240,7 +240,7 @@
 "保存" = "Save";
 "保存 %@（%@）及所选模型。使用 API 提问和摘要时，相关会议文字将发送到此地址。" = "Save %@ (%@) and the selected model. API questions and summaries will send relevant meeting text to this address.";
 "保存 API 配置？" = "Save API configuration?";
-"先录制一场会议，再根据转写提问。" = "Record a meeting first, then ask questions about its transcript.";
+"先录制一场会议，再根据转写提问。" = "Record a meeting first, then chat about its transcript.";
 "切换大模型来源？" = "Switch model source?";
 "删除 %@ 的地址、模型选择和已保存的 API 密钥。此操作不会删除会议。" = "Delete the address, model selection and saved API key for %@. Meetings will be kept.";
 "删除 API 配置？" = "Delete API configuration?";
@@ -266,7 +266,7 @@
 "本地引擎未启动。" = "The local engine is not running.";
 "本地模型直接在这台 Mac 上运行。Qwen3.5 的模型文件可以与翻译共用。" = "Local models run on this Mac. Qwen3.5 model files can be shared with translation.";
 "本地模型请求失败。" = "The local model request failed.";
-"根据这场会议的转写提问，回答会引用相关时间。" = "Ask about this meeting’s transcript. Answers will cite relevant timestamps.";
+"根据这场会议的转写提问，回答会引用相关时间。" = "Chat about this meeting’s transcript. Answers will cite relevant timestamps.";
 "根据这场会议的转写和资料回答。" = "Answers use this meeting’s transcript and its materials.";
 "导入 PDF 或文档，提问时会一并阅读，并放进这个分类的资料库。" = "Add a PDF or document. Questions about this meeting will read it, and it is filed with this category.";
 "关联已有资料" = "Link an existing source";
@@ -309,7 +309,7 @@
 "全选这个分类" = "Select this category";
 "删除这场对话？" = "Delete this chat?";
 "历史会话" = "Chat History";
-"问点什么…" = "Ask something…";
+"问点什么…" = "Chat about something…";
 "根据你的会议和资料回答。" = "Answers from your meetings and sources.";
 "搜索对话" = "Search chats";
 "新会话" = "New Chat";

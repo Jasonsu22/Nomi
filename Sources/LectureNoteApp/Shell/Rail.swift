@@ -7,7 +7,7 @@ struct Rail: View {
     var reduceMotion: Bool
     @Namespace private var namespace
 
-    private let primary: [AppPage] = [.meetings, .ask, .sources]
+    private let primary: [AppPage] = [.meetings, .sources, .ask]
 
     var body: some View {
         VStack(spacing: 4) {
