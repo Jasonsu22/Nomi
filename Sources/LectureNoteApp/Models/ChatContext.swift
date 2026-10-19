@@ -81,9 +81,9 @@ enum ChatContext {
     /// Added when a question is sent. The editable prompt stays unchanged.
     static func displayInstruction(language: String) -> String {
         if language == "Simplified Chinese" {
-            return "用 Markdown 写回答。只有当一个小交互能帮用户理解时，才加一块语言为 html 的围栏，里面写自包含的片段：可以用滑块、按钮和内联 SVG。不要把整段回答包进 HTML，不要引用外部地址，一条回答最多两块。"
+            return "用 Markdown 写回答。只有当一个小交互能帮用户理解时，才加一块语言为 html 的围栏。围栏里写片段或完整页面都可以，用滑块、按钮、内联样式、内联脚本和内联 SVG。不要引用外部地址，一条回答最多两块。"
         }
-        return "Write the answer in Markdown. Add an html fence only when a small interaction would help the student understand. Put a self-contained fragment in it, using sliders, buttons, and inline SVG. Do not wrap the whole answer in HTML, do not reference external addresses, and use at most two such fences."
+        return "Write the answer in Markdown. Add an html fence only when a small interaction would help the student understand. The fence may contain a fragment or a complete page, using sliders, buttons, inline styles, inline scripts, and inline SVG. Do not reference external addresses, and use at most two such fences."
     }
 
     /// The one editable system prompt. Reply language and enabled skills are added when a question is sent.
