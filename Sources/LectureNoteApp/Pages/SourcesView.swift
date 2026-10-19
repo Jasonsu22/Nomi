@@ -137,8 +137,8 @@ struct SourcesView: View {
                     .foregroundStyle(AppColor.textSecondary)
                 PillButton(title: tr("全选")) { selectAllVisible() }
                 PillButton(title: tr("完成")) { endManaging() }
-                PillButton(title: tr("导出")) {
-                    model.downloadSourcesByCategory(selectedIDs, prompt: tr("导出"))
+                PillButton(title: tr("下载")) {
+                    model.downloadSourcesByCategory(selectedIDs, prompt: tr("下载"))
                 }
                 .help(tr("把选中的资料按分类复制出去。"))
                 .disabled(selectedIDs.isEmpty)
@@ -150,10 +150,6 @@ struct SourcesView: View {
                     .disabled(selectedIDs.isEmpty)
                     .opacity(selectedIDs.isEmpty ? 0.4 : 1)
             } else {
-                PillButton(title: tr("下载")) { model.downloadSourcesByCategory() }
-                    .help(tr("按分类建文件夹，把资料复制进去。"))
-                    .disabled(model.sources.isEmpty)
-                    .opacity(model.sources.isEmpty ? 0.4 : 1)
                 PillButton(title: tr("管理")) {
                     selectedIDs.removeAll()
                     managing = true
