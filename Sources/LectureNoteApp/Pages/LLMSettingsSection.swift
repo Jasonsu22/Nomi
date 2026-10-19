@@ -51,6 +51,7 @@ struct LLMSettingsSection: View {
                                 HStack(spacing: Space.s2) {
                                     Image(systemName: model.llmConfiguration.activeID == profile.id ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(AppColor.accent)
+                                    ProviderLogo(file: LLMProviderPreset.logoFile(for: profile.providerID))
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(profile.name).font(AppFont.body).foregroundStyle(AppColor.textPrimary)
                                         Text(profile.modelID).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
@@ -133,13 +134,42 @@ private struct APIProfileEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
-            Text(tr("API 配置")).font(AppFont.sectionTitle)
+            HStack(spacing: Space.s3) {
+                ProviderLogo(file: LLMProviderPreset.logoFile(for: draft.providerID), side: 22)
+                Text(tr("API 配置")).font(AppFont.sectionTitle)
+            }
             VStack(alignment: .leading, spacing: 12) {
                 fieldRow(tr("服务商预设")) {
-                    Picker(tr("服务商预设"), selection: $draft.providerID) {
-                        ForEach(LLMProviderPreset.all) { item in Text(tr(item.name)).tag(item.id) }
+                    Menu {
+                        ForEach(LLMProviderPreset.all) { item in
+                            Button {
+                                draft.providerID = item.id
+                            } label: {
+                                HStack(spacing: 8) {
+                                    ProviderLogo(file: item.logoFile, side: 16)
+                                    Text(tr(item.name))
+                                    if draft.providerID == item.id {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            ProviderLogo(file: LLMProviderPreset.logoFile(for: draft.providerID), side: 16)
+                            Text(tr(LLMProviderPreset.all.first { $0.id == draft.providerID }?.name ?? "自定义"))
+                                .font(AppFont.secondary.weight(.medium))
+                                .foregroundStyle(AppColor.textPrimary)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(AppColor.textSecondary)
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .labelsHidden()
+                    .menuStyle(.button)
+                    .buttonStyle(.plain.clicking())
+                    .menuIndicator(.hidden)
+                    .fixedSize()
                     .clickCursor()
                 }
                 .onChange(of: draft.providerID) { _, value in

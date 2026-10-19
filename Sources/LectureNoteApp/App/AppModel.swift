@@ -36,6 +36,8 @@ enum AppPage: String, CaseIterable, Identifiable {
 @Observable
 final class AppModel {
     var page: AppPage = .meetings
+    var revealSearchSettings = false
+    let webSearch = SearchConfiguration()
     var meetings: [Meeting] {
         didSet { schedulePersistence() }
     }

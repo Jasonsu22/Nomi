@@ -1,10 +1,6 @@
 import AppKit
 import Foundation
 
-enum WebSearchSupport: Equatable {
-    case available, local, unsupported
-}
-
 extension AppModel {
     var currentChat: ChatSession? {
         chats.first { $0.id == currentChatID }
@@ -25,14 +21,6 @@ extension AppModel {
             return chats.first { $0.id == id }
         }
         return currentChat
-    }
-
-    var webSearchSupport: WebSearchSupport {
-        guard llmConfiguration.mode == .api else { return .local }
-        guard let profile = llmConfiguration.activeProfile else { return .unsupported }
-        if profile.format == .anthropic { return .available }
-        if URL(string: profile.baseURL)?.host == "api.openai.com" { return .available }
-        return .unsupported
     }
 
     func ensureChat() {
@@ -138,10 +126,19 @@ extension AppModel {
         mutate(id) { $0.scope = scope }
     }
 
-    func setChatWeb(_ enabled: Bool) {
-        ensureChat()
-        guard let id = currentChatID, webSearchSupport == .available else { return }
+    func setChatWeb(_ enabled: Bool, anchor: UUID? = nil) {
+        if let anchor { ensureMeetingChat(anchor) } else { ensureChat() }
+        guard webSearch.isActiveReady else { return }
+        let id = anchor.flatMap { meetingChatID[$0] } ?? currentChatID
+        guard let id else { return }
         mutate(id) { $0.allowsWeb = enabled }
+    }
+
+    func removeSearch(_ vendor: SearchVendor) throws {
+        guard try webSearch.delete(vendor) else { return }
+        for chat in chats where chat.allowsWeb {
+            mutate(chat.id) { $0.allowsWeb = false }
+        }
     }
 
     func useLocalChatModel() {
@@ -247,7 +244,7 @@ extension AppModel {
             hasScope = !chosenMeetings.isEmpty || !chosenSources.isEmpty
         }
         chatError = nil
-        let allowsWeb = session.allowsWeb && webSearchSupport == .available
+        let allowsWeb = session.allowsWeb && webSearch.isActiveReady
         let mode = llmConfiguration.mode
         let profile = llmConfiguration.activeProfile
         let name = assistantModelName
@@ -274,15 +271,36 @@ extension AppModel {
                 let packed = ChatContext.pack(await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources), question: question)
                 if hasScope && packed.isEmpty { throw llmError(tr("所选范围里还没有可以阅读的文字。")) }
                 try Task.checkCancellation()
+                var webNotice: String?
+                var webBlocks: [ContextBlock] = []
+                if allowsWeb {
+                    do {
+                        let hits = try await self.webSearch.lookup(question)
+                        try Task.checkCancellation()
+                        if hits.isEmpty {
+                            webNotice = tr("联网搜索没有返回结果，这次只根据会议和资料回答。")
+                        } else {
+                            webBlocks = hits.map { $0.contextBlock() }
+                        }
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch let error as URLError where error.code == .cancelled {
+                        throw error
+                    } catch {
+                        if Task.isCancelled { throw CancellationError() }
+                        webNotice = error.localizedDescription
+                    }
+                }
+                let blocks = packed + webBlocks
                 let text: String
                 let system = ChatContext.composedSystemPrompt(
                     override: self.prompts.systemOverride,
                     language: language,
-                    allowsWeb: allowsWeb,
-                    hasPassages: !packed.isEmpty,
+                    allowsWeb: !webBlocks.isEmpty,
+                    hasPassages: !blocks.isEmpty,
                     skills: self.prompts.skills
                 )
-                let prompt = ChatContext.userPrompt(question: question, history: history, blocks: packed)
+                let prompt = ChatContext.userPrompt(question: question, history: history, blocks: blocks)
                 if mode == .api {
                     guard let profile else { throw llmError(tr("请先在设置中选择 API 配置。")) }
                     let key = try LLMKeychain.read(profile)
@@ -291,15 +309,15 @@ extension AppModel {
                         profile: profile,
                         key: key,
                         system: system,
-                        prompt: prompt,
-                        allowsWeb: allowsWeb
+                        prompt: prompt
                     )
                 } else {
                     guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
                     text = try await engine.generate(system: system, prompt: prompt)
                 }
                 try Task.checkCancellation()
-                self.finishChat(id, question: question, answer: text, modelName: name, citations: ChatContext.citations(in: text, blocks: packed), error: nil)
+                self.finishChat(id, question: question, answer: text, modelName: name, citations: ChatContext.citations(in: text, blocks: blocks), error: nil)
+                if let webNotice { self.chatError = webNotice }
             } catch is CancellationError {
                 if self.currentChatID == id { self.chatDraftRestore = question }
             } catch let error as URLError where error.code == .cancelled {

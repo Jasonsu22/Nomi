@@ -42,6 +42,10 @@ struct AskView: View {
                     header
                         .padding(.top, 28)
                         .padding(.bottom, Space.s4)
+                    if showsSearchGuide {
+                        searchGuide
+                            .padding(.bottom, Space.s4)
+                    }
                     HStack(alignment: .top, spacing: historyPresented ? Space.s3 : 0) {
                         conversation
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -275,10 +279,10 @@ struct AskView: View {
     }
 
     private var webChip: some View {
-        let available = model.webSearchSupport == .available
+        let available = model.webSearch.isActiveReady
         let on = available && session?.allowsWeb == true
         return Button {
-            model.setChatWeb(!on)
+            model.setChatWeb(!on, anchor: anchorMeetingID)
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "globe")
@@ -325,7 +329,10 @@ struct AskView: View {
                 }
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
+                if showsModelLogo {
+                    ProviderLogo(file: modelLogoFile, side: 16)
+                }
                 Text(model.assistantModelName)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
@@ -403,12 +410,43 @@ struct AskView: View {
         return (session?.turns.isEmpty ?? true) && model.pendingQuestion == nil
     }
 
-    private var webHelp: String {
-        switch model.webSearchSupport {
-        case .available: tr("允许模型上网查资料。")
-        case .local: tr("本机模型不能联网，换成支持联网的 API 服务商后可用。")
-        case .unsupported: tr("这个服务商还不能联网。")
+    private var showsSearchGuide: Bool {
+        !embedded && !model.webSearch.hasReadyProvider && !model.webSearch.guideDismissed
+    }
+
+    private var searchGuide: some View {
+        HStack(alignment: .center, spacing: Space.s3) {
+            Text(tr("联网搜索需要你自己的搜索密钥。个人使用可以先用 Tavily，每月有免费额度，不用绑卡。"))
+                .font(AppFont.secondary)
+                .foregroundStyle(AppColor.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: Space.s3)
+            Button(tr("以后再说")) { model.webSearch.dismissGuide() }
+                .clickCursor()
+            Button(tr("去设置")) {
+                model.revealSearchSettings = true
+                model.page = .settings
+            }
+            .buttonStyle(.borderedProminent.clicking())
         }
+        .padding(Space.s4)
+        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+    }
+
+    private var showsModelLogo: Bool {
+        if model.llmConfiguration.mode == .local { return true }
+        return model.llmConfiguration.activeProfile != nil
+    }
+
+    private var modelLogoFile: String? {
+        if model.llmConfiguration.mode == .local { return LLMProviderPreset.localLogoFile }
+        return model.llmConfiguration.activeProfile.flatMap { LLMProviderPreset.logoFile(for: $0.providerID) }
+    }
+
+    private var webHelp: String {
+        model.webSearch.isActiveReady
+            ? tr("允许模型上网查资料。")
+            : tr("先在设置里配置一个搜索服务")
     }
 
     private func turnView(_ turn: ChatTurn) -> some View {

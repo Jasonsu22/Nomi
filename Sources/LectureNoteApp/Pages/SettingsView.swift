@@ -10,6 +10,7 @@ struct SettingsView: View {
 
     var body: some View {
         PageScaffold(title: tr("设置")) {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s5) {
                     VStack(spacing: 0) {
@@ -42,6 +43,8 @@ struct SettingsView: View {
 
                     LocalModelsSection(model: model)
                     LLMSettingsSection(model: model)
+                    SearchSettingsSection(model: model)
+                        .id("search-settings")
                     PromptSettingsSection(model: model)
 
                     HStack(spacing: Space.s3) {
@@ -63,6 +66,17 @@ struct SettingsView: View {
                 .pageColumn(maxWidth: 760)
                 .padding(.bottom, Space.s7)
             }
+            .onAppear { revealSearch(proxy) }
+            .onChange(of: model.revealSearchSettings) { _, _ in revealSearch(proxy) }
+            }
+        }
+    }
+
+    private func revealSearch(_ proxy: ScrollViewProxy) {
+        guard model.revealSearchSettings else { return }
+        Task { @MainActor in
+            proxy.scrollTo("search-settings", anchor: .top)
+            model.revealSearchSettings = false
         }
     }
 

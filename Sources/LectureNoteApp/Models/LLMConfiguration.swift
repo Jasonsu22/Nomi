@@ -114,6 +114,15 @@ struct LLMProviderPreset: Identifiable {
         .init(id: "ollama", name: "Ollama", baseURL: "http://localhost:11434/v1"),
         .init(id: "custom", name: "自定义", baseURL: ""),
     ]
+
+    var logoFile: String? { Self.logoFile(for: id) }
+    static let localLogoFile = "provider-qwen"
+
+    static func logoFile(for providerID: String) -> String? {
+        if providerID == "custom" { return nil }
+        guard all.contains(where: { $0.id == providerID }) else { return nil }
+        return "provider-\(providerID)"
+    }
 }
 
 @MainActor
