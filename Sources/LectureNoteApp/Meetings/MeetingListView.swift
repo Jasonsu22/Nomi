@@ -134,30 +134,34 @@ struct MeetingListView: View {
                 .font(AppFont.pageTitle)
                 .foregroundStyle(AppColor.textPrimary)
             Spacer(minLength: Space.s3)
-            if managing {
-                Text(trf("已选 %d", selectedIDs.count))
-                    .font(AppFont.secondary.weight(.medium))
-                    .foregroundStyle(AppColor.textSecondary)
-                PillButton(title: tr("全选")) { selectAllVisible() }
-                PillButton(title: tr("完成")) { endManaging() }
-                PillButton(title: tr("导出")) {
-                    model.export(model.meetings.filter { selectedIDs.contains($0.id) })
+            TrailingBarSwap(managing: managing, reduceMotion: reduceMotion) {
+                HStack(spacing: Space.s3) {
+                    PillButton(title: tr("管理")) {
+                        selectedIDs.removeAll()
+                        managing = true
+                    }
+                    groupingToggle
                 }
-                .help(tr("把选中的会议存成 Markdown"))
-                .disabled(selectedIDs.isEmpty)
-                .opacity(selectedIDs.isEmpty ? 0.4 : 1)
-                PillMenu(title: tr("移到分类"), enabled: !selectedIDs.isEmpty) {
-                    categoryMoveItems(for: selectedIDs)
-                }
-                PillButton(title: tr("删除"), tint: .red) { confirmingBulkDelete = true }
+            } manage: {
+                HStack(spacing: Space.s3) {
+                    Text(trf("已选 %d", selectedIDs.count))
+                        .font(AppFont.secondary.weight(.medium))
+                        .foregroundStyle(AppColor.textSecondary)
+                    PillButton(title: tr("全选")) { selectAllVisible() }
+                    PillButton(title: tr("完成")) { endManaging() }
+                    PillButton(title: tr("导出")) {
+                        model.export(model.meetings.filter { selectedIDs.contains($0.id) })
+                    }
+                    .help(tr("把选中的会议存成 Markdown"))
                     .disabled(selectedIDs.isEmpty)
                     .opacity(selectedIDs.isEmpty ? 0.4 : 1)
-            } else {
-                PillButton(title: tr("管理")) {
-                    selectedIDs.removeAll()
-                    managing = true
+                    PillMenu(title: tr("移到分类"), enabled: !selectedIDs.isEmpty) {
+                        categoryMoveItems(for: selectedIDs)
+                    }
+                    PillButton(title: tr("删除"), tint: .red) { confirmingBulkDelete = true }
+                        .disabled(selectedIDs.isEmpty)
+                        .opacity(selectedIDs.isEmpty ? 0.4 : 1)
                 }
-                groupingToggle
             }
         }
         // The time/category capsule is taller than the text buttons. Without a

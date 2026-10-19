@@ -48,3 +48,31 @@ struct PillMenu<Content: View>: View {
         .animation(Motion.fade(reduceMotion), value: hovering)
     }
 }
+
+/// Swaps the trailing toolbar without resizing each button into the next one.
+/// The list keeps its own checkbox animation; this only fades the button bar.
+struct TrailingBarSwap<Idle: View, Manage: View>: View {
+    var managing: Bool
+    var reduceMotion: Bool
+    @ViewBuilder var idle: () -> Idle
+    @ViewBuilder var manage: () -> Manage
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            if managing {
+                manage().transition(transition)
+            } else {
+                idle().transition(transition)
+            }
+        }
+        .animation(Motion.layout(reduceMotion), value: managing)
+    }
+
+    private var transition: AnyTransition {
+        if reduceMotion { return .opacity }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(x: 12)),
+            removal: .opacity
+        )
+    }
+}

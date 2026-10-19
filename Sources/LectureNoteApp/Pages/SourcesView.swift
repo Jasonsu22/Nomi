@@ -131,31 +131,35 @@ struct SourcesView: View {
                 .font(AppFont.pageTitle)
                 .foregroundStyle(AppColor.textPrimary)
             Spacer(minLength: Space.s3)
-            if managing {
-                Text(trf("已选 %d", selectedIDs.count))
-                    .font(AppFont.secondary.weight(.medium))
-                    .foregroundStyle(AppColor.textSecondary)
-                PillButton(title: tr("全选")) { selectAllVisible() }
-                PillButton(title: tr("完成")) { endManaging() }
-                PillButton(title: tr("下载")) {
-                    model.downloadSourcesByCategory(selectedIDs, prompt: tr("下载"))
+            TrailingBarSwap(managing: managing, reduceMotion: reduceMotion) {
+                HStack(spacing: Space.s3) {
+                    PillButton(title: tr("管理")) {
+                        selectedIDs.removeAll()
+                        managing = true
+                    }
+                    sortControl
+                    categoryToggle
                 }
-                .help(tr("把选中的资料按分类复制出去。"))
-                .disabled(selectedIDs.isEmpty)
-                .opacity(selectedIDs.isEmpty ? 0.4 : 1)
-                PillMenu(title: tr("移到分类"), enabled: !selectedIDs.isEmpty) {
-                    categoryMoveItems(for: selectedIDs)
-                }
-                PillButton(title: tr("删除"), tint: .red) { confirmingBulkDelete = true }
+            } manage: {
+                HStack(spacing: Space.s3) {
+                    Text(trf("已选 %d", selectedIDs.count))
+                        .font(AppFont.secondary.weight(.medium))
+                        .foregroundStyle(AppColor.textSecondary)
+                    PillButton(title: tr("全选")) { selectAllVisible() }
+                    PillButton(title: tr("完成")) { endManaging() }
+                    PillButton(title: tr("下载")) {
+                        model.downloadSourcesByCategory(selectedIDs, prompt: tr("下载"))
+                    }
+                    .help(tr("把选中的资料按分类复制出去。"))
                     .disabled(selectedIDs.isEmpty)
                     .opacity(selectedIDs.isEmpty ? 0.4 : 1)
-            } else {
-                PillButton(title: tr("管理")) {
-                    selectedIDs.removeAll()
-                    managing = true
+                    PillMenu(title: tr("移到分类"), enabled: !selectedIDs.isEmpty) {
+                        categoryMoveItems(for: selectedIDs)
+                    }
+                    PillButton(title: tr("删除"), tint: .red) { confirmingBulkDelete = true }
+                        .disabled(selectedIDs.isEmpty)
+                        .opacity(selectedIDs.isEmpty ? 0.4 : 1)
                 }
-                sortControl
-                categoryToggle
             }
         }
         .frame(height: 36)
