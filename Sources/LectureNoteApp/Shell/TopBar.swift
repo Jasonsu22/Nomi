@@ -103,7 +103,6 @@ private struct HeaderStatus: View {
 
     var body: some View {
         StatusChip(title: title, live: live, isError: isError)
-            .padding(.leading, -StatusChip.textLead)
             .offset(x: offset)
             .opacity(visible ? opacity : 0)
             .accessibilityHidden(!visible)

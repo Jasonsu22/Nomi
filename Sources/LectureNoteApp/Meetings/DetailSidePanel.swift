@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum DetailTab: String, CaseIterable, Identifiable {
     case info = "信息"
@@ -18,6 +20,8 @@ struct DetailSidePanel: View {
     @State private var tab: DetailTab = .info
     @State private var confirmingDelete = false
     @State private var importingSources = false
+    @State private var linkingSources = false
+    @State private var dropTargeted = false
     @Namespace private var tabNamespace
 
     var body: some View {
@@ -147,17 +151,22 @@ struct DetailSidePanel: View {
         model.linkedSources(for: meeting.id)
     }
 
-    private var linkableSources: [KnowledgeSource] {
-        let linked = Set(linkedSources.map(\.id))
-        return model.sources.filter { source in
-            !linked.contains(source.id) && (source.categoryID == meeting.categoryID || source.categoryID == nil)
-        }
-    }
-
     private var sources: some View {
         ScrollView {
             materials
                 .padding(Space.s4)
+        }
+        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
+            receiveDroppedSources(providers)
+            return true
+        }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                    .strokeBorder(AppColor.accent, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    .padding(Space.s3)
+                    .allowsHitTesting(false)
+            }
         }
     }
 
@@ -168,22 +177,18 @@ struct DetailSidePanel: View {
                     .font(AppFont.body)
                     .foregroundStyle(AppColor.textPrimary)
                 Spacer()
-                if !linkableSources.isEmpty {
-                    Menu {
-                        ForEach(linkableSources) { source in
-                            Button(source.title) {
-                                model.linkSource(source.id, to: meeting.id)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "link")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(AppColor.textSecondary)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .clickCursor()
-                    .help(tr("关联已有资料"))
+                Button {
+                    linkingSources = true
+                } label: {
+                    Image(systemName: "link")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain.clicking())
+                .help(tr("关联已有资料"))
+                .popover(isPresented: $linkingSources, arrowEdge: .top) {
+                    sourceLinkList
                 }
             }
             if linkedSources.isEmpty {
@@ -195,13 +200,22 @@ struct DetailSidePanel: View {
                 VStack(spacing: 0) {
                     ForEach(linkedSources) { source in
                         HStack(spacing: Space.s2) {
-                            Image(systemName: source.fileName.lowercased().hasSuffix("pdf") ? "doc.richtext" : "doc")
-                                .foregroundStyle(AppColor.textSecondary)
-                            Text(source.title)
-                                .font(AppFont.secondary)
-                                .foregroundStyle(AppColor.textPrimary)
-                                .lineLimit(1)
-                            Spacer(minLength: Space.s2)
+                            Button {
+                                NSWorkspace.shared.open(SourceStore.fileURL(for: source))
+                            } label: {
+                                HStack(spacing: Space.s2) {
+                                    Image(systemName: source.fileName.lowercased().hasSuffix("pdf") ? "doc.richtext" : "doc")
+                                        .foregroundStyle(AppColor.textSecondary)
+                                    Text(source.title)
+                                        .font(AppFont.secondary)
+                                        .foregroundStyle(AppColor.textPrimary)
+                                        .lineLimit(1)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain.clicking())
+                            .help(tr("打开"))
                             Button {
                                 model.unlinkSource(source.id, from: meeting.id)
                             } label: {
@@ -229,6 +243,65 @@ struct DetailSidePanel: View {
                     .background(AppColor.surfaceInset, in: Capsule())
             }
             .buttonStyle(.plain.clicking())
+        }
+    }
+
+    private var linkCandidates: [KnowledgeSource] {
+        model.sources.filter { source in
+            source.categoryID == meeting.categoryID || source.categoryID == nil
+        }
+    }
+
+    private var sourceLinkList: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            if linkCandidates.isEmpty {
+                Text(tr("这个分类里还没有可以关联的资料。"))
+                    .font(AppFont.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(linkCandidates) { source in
+                            let linked = linkedSources.contains { $0.id == source.id }
+                            Button {
+                                model.linkSource(source.id, to: meeting.id)
+                            } label: {
+                                HStack(spacing: Space.s2) {
+                                    Text(source.title)
+                                        .font(AppFont.secondary)
+                                        .foregroundStyle(AppColor.textPrimary)
+                                        .lineLimit(1)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    if linked {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(AppColor.accent)
+                                    }
+                                }
+                                .padding(.horizontal, Space.s2)
+                                .padding(.vertical, 6)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain.clicking())
+                        }
+                    }
+                }
+                .frame(maxHeight: 280)
+            }
+        }
+        .padding(Space.s3)
+        .frame(width: 280)
+    }
+
+    private func receiveDroppedSources(_ providers: [NSItemProvider]) {
+        for provider in providers {
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                guard let url = fileURL(fromDroppedItem: item) else { return }
+                Task { @MainActor in
+                    model.importLinkedSources([url], meetingID: meeting.id)
+                }
+            }
         }
     }
 
