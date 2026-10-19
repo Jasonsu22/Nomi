@@ -132,11 +132,17 @@ struct SourcesView: View {
                 .foregroundStyle(AppColor.textPrimary)
             Spacer(minLength: Space.s3)
             if managing {
-                PillButton(title: tr("完成")) { endManaging() }
                 Text(trf("已选 %d", selectedIDs.count))
                     .font(AppFont.secondary.weight(.medium))
                     .foregroundStyle(AppColor.textSecondary)
                 PillButton(title: tr("全选")) { selectAllVisible() }
+                PillButton(title: tr("完成")) { endManaging() }
+                PillButton(title: tr("导出")) {
+                    model.downloadSourcesByCategory(selectedIDs, prompt: tr("导出"))
+                }
+                .help(tr("把选中的资料按分类复制出去。"))
+                .disabled(selectedIDs.isEmpty)
+                .opacity(selectedIDs.isEmpty ? 0.4 : 1)
                 PillMenu(title: tr("移到分类"), enabled: !selectedIDs.isEmpty) {
                     categoryMoveItems(for: selectedIDs)
                 }

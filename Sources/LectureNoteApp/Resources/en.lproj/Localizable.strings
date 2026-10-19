@@ -95,6 +95,8 @@
 "找不到示例回放。" = "The sample recording could not be found.";
 "找不到窗口，无法打开保存面板。" = "Cannot find a window for the save dialog.";
 "把当前筛选出的会议存成 Markdown" = "Save the filtered meetings as Markdown";
+"把选中的会议存成 Markdown" = "Save the selected meetings as Markdown";
+"把选中的资料按分类复制出去。" = "Copy the selected files into one folder per category.";
 "按下右上角的「开始转录」，Nomi 会听麦克风，在本机识别，并翻译成目标语言。" = "Select Start Transcription, choose your input and languages, then start recording. Nomi transcribes and translates locally.";
 "提问" = "Ask";
 "提问会在接上 Qwen3.5-2B 之后可用。回答会附上这段话的时间。" = "Meeting questions will be available after Qwen3.5-2B is connected. Answers will include timestamps.";

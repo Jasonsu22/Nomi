@@ -135,11 +135,17 @@ struct MeetingListView: View {
                 .foregroundStyle(AppColor.textPrimary)
             Spacer(minLength: Space.s3)
             if managing {
-                PillButton(title: tr("完成")) { endManaging() }
                 Text(trf("已选 %d", selectedIDs.count))
                     .font(AppFont.secondary.weight(.medium))
                     .foregroundStyle(AppColor.textSecondary)
                 PillButton(title: tr("全选")) { selectAllVisible() }
+                PillButton(title: tr("完成")) { endManaging() }
+                PillButton(title: tr("导出")) {
+                    model.export(model.meetings.filter { selectedIDs.contains($0.id) })
+                }
+                .help(tr("把选中的会议存成 Markdown"))
+                .disabled(selectedIDs.isEmpty)
+                .opacity(selectedIDs.isEmpty ? 0.4 : 1)
                 PillMenu(title: tr("移到分类"), enabled: !selectedIDs.isEmpty) {
                     categoryMoveItems(for: selectedIDs)
                 }
@@ -147,10 +153,6 @@ struct MeetingListView: View {
                     .disabled(selectedIDs.isEmpty)
                     .opacity(selectedIDs.isEmpty ? 0.4 : 1)
             } else {
-                PillButton(title: tr("导出")) {
-                    model.export(model.visibleMeetings)
-                }
-                .help(tr("把当前筛选出的会议存成 Markdown"))
                 PillButton(title: tr("管理")) {
                     selectedIDs.removeAll()
                     managing = true

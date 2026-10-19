@@ -516,8 +516,9 @@ final class AppModel {
         sources.removeAll { ids.contains($0.id) }
     }
 
-    func downloadSourcesByCategory() {
-        let files = sources.map { source in
+    func downloadSourcesByCategory(_ ids: Set<UUID>? = nil, prompt: String? = nil) {
+        let chosen = ids.map { ids in sources.filter { ids.contains($0.id) } } ?? sources
+        let files = chosen.map { source in
             let folder = source.categoryID.flatMap { category(for: $0)?.name } ?? tr("未分类")
             return SourceExportFile(sourceURL: SourceStore.fileURL(for: source), folder: folder, fileName: source.fileName)
         }
@@ -531,7 +532,7 @@ final class AppModel {
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = tr("下载")
+        panel.prompt = prompt ?? tr("下载")
         panel.message = tr("按分类建文件夹，把资料复制进去。")
         panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
         panel.beginSheetModal(for: window) { response in
