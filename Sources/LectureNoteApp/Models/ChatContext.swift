@@ -74,7 +74,16 @@ enum ChatContext {
                 ? "You may search the web only for facts that are not in the passages. Mark sentences that come from the web and include the page title and URL."
                 : "You may search the web. Mark sentences that come from the web and include the page title and URL.")
         }
+        lines.append(displayInstruction(language: language))
         return lines.joined(separator: " ")
+    }
+
+    /// Added when a question is sent. The editable prompt stays unchanged.
+    static func displayInstruction(language: String) -> String {
+        if language == "Simplified Chinese" {
+            return "用 Markdown 写回答。只有当一个小交互能帮用户理解时，才加一块语言为 html 的围栏，里面写自包含的片段：可以用滑块、按钮和内联 SVG。不要把整段回答包进 HTML，不要引用外部地址，一条回答最多两块。"
+        }
+        return "Write the answer in Markdown. Add an html fence only when a small interaction would help the student understand. Put a self-contained fragment in it, using sliders, buttons, and inline SVG. Do not wrap the whole answer in HTML, do not reference external addresses, and use at most two such fences."
     }
 
     /// The one editable system prompt. Reply language and enabled skills are added when a question is sent.
@@ -101,7 +110,7 @@ enum ChatContext {
         if custom.isEmpty || custom == defaultSystemText {
             base = systemPrompt(language: language, allowsWeb: allowsWeb, hasPassages: hasPassages)
         } else {
-            base = custom + " Answer in \(language)."
+            base = custom + " Answer in \(language). " + displayInstruction(language: language)
         }
         let enabled = skills.filter { skill in
             skill.enabled && !skill.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

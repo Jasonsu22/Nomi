@@ -430,10 +430,7 @@ struct AskView: View {
                     .textSelection(.enabled)
             } else if !turn.answer.isEmpty {
                 VStack(alignment: .leading, spacing: Space.s2) {
-                    Text(turn.answer)
-                        .font(AppFont.body)
-                        .foregroundStyle(AppColor.textPrimary)
-                        .textSelection(.enabled)
+                    AnswerBody(source: turn.answer)
                         .frame(maxWidth: 680, alignment: .leading)
                     if !turn.citations.isEmpty {
                         ChipFlow(spacing: Space.s2) {
@@ -469,10 +466,7 @@ struct AskView: View {
                         .foregroundStyle(AppColor.textSecondary)
                 }
             } else {
-                Text(model.pendingAnswer)
-                    .font(AppFont.body)
-                    .foregroundStyle(AppColor.textPrimary)
-                    .textSelection(.enabled)
+                AnswerBody(source: model.pendingAnswer, streaming: true)
                     .frame(maxWidth: 680, alignment: .leading)
             }
         }
