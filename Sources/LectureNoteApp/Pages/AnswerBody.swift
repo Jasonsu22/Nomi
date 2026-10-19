@@ -418,6 +418,7 @@ private struct CiteText: NSViewRepresentable {
             ]
             guard changed else { return }
             underlined = nil
+            view.clearUnderline()
             view.textStorage?.setAttributedString(decorated(attributed, color: color))
             view.window?.invalidateCursorRects(for: view)
         }
@@ -650,6 +651,11 @@ private final class CiteTextView: NSTextView {
         hover?.hoverExited(self)
     }
 
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        drawDottedUnderline()
+    }
+
     override func layout() {
         super.layout()
         window?.invalidateCursorRects(for: self)
@@ -695,23 +701,50 @@ private final class CiteTextView: NSTextView {
     }
 
     func underline(_ range: NSRange) {
-        guard let storage = textStorage else { return }
         if underlined == range { return }
-        clearUnderline()
-        storage.enumerateAttribute(.attachment, in: range) { value, subrange, _ in
-            if value == nil {
-                storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: subrange)
-            }
-        }
         underlined = range
+        needsDisplay = true
     }
 
     func clearUnderline() {
-        guard let underlined, let storage = textStorage, NSMaxRange(underlined) <= storage.length else {
-            underlined = nil
-            return
+        guard underlined != nil else { return }
+        underlined = nil
+        needsDisplay = true
+    }
+
+    /// Round dots, in the same color as the link text.
+    private func drawDottedUnderline() {
+        guard let underlined, let layoutManager, let container = textContainer, let storage = textStorage,
+              underlined.length > 0, NSMaxRange(underlined) <= storage.length else { return }
+        layoutManager.ensureLayout(for: container)
+        let origin = textContainerOrigin
+        storage.enumerateAttribute(.attachment, in: underlined) { value, subrange, _ in
+            guard value == nil, subrange.length > 0 else { return }
+            let color = storage.attribute(.foregroundColor, at: subrange.location, effectiveRange: nil) as? NSColor ?? .labelColor
+            let font = storage.attribute(.font, at: subrange.location, effectiveRange: nil) as? NSFont ?? .systemFont(ofSize: 15)
+            let glyphs = layoutManager.glyphRange(forCharacterRange: subrange, actualCharacterRange: nil)
+            guard glyphs.length > 0 else { return }
+            layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { lineRect, _, _, lineGlyphs, _ in
+                let slice = NSIntersectionRange(glyphs, lineGlyphs)
+                guard slice.length > 0 else { return }
+                let bounds = layoutManager.boundingRect(forGlyphRange: slice, in: container)
+                let baseline = origin.y + lineRect.minY + layoutManager.location(forGlyphAt: slice.location).y
+                let drop = max(-font.underlinePosition, 1)
+                color.setFill()
+                self.fillDots(from: origin.x + bounds.minX, to: origin.x + bounds.maxX, centerY: baseline + drop)
+            }
         }
-        storage.removeAttribute(.underlineStyle, range: underlined)
-        self.underlined = nil
+    }
+
+    private func fillDots(from left: CGFloat, to right: CGFloat, centerY: CGFloat) {
+        let diameter: CGFloat = 1.5
+        let pitch: CGFloat = 2.5
+        guard right - left >= diameter * 0.6 else { return }
+        var center = left + diameter / 2
+        let limit = right - diameter / 2
+        while center <= limit + 0.01 {
+            NSBezierPath(ovalIn: NSRect(x: center - diameter / 2, y: centerY - diameter / 2, width: diameter, height: diameter)).fill()
+            center += pitch
+        }
     }
 }
