@@ -121,9 +121,10 @@ struct ChatPerformanceTests {
         _ = NSApplication.shared
         let model = AppModel(engine: ReplayEngine(), meetings: [], categories: [])
         let paragraph = String(repeating: "中英混排的历史消息。A long message with **formatting** and `code`. ", count: 10)
-        let turns = (0..<200).map { index in
+        var turns = (0..<200).map { index in
             ChatTurn(question: "问题 \(index)", answer: "# 回答 \(index)\n\n" + paragraph, modelName: "Test")
         }
+        turns[197].answer += "\n\n```html\n<div style=\"height:220px\">Preloaded chart</div>\n```"
         let session = ChatSession(turns: turns)
         model.chats = [session]
         model.currentChatID = session.id
@@ -144,6 +145,70 @@ struct ChatPerformanceTests {
         #expect(descendants(host).compactMap { ($0 as? NSTextView)?.string }.contains { $0.contains("回答 199") })
         print("CHAT_PERF: 200 turns, \(nativeTexts) mounted answer text views after \(start.duration(to: .now)) (includes 700 ms settle)")
         let table = try #require(descendants(host).compactMap { $0 as? ChatTableView }.first)
+        let coordinator = try #require(table.delegate as? ChatTranscript.Coordinator)
+        let firstVisible = table.rows(in: table.visibleRect).location
+        let preceding = Array(max(0, firstVisible - 6)..<firstVisible)
+        func ready(_ row: Int) -> Bool {
+            coordinator.preloadedRowIDs.contains(session.turns[row].id) || table.view(atColumn: 0, row: row, makeIfNecessary: false)?.window != nil
+        }
+        #expect(!preceding.isEmpty)
+        // WebKit's first process launch is asynchronous. Wait for the offscreen
+        // page, without scrolling it into view to trigger loading.
+        let webDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ContinuousClock.now < webDeadline {
+            if preceding.allSatisfy(ready), descendants(table).compactMap({ $0 as? DemoWebHost }).contains(where: { demo in
+                demo.html.contains("Preloaded chart") && demo.active && demo.bounds.height > 200 && descendants(demo).contains { ($0 as? WKWebView)?.isLoading == false }
+            }) { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(preceding.allSatisfy(ready), "上方六轮应在进入视口前完成视图准备")
+        #expect(coordinator.preloadedRowIDs.count <= 8)
+        let upcomingDemo = try #require(descendants(table).compactMap { $0 as? DemoWebHost }.first { $0.html.contains("Preloaded chart") })
+        #expect(!upcomingDemo.convert(upcomingDemo.bounds, to: table).intersects(table.visibleRect))
+        #expect(upcomingDemo.active && upcomingDemo.bounds.height > 200, "下一轮的 HTML 应在进入视口前加载并确定高度")
+        #expect(descendants(upcomingDemo).contains { ($0 as? WKWebView)?.isLoading == false })
+        for row in max(0, firstVisible - 6)..<firstVisible {
+            #expect(table.rect(ofRow: row).height > 160, "预加载必须提前测量行高，而不只是缓存 Markdown")
+        }
+        let clip = try #require(table.enclosingScrollView?.contentView)
+        func position() -> (row: Int, offset: CGFloat) {
+            let y = clip.bounds.minY
+            let row = table.row(at: NSPoint(x: 0, y: y))
+            return (row, y - table.rect(ofRow: row).minY)
+        }
+        // A small upward movement used to snap back because "within 80 pt of
+        // bottom" was mistaken for the user still following the newest answer.
+        for distance in [CGFloat(40)] + Array(repeating: CGFloat(180), count: 8) {
+            let y = max(0, clip.bounds.minY - distance)
+            let entering = table.row(at: NSPoint(x: 0, y: y))
+            if entering >= 0, entering < session.turns.count {
+                #expect(ready(entering),
+                        "进入下一段之前应已有排版好的视图")
+            }
+            clip.scroll(to: NSPoint(x: 0, y: y))
+            table.enclosingScrollView?.reflectScrolledClipView(clip)
+            host.layoutSubtreeIfNeeded()
+            #expect(descendants(table).compactMap { $0 as? NSTextView }.contains { text in
+                guard let layout = text.layoutManager, let container = text.textContainer else { return false }
+                let glyphs = layout.usedRect(for: container).offsetBy(dx: text.textContainerOrigin.x, dy: text.textContainerOrigin.y)
+                return text.convert(glyphs, to: table).intersects(table.visibleRect)
+            }, "上滑后的首帧就应有正文，不能等下一次异步排版")
+            let before = position()
+            try await Task.sleep(for: .milliseconds(100))
+            let after = position()
+            #expect(after.row == before.row && abs(after.offset - before.offset) <= 2,
+                    "预加载行高更新不能把阅读位置往下推：\(before) → \(after)")
+            if entering >= 0, entering < session.turns.count {
+                let row = try #require(table.view(atColumn: 0, row: entering, makeIfNecessary: false))
+                let rowTexts = descendants(row).compactMap { ($0 as? NSTextView)?.string }
+                #expect(rowTexts.contains("回答 \(entering)"),
+                        "预备视图交接后仍应显示当前轮次，不能被清除或复用成另一轮")
+            }
+            checkTextHeights(in: host)
+        }
+        window.setContentSize(NSSize(width: 860, height: 720))
+        try await Task.sleep(for: .milliseconds(200))
+        checkTextHeights(in: host)
         for index in [0, 140, 30, 190, 0] {
             table.scrollRowToVisible(index)
             try await Task.sleep(for: .milliseconds(80))
@@ -156,6 +221,7 @@ struct ChatPerformanceTests {
             }
             #expect(!visibleText.isEmpty, "快速跳到历史的第 \(index) 轮不能整屏空白")
             checkTextHeights(in: host)
+            #expect(coordinator.cachedRowCount <= 16, "反复翻阅不能积累整份历史的视图")
         }
         // Re-entering the page uses the same completed-answer cache.
         window.contentView = NSHostingView(rootView: AskView(model: model))
