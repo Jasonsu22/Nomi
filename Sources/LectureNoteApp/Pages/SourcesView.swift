@@ -385,6 +385,7 @@ struct SourcesView: View {
             }
         }
         .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .animation(Motion.layout(reduceMotion), value: sources.map(\.id))
     }
 
@@ -454,6 +455,7 @@ struct SourcesView: View {
         .padding(.horizontal, Space.s4)
         .padding(.vertical, 14)
         .contentShape(Rectangle())
+        .modifier(RowHover(reduceMotion: reduceMotion))
         .contextMenu { sourceMenu(source) }
     }
 
@@ -844,5 +846,17 @@ private struct AddSourceSheet: View {
 
     private var creatingPresented: Binding<Bool> {
         Binding(get: { creatingFor != nil }, set: { if !$0 { creatingFor = nil } })
+    }
+}
+
+private struct RowHover: ViewModifier {
+    var reduceMotion: Bool
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(hovering ? AppColor.surfaceInset : Color.clear)
+            .onHover { hovering = $0 }
+            .animation(Motion.fade(reduceMotion), value: hovering)
     }
 }
