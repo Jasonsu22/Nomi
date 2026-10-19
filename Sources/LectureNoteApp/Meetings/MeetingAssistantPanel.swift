@@ -15,7 +15,7 @@ struct MeetingAssistantPanel: View {
                 VStack(alignment: .leading, spacing: Space.s4) {
                     if summary {
                         if state?.isGenerating == true, let draft = state?.draft, !draft.isEmpty {
-                            result(draft, modelName: state?.summaryModelName ?? "")
+                            result(draft, modelName: state?.summaryModelName ?? "", streaming: true)
                         } else if let text = state?.summary {
                             result(text, modelName: state?.summaryModelName ?? "")
                         } else {
@@ -34,7 +34,7 @@ struct MeetingAssistantPanel: View {
                             }
                         }
                         if state?.isGenerating == true, let draft = state?.draft, !draft.isEmpty {
-                            result(draft, modelName: "")
+                            result(draft, modelName: "", streaming: true)
                         }
                     }
                 }
@@ -84,10 +84,12 @@ struct MeetingAssistantPanel: View {
         }
     }
 
-    private func result(_ text: String, modelName: String) -> some View {
+    private func result(_ text: String, modelName: String, streaming: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text(.init(text)).font(AppFont.secondary).textSelection(.enabled)
-            Text(modelName).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+            AnswerBody(source: text, streaming: streaming)
+            if !modelName.isEmpty {
+                Text(modelName).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+            }
         }
     }
 }
