@@ -85,10 +85,15 @@ final class AppModel {
     var chatGeneratingID: UUID?
     var pendingQuestion: String?
     var pendingAnswer = ""
+    var pendingCitations: [ChatCitation] = []
+    /// Turns whose demonstration is being written by a separate request.
+    var preparingVisualTurnIDs: Set<UUID> = []
     var chatError: String?
     var chatDraftRestore: String?
     var chatFocusRequest = 0
     @ObservationIgnored var chatTask: Task<Void, Never>?
+    @ObservationIgnored var visualTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored var localVisualBusy = false
     var chatsReady = false
     var recordingSetupPresented = false
     private(set) var recordingResumeID: UUID?

@@ -146,6 +146,14 @@ struct AskView: View {
                                         ModelChangeNote(from: session.turns[index - 1].modelName, to: turn.modelName)
                                     }
                                     turnView(turn)
+                                    if model.preparingVisualTurnIDs.contains(turn.id) {
+                                        HStack(spacing: Space.s2) {
+                                            ProgressView().controlSize(.small)
+                                            Text(tr("正在准备图示…"))
+                                                .font(AppFont.secondary)
+                                                .foregroundStyle(AppColor.textSecondary)
+                                        }
+                                    }
                                 }
                                 if model.chatGeneratingID == session.id, let question = model.pendingQuestion {
                                     if let previous = session.turns.last?.modelName, modelDidChange(previous, model.assistantModelName) {
@@ -338,9 +346,6 @@ struct AskView: View {
             }
         } label: {
             HStack(spacing: 6) {
-                if showsModelLogo {
-                    ProviderLogo(file: modelLogoFile, side: 16)
-                }
                 Text(model.assistantModelName)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
@@ -441,16 +446,6 @@ struct AskView: View {
         .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
     }
 
-    private var showsModelLogo: Bool {
-        if model.llmConfiguration.mode == .local { return true }
-        return model.llmConfiguration.activeProfile != nil
-    }
-
-    private var modelLogoFile: String? {
-        if model.llmConfiguration.mode == .local { return LLMProviderPreset.localLogoFile }
-        return model.llmConfiguration.activeProfile.flatMap { LLMProviderPreset.logoFile(for: $0.providerID) }
-    }
-
     private var webHelp: String {
         model.webSearch.isActiveReady
             ? tr("允许模型上网查资料。")
@@ -502,7 +497,9 @@ struct AskView: View {
                         .foregroundStyle(AppColor.textSecondary)
                 }
             } else {
-                AnswerBody(source: model.pendingAnswer, streaming: true)
+                AnswerBody(source: model.pendingAnswer, streaming: true, citations: model.pendingCitations) { citation in
+                    model.openCitation(citation)
+                }
                     .frame(maxWidth: 680, alignment: .leading)
             }
         }
@@ -600,17 +597,26 @@ private struct ModelChangeNote: View {
     var body: some View {
         HStack(spacing: Space.s3) {
             line
-            HStack(spacing: 6) {
-                Image(systemName: "cube")
-                Text(trf("模型已从 %@ 换成 %@", from, to))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
+            ViewThatFits(in: .horizontal) {
+                note(limit: 1)
+                note(limit: 2)
             }
-            .font(AppFont.caption)
-            .foregroundStyle(AppColor.textSecondary)
+            .layoutPriority(1)
             line
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private func note(limit: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "cube")
+            Text(trf("模型已从 %@ 换成 %@", from, to))
+                .lineLimit(limit)
+                .multilineTextAlignment(.center)
+        }
+        .font(AppFont.caption)
+        .foregroundStyle(AppColor.textSecondary)
+        .fixedSize(horizontal: limit == 1, vertical: false)
     }
 
     private var line: some View {

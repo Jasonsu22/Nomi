@@ -11,12 +11,14 @@ struct AnswerBody: View {
 
     var body: some View {
         let pieces = AnswerDocument.pieces(in: source, streaming: streaming)
+        let export = ChatFiles.export(source)
+        let rows = Self.rows(pieces, widgets: export.widgets)
         return VStack(alignment: .leading, spacing: Space.s3) {
             if pieces.isEmpty {
-                answerText(AnswerInline.render(source, citations: linkedCitations, streaming: streaming))
+                answerText(AnswerInline.render(source, citations: linkedCitations, streaming: streaming, files: export.named))
             } else {
-                ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
-                    pieceView(piece)
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    pieceView(row.piece, file: row.file, files: export.named)
                 }
             }
         }
@@ -36,13 +38,32 @@ struct AnswerBody: View {
             }
             return
         }
+        if url.isFileURL {
+            AnswerLinkActions.openFile(url)
+            return
+        }
         if scheme == "http" || scheme == "https" {
             NSWorkspace.shared.open(url)
         }
     }
 
+    private struct Row {
+        var piece: AnswerDocument.Piece
+        var file: URL?
+    }
+
+    private static func rows(_ pieces: [AnswerDocument.Piece], widgets: [URL]) -> [Row] {
+        var index = 0
+        return pieces.map { piece in
+            guard case .widget = piece, index < widgets.count else { return Row(piece: piece, file: nil) }
+            let file = widgets[index]
+            index += 1
+            return Row(piece: piece, file: file)
+        }
+    }
+
     /// The marker and the sentence share one text view, so their baselines match.
-    private func listText(ordered: Bool, items: [String]) -> AttributedString {
+    private func listText(ordered: Bool, items: [String], files: [String: URL]) -> AttributedString {
         let font = NSFont.systemFont(ofSize: 15)
         let widest = ordered ? "\(max(items.count, 1))." : "•"
         let indent = ceil((widest as NSString).size(withAttributes: [.font: font]).width) + 8
@@ -58,7 +79,7 @@ struct AnswerBody: View {
                 attributes: [.font: font, .foregroundColor: AppColor.nsTextSecondary]
             )
             text.append(marker)
-            text.append(NSAttributedString(AnswerInline.render(item, citations: linkedCitations, streaming: streaming)))
+            text.append(NSAttributedString(AnswerInline.render(item, citations: linkedCitations, streaming: streaming, files: files)))
             if index + 1 < items.count {
                 text.append(NSAttributedString(string: "\n"))
             }
@@ -83,14 +104,14 @@ struct AnswerBody: View {
     }
 
     @ViewBuilder
-    private func pieceView(_ piece: AnswerDocument.Piece) -> some View {
+    private func pieceView(_ piece: AnswerDocument.Piece, file: URL?, files: [String: URL]) -> some View {
         switch piece {
         case .heading(let level, let text):
-            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: linkedCitations, streaming: streaming))
+            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: linkedCitations, streaming: streaming, files: files))
         case .paragraph(let text):
-            answerText(AnswerInline.render(text, citations: linkedCitations, streaming: streaming))
+            answerText(AnswerInline.render(text, citations: linkedCitations, streaming: streaming, files: files))
         case .list(let ordered, let items):
-            answerText(listText(ordered: ordered, items: items))
+            answerText(listText(ordered: ordered, items: items, files: files))
         case .code(let code):
             answerText(codeText(code))
                 .padding(Space.s2)
@@ -108,13 +129,13 @@ struct AnswerBody: View {
             Grid(alignment: .leading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: linkedCitations, streaming: streaming))
+                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: linkedCitations, streaming: streaming, files: files))
                     }
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            answerText(AnswerInline.render(cell, size: 13, citations: linkedCitations, streaming: streaming))
+                            answerText(AnswerInline.render(cell, size: 13, citations: linkedCitations, streaming: streaming, files: files))
                         }
                     }
                 }
@@ -122,6 +143,7 @@ struct AnswerBody: View {
         case .widget(let title, let html):
             HtmlAnswerCard(
                 title: title,
+                file: file,
                 html: AnswerDocument.page(
                     fragment: html,
                     text: colorScheme == .dark ? "#E6E8EB" : "#111418",
@@ -135,18 +157,24 @@ struct AnswerBody: View {
 
 private struct HtmlAnswerCard: View {
     var title: String
+    var file: URL?
     var html: String
     @State private var height: CGFloat = 160
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s1) {
             Text(title.isEmpty ? tr("互动图示") : title)
-                .font(AppFont.caption)
-                .foregroundStyle(AppColor.textSecondary)
-            HtmlAnswerWebView(html: html) { reported in
+                .font(AppFont.body)
+                .foregroundStyle(AppColor.textPrimary)
+                .contextMenu {
+                    if let file {
+                        AnswerFileMenu(url: file)
+                    }
+                }
+            HtmlAnswerWebView(html: html, file: file) { reported in
                 height = reported
             }
-            .frame(height: min(max(height, 44), 720))
+            .frame(height: max(height, 44))
             .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
             .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         }
@@ -155,15 +183,39 @@ private struct HtmlAnswerCard: View {
     }
 }
 
+private final class HtmlAnswerWeb: WKWebView {
+    var fileURL: URL?
+    private var fileMenu: NSMenu?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let fileURL else { return super.menu(for: event) }
+        let menu = AnswerMenus.file(fileURL)
+        fileMenu = menu
+        return menu
+    }
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        guard let fileURL else { return }
+        let custom = AnswerMenus.file(fileURL)
+        fileMenu = custom
+        menu.removeAllItems()
+        for item in custom.items {
+            custom.removeItem(item)
+            menu.addItem(item)
+        }
+    }
+}
+
 private struct HtmlAnswerWebView: NSViewRepresentable {
     var html: String
+    var file: URL?
     var onHeight: (CGFloat) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onHeight: onHeight)
     }
 
-    func makeNSView(context: Context) -> WKWebView {
+    func makeNSView(context: Context) -> HtmlAnswerWeb {
         let content = WKUserContentController()
         content.add(context.coordinator, name: "nomi")
         content.addUserScript(WKUserScript(source: Self.heightScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
@@ -172,7 +224,8 @@ private struct HtmlAnswerWebView: NSViewRepresentable {
         configuration.websiteDataStore = .nonPersistent()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = HtmlAnswerWeb(frame: .zero, configuration: configuration)
+        webView.fileURL = file
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.allowsMagnification = false
@@ -185,7 +238,8 @@ private struct HtmlAnswerWebView: NSViewRepresentable {
         return webView
     }
 
-    func updateNSView(_ webView: WKWebView, context: Context) {
+    func updateNSView(_ webView: HtmlAnswerWeb, context: Context) {
+        webView.fileURL = file
         context.coordinator.onHeight = onHeight
         context.coordinator.load(html, into: webView)
     }
@@ -402,6 +456,7 @@ private struct CiteText: NSViewRepresentable {
         private var showTicket = 0
         private var closeTicket = 0
         private var pointerInsideCard = false
+        private var contextMenuOpen = false
         private let popover = NSPopover()
         private let host = NSHostingController(rootView: AnyView(EmptyView()))
 
@@ -447,7 +502,19 @@ private struct CiteText: NSViewRepresentable {
             view.window?.invalidateCursorRects(for: view)
         }
 
+        func beginContextMenu() {
+            contextMenuOpen = true
+            pendingURL = nil
+            showTicket += 1
+            close(textView)
+        }
+
+        func endContextMenu() {
+            contextMenuOpen = false
+        }
+
         func hoverMoved(_ view: CiteTextView, at point: NSPoint?) {
+            guard !contextMenuOpen else { return }
             guard let point, let link = view.link(at: point) else {
                 NSCursor.iBeam.set()
                 pendingURL = nil
@@ -753,8 +820,25 @@ private struct CiteText: NSViewRepresentable {
             return NSAttributedString(string: " ", attributes: [.font: gapFont, .foregroundColor: color])
         }
 
+        func menu(for url: URL) -> NSMenu {
+            if url.isFileURL { return AnswerMenus.file(url) }
+            if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+                return AnswerMenus.link(url)
+            }
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+            let item = NSMenuItem(title: tr("打开"), action: #selector(CiteTextView.openHoveredLink(_:)), keyEquivalent: "")
+            item.target = textView
+            item.isEnabled = true
+            item.representedObject = url
+            menu.addItem(item)
+            return menu
+        }
+
         private func icon(url: URL, label: String, font: NSFont, color: NSColor) -> NSAttributedString {
-            let symbol = citation(for: url)?.symbolName ?? ChatCitation.symbolName(title: label, detail: "", url: url.absoluteString)
+            let symbol = url.isFileURL
+                ? ChatFiles.symbol(for: url)
+                : (citation(for: url)?.symbolName ?? ChatCitation.symbolName(title: label, detail: "", url: url.absoluteString))
             let config = NSImage.SymbolConfiguration(pointSize: font.pointSize * 0.86, weight: .semibold)
             guard let symbolImage = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config) else {
                 return NSAttributedString()
@@ -836,6 +920,25 @@ private final class CiteTextView: NSTextView {
 
     override func mouseExited(with event: NSEvent) {
         hover?.hoverExited(self)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        hover?.beginContextMenu()
+        super.rightMouseDown(with: event)
+        hover?.endContextMenu()
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        if let link = link(at: point) {
+            return hover?.menu(for: link.url)
+        }
+        return super.menu(for: event)
+    }
+
+    @objc func openHoveredLink(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        hover?.onOpen(url)
     }
 
     override func draw(_ dirtyRect: NSRect) {

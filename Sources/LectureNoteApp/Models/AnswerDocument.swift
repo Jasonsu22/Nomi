@@ -3,9 +3,6 @@ import Foundation
 import SwiftUI
 
 enum AnswerDocument {
-    static let widgetLimit = 2
-    static let widgetByteLimit = 24 * 1024
-
     enum Piece: Equatable {
         case heading(Int, String)
         case paragraph(String)
@@ -19,7 +16,6 @@ enum AnswerDocument {
 
     static func pieces(in source: String, streaming: Bool = false) -> [Piece] {
         var result: [Piece] = []
-        var widgets = 0
         for region in regions(in: source) {
             switch region.kind {
             case .text:
@@ -33,11 +29,8 @@ enum AnswerDocument {
                 guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                 let ready = region.closed || finishedDocument(body)
                 if ready,
-                   body.utf8.count <= widgetByteLimit,
-                   widgets < widgetLimit,
                    let title = widgetTitle(info: region.info, body: body),
                    let fragment = widgetFragment(from: body) {
-                    widgets += 1
                     let name = title.isEmpty ? (documentTitle(body) ?? "") : title
                     result.append(.widget(title: name, html: fragment))
                 } else {
@@ -549,7 +542,8 @@ enum AnswerInline {
         size: CGFloat = 15,
         weight: Font.Weight = .regular,
         citations: [Int: ChatCitation] = [:],
-        streaming: Bool = false
+        streaming: Bool = false,
+        files: [String: URL] = [:]
     ) -> AttributedString {
         var result = AttributedString()
         var index = source.startIndex
@@ -557,7 +551,15 @@ enum AnswerInline {
             if source[index] == "`" {
                 let content = source.index(after: index)
                 if let end = source[content...].firstIndex(of: "`") {
-                    result.append(styled(String(source[content..<end]), size: size - 2, weight: weight, code: true))
+                    let code = String(source[content..<end])
+                    if let file = fileURL(code, files: files) {
+                        var text = styled(code, size: max(size - 1, 12), weight: .medium)
+                        text.link = file
+                        text.foregroundColor = AppColor.accent
+                        result.append(text)
+                    } else {
+                        result.append(styled(code, size: size - 2, weight: weight, code: true))
+                    }
                     index = source.index(after: end)
                     continue
                 }
@@ -596,24 +598,24 @@ enum AnswerInline {
                 let marker = source[index...].hasPrefix("**") ? "**" : "__"
                 let content = source.index(index, offsetBy: marker.count)
                 if let end = closing(source, from: content, marker: marker) {
-                    result.append(render(String(source[content..<end]), size: size, weight: .semibold, citations: citations, streaming: streaming))
+                    result.append(render(String(source[content..<end]), size: size, weight: .semibold, citations: citations, streaming: streaming, files: files))
                     index = source.index(end, offsetBy: marker.count)
                     continue
                 }
                 if streaming {
-                    result.append(render(String(source[content...]), size: size, weight: .semibold, citations: citations, streaming: true))
+                    result.append(render(String(source[content...]), size: size, weight: .semibold, citations: citations, streaming: true, files: files))
                     break
                 }
             }
             if source[index] == "*", !source[index...].hasPrefix("**") {
                 let content = source.index(after: index)
                 if let end = closing(source, from: content, marker: "*") {
-                    result.append(withItalic(render(String(source[content..<end]), size: size, weight: weight, citations: citations, streaming: streaming), size: size, weight: weight))
+                    result.append(withItalic(render(String(source[content..<end]), size: size, weight: weight, citations: citations, streaming: streaming, files: files), size: size, weight: weight))
                     index = source.index(after: end)
                     continue
                 }
                 if streaming, content < source.endIndex, source[content] != " ", source[content] != "\n" {
-                    result.append(withItalic(render(String(source[content...]), size: size, weight: weight, citations: citations, streaming: true), size: size, weight: weight))
+                    result.append(withItalic(render(String(source[content...]), size: size, weight: weight, citations: citations, streaming: true, files: files), size: size, weight: weight))
                     break
                 }
             }
@@ -621,6 +623,12 @@ enum AnswerInline {
             index = source.index(after: index)
         }
         return result
+    }
+
+    private static func fileURL(_ code: String, files: [String: URL]) -> URL? {
+        let name = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = files[name] { return url }
+        return files.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
     }
 
     /// A finished formula, or an unfinished one while streaming (then `url` is nil and the tail is hidden).

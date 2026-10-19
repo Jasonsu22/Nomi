@@ -3,7 +3,6 @@ import SwiftUI
 
 struct PromptSettingsSection: View {
     var model: AppModel
-    @State private var editingSystem = false
     @State private var editingSkill: PromptSkill?
 
     var body: some View {
@@ -12,27 +11,6 @@ struct PromptSettingsSection: View {
                 .font(AppFont.sectionTitle)
                 .foregroundStyle(AppColor.textPrimary)
             VStack(spacing: 0) {
-                Button { editingSystem = true } label: {
-                    HStack {
-                        Text(tr("默认系统提示词"))
-                            .font(AppFont.body)
-                            .foregroundStyle(AppColor.textPrimary)
-                        Spacer()
-                        HStack(spacing: 6) {
-                            Text(model.prompts.isSystemCustomized ? tr("已修改") : tr("默认"))
-                                .font(AppFont.secondary.weight(.medium))
-                                .foregroundStyle(AppColor.textPrimary)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(AppColor.textSecondary)
-                        }
-                    }
-                    .padding(.horizontal, Space.s4)
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain.clicking())
-                Rectangle().fill(AppColor.separator).frame(height: 1).padding(.leading, Space.s4)
                 HStack {
                     Text(tr("默认回复语言"))
                         .font(AppFont.body)
@@ -69,9 +47,6 @@ struct PromptSettingsSection: View {
             Text(tr("启用的技能会和系统提示词一起发给模型。"))
                 .font(AppFont.caption)
                 .foregroundStyle(AppColor.textSecondary)
-        }
-        .sheet(isPresented: $editingSystem) {
-            SystemPromptEditor(prompts: model.prompts)
         }
         .sheet(item: $editingSkill) { skill in
             SkillEditor(prompts: model.prompts, skill: skill)
@@ -141,69 +116,6 @@ struct PromptSettingsSection: View {
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, 14)
-    }
-}
-
-private struct SystemPromptEditor: View {
-    var prompts: PromptPreferences
-    @Environment(\.dismiss) private var dismiss
-    @State private var draft: String
-    @State private var confirming = false
-
-    init(prompts: PromptPreferences) {
-        self.prompts = prompts
-        _draft = State(initialValue: prompts.systemText)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.s4) {
-            Text(tr("默认系统提示词"))
-                .font(AppFont.sectionTitle)
-            TextEditor(text: $draft)
-                .font(AppFont.secondary)
-                .scrollContentBackground(.hidden)
-                .padding(Space.s3)
-                .frame(height: 320)
-                .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
-            Text(tr("回复语言会加在系统提示词后面。系统提示词只有一份。"))
-                .font(AppFont.caption)
-                .foregroundStyle(AppColor.textSecondary)
-            HStack {
-                Button(tr("恢复默认")) { draft = ChatContext.defaultSystemText }
-                    .clickCursor()
-                Spacer()
-                Button(tr("取消")) { dismiss() }
-                    .clickCursor()
-                    .keyboardShortcut(.cancelAction)
-                Button(tr("保存")) { requestSave() }
-                    .buttonStyle(.borderedProminent.clicking())
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(Space.s5)
-        .frame(width: 560)
-        .alert(tr("修改系统提示词？"), isPresented: $confirming) {
-            Button(tr("仍然保存")) {
-                prompts.saveSystem(draft)
-                dismiss()
-            }
-            Button(tr("取消"), role: .cancel) {}
-        } message: {
-            Text(tr("系统提示词只有一份。改动后，身份、引用和阅读资料等功能可能会失效。"))
-        }
-    }
-
-    private func requestSave() {
-        let trimmed = draft
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed == ChatContext.defaultSystemText {
-            prompts.saveSystem(trimmed)
-            dismiss()
-        } else {
-            confirming = true
-        }
     }
 }
 

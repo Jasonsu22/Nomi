@@ -124,7 +124,7 @@ private struct APIProfileEditor: View {
     @State private var fetching = false
     @State private var error: String?
     @State private var confirmation: Action?
-    private enum Action: Equatable { case save, fetch }
+    private enum Action: Equatable { case save }
 
     init(profile: LLMAPIProfile, configuration: LLMConfiguration) {
         self.configuration = configuration
@@ -242,7 +242,7 @@ private struct APIProfileEditor: View {
             }
             if let error { Text(error).font(AppFont.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
             HStack {
-                Button(tr("获取模型列表")) { prepare(.fetch) }
+                Button(tr("获取模型列表")) { beginFetch() }
                     .clickCursor()
                     .disabled(fetching)
                 if fetching { ProgressView().controlSize(.small) }
@@ -257,16 +257,11 @@ private struct APIProfileEditor: View {
         }
         .padding(Space.s5)
         .frame(width: 540)
-        .alert(confirmation == .save ? tr("保存 API 配置？") : tr("连接此 API 服务？"), isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }), presenting: confirmation) { action in
-            Button(tr("确认")) {
-                if action == .save { save() }
-                else { Task { await fetchModels() } }
-            }
+        .alert(tr("保存 API 配置？"), isPresented: Binding(get: { confirmation == .save }, set: { if !$0 { confirmation = nil } })) {
+            Button(tr("确认")) { save() }
             Button(tr("取消"), role: .cancel) {}
-        } message: { action in
-            Text(action == .save
-                 ? trf("保存 %@（%@）及所选模型。使用 API 提问和摘要时，相关会议文字将发送到此地址。", draft.name, draft.baseURL)
-                 : trf("将连接 %@ 获取模型列表，并向此地址发送所填密钥。此次不会发送会议内容。", draft.baseURL))
+        } message: {
+            Text(trf("保存 %@（%@）及所选模型。使用 API 提问和摘要时，相关会议文字将发送到此地址。", draft.name, draft.baseURL))
         }
     }
 
@@ -324,6 +319,17 @@ private struct APIProfileEditor: View {
         addEnteredModel()
         do { draft = try draft.validated(requireModel: action == .save); error = nil; confirmation = action }
         catch { self.error = error.localizedDescription }
+    }
+
+    private func beginFetch() {
+        addEnteredModel()
+        do {
+            draft = try draft.validated(requireModel: false)
+            error = nil
+            Task { await fetchModels() }
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func save() {

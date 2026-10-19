@@ -114,7 +114,7 @@ struct ChatScopeTests {
         #expect(system.contains("No meeting transcript"))
     }
 
-    @Test func aCustomSystemPromptReplacesTheDefaultAndDisabledSkillsStayOut() {
+    @Test func theSystemPromptStaysFixedAndDisabledSkillsStayOut() {
         let custom = "Answer only in haiku."
         let on = PromptSkill(name: "术语表", body: "Prefer the course glossary.", enabled: true)
         let off = PromptSkill(name: "忽略", body: "Do not use this.", enabled: false)
@@ -125,12 +125,12 @@ struct ChatScopeTests {
             hasPassages: true,
             skills: [on, off]
         )
-        #expect(system.contains("Answer only in haiku."))
+        #expect(!system.contains("Answer only in haiku."))
+        #expect(system.contains("You are Nomi"))
         #expect(system.contains("Answer in Simplified Chinese."))
         #expect(system.contains("术语表"))
         #expect(system.contains("Prefer the course glossary."))
         #expect(!system.contains("Do not use this."))
-        #expect(!system.contains("You are Nomi"))
 
         let untouched = ChatContext.composedSystemPrompt(
             override: ChatContext.defaultSystemText,

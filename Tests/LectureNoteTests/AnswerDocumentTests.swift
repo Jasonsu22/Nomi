@@ -17,7 +17,7 @@ struct AnswerDocumentTests {
         #expect(!pieces.contains { if case .widget = $0 { return true } else { return false } })
     }
 
-    @Test func htmlFenceBecomesAWidgetAndAThirdBecomesCode() {
+    @Test func everyHtmlFenceBecomesAWidget() {
         let svg = "<svg><text>线</text></svg>"
         let source = """
         前面
@@ -38,12 +38,12 @@ struct AnswerDocumentTests {
             if case .widget(let title, _) = piece { return title }
             return nil
         }
-        #expect(widgets == ["拖动看斜率", ""])
-        #expect(pieces.contains { if case .code(let body) = $0 { return body.contains("<button>") } else { return false } })
+        #expect(widgets == ["拖动看斜率", "", ""])
+        #expect(!pieces.contains { if case .code = $0 { return true } else { return false } })
         #expect(pieces.contains { if case .paragraph(let text) = $0 { return text == "前面" || text == "中间" || text == "后面" } else { return false } })
     }
 
-    @Test func unsafeOrOversizedHtmlStaysACodeBlock() {
+    @Test func unsafeHtmlStaysACodeBlock() {
         let iframe = AnswerDocument.pieces(in: """
         ```html
         <iframe src="https://example.com"></iframe>
@@ -51,18 +51,6 @@ struct AnswerDocumentTests {
         """)
         #expect(iframe.contains { if case .code = $0 { return true } else { return false } })
         #expect(!iframe.contains { if case .widget = $0 { return true } else { return false } })
-
-        let huge = String(repeating: "a", count: AnswerDocument.widgetByteLimit + 1)
-        let oversized = AnswerDocument.pieces(in: """
-        ```html
-        \(huge)
-        ```
-        ```html
-        <svg></svg>
-        ```
-        """)
-        #expect(oversized.contains { if case .code(let body) = $0 { return body.count > AnswerDocument.widgetByteLimit } else { return false } })
-        #expect(oversized.contains { if case .widget = $0 { return true } else { return false } })
     }
 
     @Test func completePageBecomesAWidgetWithoutItsShell() {
@@ -233,10 +221,88 @@ struct AnswerDocumentTests {
     @Test func displayInstructionFollowsTheModelLanguage() {
         let chinese = ChatContext.systemPrompt(language: "Simplified Chinese", allowsWeb: false)
         #expect(chinese.contains("语言为 html 的围栏"))
-        #expect(chinese.contains("明确要求"))
+        #expect(chinese.contains("明确说不要演示"))
+        #expect(chinese.contains("主动意愿要非常高"))
         let english = ChatContext.systemPrompt(language: "English", allowsWeb: false)
         #expect(english.contains("Write the answer in Markdown"))
-        #expect(english.contains("explicitly asks to display"))
+        #expect(english.contains("explicitly says they do not want a demonstration"))
+        #expect(english.contains("Be very eager"))
         #expect(!english.contains("语言为 html"))
+        let chat = ChatContext.systemPrompt(language: "Simplified Chinese", allowsWeb: false, tools: true, webTool: .available)
+        #expect(chat.contains("create_demo"))
+        #expect(chat.contains("web_search"))
+        #expect(chat.contains("明确说不要演示"))
+        #expect(chat.contains("主动意愿要非常高"))
+        #expect(!chat.contains("另行生成"))
+        let chatEnglish = ChatContext.systemPrompt(language: "English", allowsWeb: false, tools: true, webTool: .available)
+        #expect(chatEnglish.contains("create_demo"))
+        #expect(chatEnglish.contains("hidden subtask"))
+        #expect(!chatEnglish.contains("语言为 html"))
+    }
+
+    @Test func toolCallsStayOutOfTheVisibleAnswer() {
+        let raw = """
+        双缝实验里，电子会自己干涉。
+
+        <tool name="create_demo">做一块双缝页面，有缝距滑块和屏幕亮度。</tool>
+        <tool name='web_search'>单电子双缝干涉</tool>
+        """
+        let parsed = ChatTools.parse(raw, streaming: false)
+        #expect(parsed.visible.contains("双缝实验"))
+        #expect(!parsed.visible.contains("<tool"))
+        #expect(!parsed.visible.contains("缝距"))
+        #expect(parsed.calls.map(\.name) == [ChatTools.createDemo, ChatTools.webSearch])
+        #expect(parsed.calls[0].body.contains("缝距"))
+        #expect(parsed.calls[1].body == "单电子双缝干涉")
+
+        let streaming = ChatTools.parse("先看结论。<tool name=\"create_demo\">页面还在写", streaming: true)
+        #expect(streaming.visible == "先看结论。")
+        #expect(streaming.calls.isEmpty)
+        let partial = ChatTools.parse("先看结论。<to", streaming: true)
+        #expect(partial.visible == "先看结论。")
+    }
+
+    @Test func aLongDisplayPageStillRuns() {
+        let script = String(repeating: "const n = 1;\n", count: 2200)
+        let page = "<!doctype html><html><head><title>双缝</title></head><body><canvas></canvas><script>\n\(script)</script></body></html>"
+        #expect(page.utf8.count > 24 * 1024)
+        let pieces = AnswerDocument.pieces(in: "```html\n\(page)\n```")
+        #expect(pieces.contains { if case .widget(let title, _) = $0 { return title == "双缝" } else { return false } })
+    }
+
+    @Test func anHtmlFilenameBecomesAFile() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = """
+        保存为 `double-slit.html` 后打开。
+        ```html
+        <button>发射</button>
+        ```
+        """
+        let export = ChatFiles.export(source, directory: directory)
+        let url = try #require(export.named["double-slit.html"])
+        #expect(url.lastPathComponent == "double-slit.html")
+        #expect(export.widgets == [url])
+        let saved = try String(contentsOf: url, encoding: .utf8)
+        #expect(saved.contains("<button>发射</button>"))
+        #expect(saved.contains("<!DOCTYPE html>"))
+        let linked = AnswerInline.render("保存为 `double-slit.html` 后打开。", files: export.named)
+        #expect(linked.runs.contains { $0.link == url })
+        let plain = AnswerInline.render("`let x = 1` 和 `double-slit.html`")
+        #expect(!plain.runs.contains { $0.link != nil })
+    }
+
+    @Test func aVisualMarkerWaitsForASecondReply() {
+        let streaming = ChatContext.splitVisual("光会干涉。\n[[vis", streaming: true)
+        #expect(streaming.text == "光会干涉。")
+        #expect(!streaming.wantsVisual)
+        let citation = ChatContext.splitVisual("见 [3]", streaming: true)
+        #expect(citation.text == "见 [3]")
+        let finished = ChatContext.splitVisual("光会干涉。\n\n[[visual]]\n", streaming: false)
+        #expect(finished.text == "光会干涉。")
+        #expect(finished.wantsVisual)
+        let source = ChatContext.htmlFence(from: "说明\n```html\n<div>演示</div>\n```\n")
+        #expect(source == "```html\n<div>演示</div>\n```")
+        #expect(ChatContext.htmlFence(from: "NONE") == nil)
     }
 }
