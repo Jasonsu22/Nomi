@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use voice_core::{
     pcm_to_bytes, read_frame, write_frame, Committer, Vad, VadConfig, WorkerEvent, WorkerRequest,
 };
@@ -42,6 +42,9 @@ pub struct Pipeline {
     last_level: f64,
     revision: u64,
     next_request: u64,
+    translation_retry_at: Option<Instant>,
+    translation_error_reported: bool,
+    commit_error_reported: bool,
 }
 
 impl Pipeline {
@@ -65,6 +68,9 @@ impl Pipeline {
             last_level: 0.0,
             revision: 0,
             next_request: 1,
+            translation_retry_at: None,
+            translation_error_reported: false,
+            commit_error_reported: false,
         };
         if pipeline.asr_status.files_ready {
             if let Err(error) = pipeline.load_asr() {
@@ -88,6 +94,9 @@ impl Pipeline {
         self.clock = 0.0;
         self.last_level = 0.0;
         self.revision = 0;
+        self.translation_retry_at = None;
+        self.translation_error_reported = false;
+        self.commit_error_reported = false;
     }
 
     pub fn load_asr(&mut self) -> Result<()> {
@@ -306,12 +315,20 @@ impl Pipeline {
         }
         let mut events = self.consume(segments);
         self.committer.request_flush();
+        self.translation_retry_at = None;
         events.extend(self.drain_commits());
         events
     }
 
+    pub fn poll_clock(&mut self) -> Vec<OutEvent> {
+        self.drain_commits()
+    }
+
     fn consume(&mut self, segments: Vec<voice_core::VadOutput>) -> Vec<OutEvent> {
         let mut events = Vec::new();
+        if segments.is_empty() {
+            return self.drain_commits();
+        }
         for segment in segments {
             if self.asr.is_none() {
                 events.push(OutEvent::Error {
@@ -342,6 +359,9 @@ impl Pipeline {
                     continue;
                 }
             };
+            // Idle is decided from the previous chunk's clock. Refreshing it first
+            // would hide a fragment that has already been sitting for 9 seconds.
+            events.extend(self.drain_commits());
             self.committer.observe(segment.burst_id, &text, segment.start, segment.end, segment.is_final, segment.hit_limit);
             self.revision += 1;
             events.push(OutEvent::Tail {
@@ -356,47 +376,79 @@ impl Pipeline {
 
     fn drain_commits(&mut self) -> Vec<OutEvent> {
         let mut events = Vec::new();
-        while let Some(draft) = self.committer.poll(Instant::now()) {
+        loop {
+            if self.committer.pending_draft().is_some()
+                && self.translation_retry_at.is_some_and(|at| Instant::now() < at)
+            {
+                break;
+            }
+            let Some(draft) = self.committer.pending_draft().or_else(|| self.committer.poll(Instant::now())) else {
+                break;
+            };
             let translation = if self.translate {
-                if let Some(llm) = self.llm.as_mut() {
-                    let id = self.next_request;
-                    self.next_request += 1;
-                    match llm.request(
-                        WorkerRequest::Translate {
-                            id,
-                            text: draft.source.clone(),
-                            target_language: self.target_language.clone(),
-                        },
-                        &[],
-                    ) {
-                        Ok(WorkerEvent::Result { text, .. }) => text,
-                        Ok(WorkerEvent::Failed { message, .. }) => {
-                            events.push(OutEvent::Error { code: "translator_failed".into(), message });
-                            String::new()
-                        }
-                        Err(error) => {
-                            events.push(OutEvent::Error { code: "translator_failed".into(), message: error.to_string() });
-                            String::new()
-                        }
-                        Ok(_) => String::new(),
+                match self.translate_draft(&draft.source) {
+                    Ok(text) => {
+                        self.translation_retry_at = None;
+                        self.translation_error_reported = false;
+                        text
                     }
-                } else {
-                    String::new()
+                    Err(message) => {
+                        // One attempt per drain. The draft stays pending and is tried again
+                        // a second later, instead of committing the source with an empty translation.
+                        self.translation_retry_at = Some(Instant::now() + Duration::from_secs(1));
+                        if !self.translation_error_reported {
+                            self.translation_error_reported = true;
+                            events.push(OutEvent::Error { code: "translator_failed".into(), message });
+                        }
+                        break;
+                    }
                 }
             } else {
                 String::new()
             };
-            let tail = self.committer.finish_pending(draft.id).unwrap_or_default();
-            events.push(OutEvent::Commit {
-                id: draft.id,
-                source: draft.source,
-                translation,
-                start: draft.start,
-                end: draft.end,
-                tail,
-            });
+            match self.committer.finish_pending(draft.id) {
+                Ok(tail) => {
+                    self.commit_error_reported = false;
+                    events.push(OutEvent::Commit {
+                        id: draft.id,
+                        source: draft.source,
+                        translation,
+                        start: draft.start,
+                        end: draft.end,
+                        tail,
+                    })
+                }
+                Err(message) => {
+                    if !self.commit_error_reported {
+                        self.commit_error_reported = true;
+                        events.push(OutEvent::Error { code: "commit_failed".into(), message });
+                    }
+                    break;
+                }
+            }
         }
         events
+    }
+
+    fn translate_draft(&mut self, source: &str) -> Result<String, String> {
+        let Some(llm) = self.llm.as_mut() else {
+            return Err("翻译模型没有加载".into());
+        };
+        let id = self.next_request;
+        self.next_request += 1;
+        match llm.request(
+            WorkerRequest::Translate {
+                id,
+                text: source.to_string(),
+                target_language: self.target_language.clone(),
+            },
+            &[],
+        ) {
+            Ok(WorkerEvent::Result { text, .. }) => Ok(text),
+            Ok(WorkerEvent::Failed { message, .. }) => Err(message),
+            Err(error) => Err(error.to_string()),
+            Ok(other) => Err(format!("{other:?}")),
+        }
     }
 }
 

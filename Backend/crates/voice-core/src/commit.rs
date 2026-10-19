@@ -11,6 +11,9 @@ pub struct CommitDraft {
     pub source: String,
     pub start: f64,
     pub end: f64,
+    /// Bytes removed from the front of the stable buffer. This can be longer than
+    /// `source` when `source` was trimmed and the buffer still had a leading space.
+    consumed: String,
 }
 
 #[derive(Debug, Clone)]
@@ -57,6 +60,10 @@ impl Committer {
 
     pub fn tail(&self) -> String {
         self.buffer.uncommitted_tail()
+    }
+
+    pub fn pending_draft(&self) -> Option<CommitDraft> {
+        self.pending.clone()
     }
 
     pub fn observe(&mut self, burst_id: u64, text: &str, start: f64, end: f64, is_final: bool, hit_limit: bool) {
@@ -106,25 +113,29 @@ impl Committer {
             self.request_flush();
             self.last_chunk_at = None;
         }
-        let source = if self.flush_requested {
-            let stable = self.buffer.stable_buffer().trim();
-            if stable.is_empty() {
-                self.flush_requested = false;
-                None
-            } else {
-                Some(stable.to_string())
+        let (source, consumed) = if self.flush_requested {
+            match flush_piece(self.buffer.stable_buffer()) {
+                Some(piece) => piece,
+                None => {
+                    self.flush_requested = false;
+                    return None;
+                }
             }
         } else if self.buffer.has_stable_text(COMMIT_CHARS) {
-            commit_boundary(self.buffer.stable_buffer()).map(|end| self.buffer.stable_buffer()[..end].to_string())
+            let stable = self.buffer.stable_buffer();
+            let end = commit_boundary(stable)?;
+            let source = stable[..end].to_string();
+            (source.clone(), source)
         } else {
-            None
-        }?;
-        let (start, end) = self.times_for_prefix(&source);
+            return None;
+        };
+        let (start, end) = self.times_for_prefix(&consumed);
         let draft = CommitDraft {
             id: self.next_id,
             source,
             start,
             end,
+            consumed,
         };
         self.pending = Some(draft.clone());
         Some(draft)
@@ -136,8 +147,11 @@ impl Committer {
             self.pending = Some(draft);
             return Err("pending commit id does not match".into());
         }
-        self.buffer.consume_stable_prefix(&draft.source)?;
-        let consumed = draft.source.len();
+        if let Err(error) = self.buffer.consume_stable_prefix(&draft.consumed) {
+            self.pending = Some(draft);
+            return Err(error);
+        }
+        let consumed = draft.consumed.len();
         self.spans.retain(|span| span.end_byte > consumed);
         for span in &mut self.spans {
             span.end_byte -= consumed;
@@ -173,6 +187,18 @@ impl Committer {
     }
 }
 
+/// Display text is trimmed. The consumed prefix still includes the leading
+/// whitespace `trim` removed, so it stays a prefix of the stable buffer.
+fn flush_piece(stable: &str) -> Option<(String, String)> {
+    let source = stable.trim();
+    if source.is_empty() {
+        return None;
+    }
+    let start = stable.len() - stable.trim_start().len();
+    let end = start + source.len();
+    Some((source.to_string(), stable[..end].to_string()))
+}
+
 fn commit_boundary(text: &str) -> Option<usize> {
     text.char_indices().rev().find_map(|(index, ch)| match ch {
         '，' | ',' | '。' | '.' | '！' | '!' | '？' | '?' | '；' | ';' => Some(index + ch.len_utf8()),
@@ -190,7 +216,7 @@ fn strip_terminal_punctuation(chunk: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{commit_boundary, Committer};
+    use super::{commit_boundary, Committer, IDLE_FLUSH};
     use std::time::Instant;
 
     #[test]
@@ -221,5 +247,53 @@ mod tests {
         assert_eq!(draft.source, "attention it.");
         assert_eq!(draft.start, 0.0);
         assert_eq!(draft.end, 2.0);
+    }
+
+    #[test]
+    fn an_english_tail_after_a_comma_flushes_once() {
+        let mut committer = Committer::new("en");
+        committer.observe(1, "Hello there,", 0.0, 1.0, true, false);
+        committer.observe(2, "how are you", 1.2, 2.0, true, false);
+        let first = committer.poll(Instant::now()).expect("comma commits");
+        assert_eq!(first.source, "Hello there,");
+        assert_eq!(committer.finish_pending(first.id).unwrap(), "how are you");
+        assert_eq!(committer.buffer.stable_buffer(), " how are you");
+
+        committer.request_flush();
+        let second = committer.poll(Instant::now()).expect("tail commits");
+        assert_eq!(second.source, "how are you");
+        assert_eq!(second.consumed, " how are you");
+        assert!(committer.finish_pending(second.id).unwrap().is_empty());
+        assert!(committer.buffer.stable_buffer().is_empty());
+
+        committer.request_flush();
+        assert!(committer.poll(Instant::now()).is_none());
+        assert!(committer.poll(Instant::now()).is_none());
+    }
+
+    #[test]
+    fn finish_failure_puts_the_pending_draft_back() {
+        let mut committer = Committer::new("en");
+        committer.observe(1, "Hello there,", 0.0, 1.0, true, false);
+        let draft = committer.poll(Instant::now()).unwrap();
+        committer.pending.as_mut().unwrap().consumed = "not a prefix".into();
+        let error = committer.finish_pending(draft.id).unwrap_err();
+        assert!(error.contains("prefix"));
+        assert_eq!(committer.pending.as_ref().map(|item| item.id), Some(draft.id));
+        assert_eq!(committer.next_id, draft.id);
+        assert!(committer.poll(Instant::now()).is_none());
+        assert_eq!(committer.buffer.stable_buffer(), "Hello there,");
+    }
+
+    #[test]
+    fn idle_flush_uses_the_clock_from_the_previous_chunk() {
+        let mut committer = Committer::new("en");
+        committer.observe(1, "hello", 0.0, 1.0, true, false);
+        let observed = committer.last_chunk_at.expect("chunk clock");
+        assert!(committer.poll(observed).is_none());
+        let draft = committer.poll(observed + IDLE_FLUSH).expect("idle fragment");
+        assert_eq!(draft.source, "hello");
+        assert!(committer.finish_pending(draft.id).unwrap().is_empty());
+        assert!(committer.poll(observed + IDLE_FLUSH + IDLE_FLUSH).is_none());
     }
 }

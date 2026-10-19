@@ -265,7 +265,25 @@ async fn session(State(app): State<App>, headers: HeaderMap, upgrade: WebSocketU
 
 async fn handle_session(mut socket: WebSocket, app: App) {
     let mut started = false;
-    while let Some(message) = socket.recv().await {
+    loop {
+        let incoming = if started {
+            match tokio::time::timeout(std::time::Duration::from_secs(1), socket.recv()).await {
+                Ok(message) => message,
+                Err(_) => {
+                    let pipeline = app.pipeline.clone();
+                    let events = tokio::task::spawn_blocking(move || pipeline.lock().expect("pipeline").poll_clock())
+                        .await
+                        .unwrap_or_default();
+                    for event in events {
+                        send_json(&mut socket, &event).await;
+                    }
+                    continue;
+                }
+            }
+        } else {
+            socket.recv().await
+        };
+        let Some(message) = incoming else { break };
         let message = match message {
             Ok(message) => message,
             Err(_) => break,
