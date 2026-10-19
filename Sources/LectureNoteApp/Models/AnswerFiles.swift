@@ -5,13 +5,16 @@ import SwiftUI
 
 /// A generated demonstration saved on disk, so it can be opened, saved, and revealed like a file.
 enum ChatFiles {
-    struct Export: Equatable {
+    struct Export: Equatable, Sendable {
         var named: [String: URL] = [:]
         var widgets: [URL] = []
     }
 
     static func export(_ source: String, directory: URL = defaultDirectory) -> Export {
-        let pieces = AnswerDocument.pieces(in: source)
+        export(pieces: AnswerDocument.pieces(in: source), directory: directory)
+    }
+
+    static func export(pieces: [AnswerDocument.Piece], directory: URL = defaultDirectory) -> Export {
         var html: [(title: String, fragment: String)] = []
         for piece in pieces {
             if case .widget(let title, let fragment) = piece {

@@ -1,32 +1,64 @@
 import AppKit
 import SwiftUI
-import WebKit
 
-struct AnswerBody: View {
+struct AnswerBody: View, Equatable {
     var source: String
     var streaming = false
     var citations: [ChatCitation] = []
+    var cacheNamespace = ""
     var onOpenCitation: (ChatCitation) -> Void = { _ in }
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appReduceMotion) private var reduceMotion
+    @State private var prepared: PreparedAnswer?
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.source == rhs.source && lhs.streaming == rhs.streaming && lhs.citations == rhs.citations && lhs.cacheNamespace == rhs.cacheNamespace
+    }
+
+    private struct Request: Hashable {
+        var source: String
+        var streaming: Bool
+    }
 
     var body: some View {
-        let pieces = AnswerDocument.pieces(in: source, streaming: streaming)
-        let export = ChatFiles.export(source)
+        let previous = prepared.flatMap { value in
+            source.hasPrefix(value.source) ? value : nil
+        }
+        let completed = prepared.flatMap { $0.source == source ? $0 : nil }
+        let answer = !streaming ? (completed ?? AnswerPreparation.display(source)) : previous
+        let pieces = answer?.pieces ?? []
+        let export = answer?.files ?? ChatFiles.Export()
         let rows = Self.rows(pieces, widgets: export.widgets)
+        let links = ChatContext.linkedCitations(in: answer?.source ?? source, citations: citations)
         return VStack(alignment: .leading, spacing: Space.s3) {
-            if pieces.isEmpty {
-                answerText(AnswerInline.render(source, citations: linkedCitations, streaming: streaming, files: export.named))
+            if answer == nil {
+                let preview = AnswerPreparation.preview(source)
+                if !preview.isEmpty {
+                    Text(verbatim: preview)
+                        .font(AppFont.body)
+                        .foregroundStyle(AppColor.textPrimary)
+                        .textSelection(.enabled)
+                } else {
+                    HStack(spacing: Space.s2) {
+                        ProgressView().controlSize(.small)
+                        Text(tr("正在准备图示…")).font(AppFont.secondary)
+                    }
+                    .frame(minHeight: 80, alignment: .topLeading)
+                }
+            } else if pieces.isEmpty {
+                answerText(AnswerInline.render(answer?.source ?? source, citations: links, streaming: streaming, files: export.named))
             } else {
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    pieceView(row.piece, file: row.file, files: export.named)
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    pieceView(row.piece, file: row.file, files: export.named, links: links, demoID: "\(cacheNamespace)-\(index)")
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var linkedCitations: [Int: ChatCitation] {
-        ChatContext.linkedCitations(in: source, citations: citations)
+        .task(id: Request(source: source, streaming: streaming)) {
+            if let value = await AnswerPreparation.prepare(source, streaming: streaming), !Task.isCancelled {
+                prepared = value
+            }
+        }
     }
 
     private func open(_ url: URL) {
@@ -63,7 +95,7 @@ struct AnswerBody: View {
     }
 
     /// The marker and the sentence share one text view, so their baselines match.
-    private func listText(ordered: Bool, items: [String], files: [String: URL]) -> AttributedString {
+    private func listText(ordered: Bool, items: [String], files: [String: URL], links: [Int: ChatCitation]) -> AttributedString {
         let font = NSFont.systemFont(ofSize: 15)
         let widest = ordered ? "\(max(items.count, 1))." : "•"
         let indent = ceil((widest as NSString).size(withAttributes: [.font: font]).width) + 8
@@ -79,7 +111,7 @@ struct AnswerBody: View {
                 attributes: [.font: font, .foregroundColor: AppColor.nsTextSecondary]
             )
             text.append(marker)
-            text.append(NSAttributedString(AnswerInline.render(item, citations: linkedCitations, streaming: streaming, files: files)))
+            text.append(NSAttributedString(AnswerInline.render(item, citations: links, streaming: streaming, files: files)))
             if index + 1 < items.count {
                 text.append(NSAttributedString(string: "\n"))
             }
@@ -89,7 +121,7 @@ struct AnswerBody: View {
     }
 
     private func answerText(_ text: AttributedString) -> some View {
-        CiteText(attributed: text, citations: citations, colorScheme: colorScheme, streaming: streaming, onOpen: open)
+        CiteText(attributed: text, citations: citations, colorScheme: colorScheme, streaming: streaming && !reduceMotion, onOpen: open)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -104,14 +136,14 @@ struct AnswerBody: View {
     }
 
     @ViewBuilder
-    private func pieceView(_ piece: AnswerDocument.Piece, file: URL?, files: [String: URL]) -> some View {
+    private func pieceView(_ piece: AnswerDocument.Piece, file: URL?, files: [String: URL], links: [Int: ChatCitation], demoID: String) -> some View {
         switch piece {
         case .heading(let level, let text):
-            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: linkedCitations, streaming: streaming, files: files))
+            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: links, streaming: streaming, files: files))
         case .paragraph(let text):
-            answerText(AnswerInline.render(text, citations: linkedCitations, streaming: streaming, files: files))
+            answerText(AnswerInline.render(text, citations: links, streaming: streaming, files: files))
         case .list(let ordered, let items):
-            answerText(listText(ordered: ordered, items: items, files: files))
+            answerText(listText(ordered: ordered, items: items, files: files, links: links))
         case .code(let code):
             answerText(codeText(code))
                 .padding(Space.s2)
@@ -129,19 +161,20 @@ struct AnswerBody: View {
             Grid(alignment: .leading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: linkedCitations, streaming: streaming, files: files))
+                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: links, streaming: streaming, files: files))
                     }
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            answerText(AnswerInline.render(cell, size: 13, citations: linkedCitations, streaming: streaming, files: files))
+                            answerText(AnswerInline.render(cell, size: 13, citations: links, streaming: streaming, files: files))
                         }
                     }
                 }
             }
         case .widget(let title, let html):
             HtmlAnswerCard(
+                identity: demoID,
                 title: title,
                 file: file,
                 html: AnswerDocument.page(
@@ -158,10 +191,13 @@ struct AnswerBody: View {
 }
 
 private struct HtmlAnswerCard: View {
+    var identity: String
     var title: String
     var file: URL?
     var html: String
     @State private var height: CGFloat = 160
+    @State private var visible = false
+    @State private var nearby = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s1) {
@@ -173,139 +209,21 @@ private struct HtmlAnswerCard: View {
                         AnswerFileMenu(url: file)
                     }
                 }
-            HtmlAnswerWebView(html: html, file: file) { reported in
-                height = reported
+            HtmlAnswerWebView(identity: identity, html: html, file: file, visible: visible || nearby) { reported in
+                if abs(height - reported) > 1 { height = reported }
             }
             .frame(height: max(height, 44))
+            .onScrollVisibilityChange(threshold: 0.01) { visible = $0 }
+            .onGeometryChange(for: Bool.self) { proxy in
+                guard let viewport = proxy.bounds(of: .scrollView(axis: .vertical)) else { return false }
+                return viewport.insetBy(dx: 0, dy: -viewport.height).intersects(CGRect(origin: .zero, size: proxy.size))
+            } action: { nearby = $0 }
             .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
             .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         }
+        .onDisappear { visible = false; nearby = false }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title.isEmpty ? tr("互动图示") : title)
-    }
-}
-
-private final class HtmlAnswerWeb: WKWebView {
-    var fileURL: URL?
-    private var fileMenu: NSMenu?
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        guard let fileURL else { return super.menu(for: event) }
-        let menu = AnswerMenus.file(fileURL)
-        fileMenu = menu
-        return menu
-    }
-
-    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
-        guard let fileURL else { return }
-        let custom = AnswerMenus.file(fileURL)
-        fileMenu = custom
-        menu.removeAllItems()
-        for item in custom.items {
-            custom.removeItem(item)
-            menu.addItem(item)
-        }
-    }
-}
-
-private struct HtmlAnswerWebView: NSViewRepresentable {
-    var html: String
-    var file: URL?
-    var onHeight: (CGFloat) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onHeight: onHeight)
-    }
-
-    func makeNSView(context: Context) -> HtmlAnswerWeb {
-        let content = WKUserContentController()
-        content.add(context.coordinator, name: "nomi")
-        content.addUserScript(WKUserScript(source: Self.heightScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-        let configuration = WKWebViewConfiguration()
-        configuration.userContentController = content
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        let webView = HtmlAnswerWeb(frame: .zero, configuration: configuration)
-        webView.fileURL = file
-        webView.navigationDelegate = context.coordinator
-        webView.uiDelegate = context.coordinator
-        webView.allowsMagnification = false
-        webView.allowsBackForwardNavigationGestures = false
-        webView.underPageBackgroundColor = .clear
-        #if DEBUG
-        webView.isInspectable = true
-        #endif
-        context.coordinator.load(html, into: webView)
-        return webView
-    }
-
-    func updateNSView(_ webView: HtmlAnswerWeb, context: Context) {
-        webView.fileURL = file
-        context.coordinator.onHeight = onHeight
-        context.coordinator.load(html, into: webView)
-    }
-
-    static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "nomi")
-        webView.navigationDelegate = nil
-        webView.uiDelegate = nil
-    }
-
-    private static let heightScript = """
-    (function () {
-      function report() {
-        var body = document.body;
-        var height = body ? Math.ceil(body.scrollHeight) : 0;
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nomi) {
-          window.webkit.messageHandlers.nomi.postMessage({ height: height });
-        }
-      }
-      if (window.ResizeObserver && document.body) new ResizeObserver(report).observe(document.body);
-      document.addEventListener("input", function () { requestAnimationFrame(report); });
-      document.addEventListener("click", function () { requestAnimationFrame(report); });
-      report();
-    })();
-    """
-
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
-        var onHeight: (CGFloat) -> Void
-        private var loaded: String?
-
-        init(onHeight: @escaping (CGFloat) -> Void) {
-            self.onHeight = onHeight
-        }
-
-        func load(_ html: String, into webView: WKWebView) {
-            guard loaded != html else { return }
-            loaded = html
-            webView.loadHTMLString(html, baseURL: nil)
-        }
-
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == "nomi",
-                  let body = message.body as? [String: Any],
-                  let height = (body["height"] as? NSNumber)?.doubleValue,
-                  height.isFinite, height > 0 else { return }
-            onHeight(CGFloat(height))
-        }
-
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-            let scheme = navigationAction.request.url?.scheme?.lowercased()
-            if navigationAction.navigationType == .other, scheme == nil || scheme == "about" {
-                return .allow
-            }
-            return .cancel
-        }
-
-        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-            let scheme = navigationResponse.response.url?.scheme?.lowercased()
-            return scheme == nil || scheme == "about" ? .allow : .cancel
-        }
-
-        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            nil
-        }
     }
 }
 
@@ -432,10 +350,16 @@ private struct CiteText: NSViewRepresentable {
         guard let container = nsView.textContainer, let layout = nsView.layoutManager else {
             return CGSize(width: width, height: 20)
         }
-        container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        context.coordinator.apply(attributed, citations: citations, colorScheme: colorScheme, streaming: streaming, to: nsView, width: width)
+        if let cached = context.coordinator.measuredSize, cached.width == width { return cached }
+        if container.containerSize.width != width {
+            container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        }
         layout.ensureLayout(for: container)
         let used = layout.usedRect(for: container)
-        return CGSize(width: width, height: max(ceil(used.height), 1))
+        let result = CGSize(width: width, height: max(ceil(used.height), 1))
+        context.coordinator.measuredSize = result
+        return result
     }
 
     @MainActor
@@ -446,6 +370,7 @@ private struct CiteText: NSViewRepresentable {
         private var streaming = false
         private var source: AttributedString?
         private var layoutWidth: CGFloat = 0
+        var measuredSize: CGSize?
         private var born: [Int: TimeInterval] = [:]
         private var baseColors: [Int: NSColor] = [:]
         private var baseImages: [Int: NSImage] = [:]
@@ -471,11 +396,11 @@ private struct CiteText: NSViewRepresentable {
             popover.contentViewController = host
         }
 
-        func apply(_ attributed: AttributedString, citations: [ChatCitation], colorScheme: ColorScheme, streaming: Bool, to view: CiteTextView) {
+        func apply(_ attributed: AttributedString, citations: [ChatCitation], colorScheme: ColorScheme, streaming: Bool, to view: CiteTextView, width proposedWidth: CGFloat? = nil) {
             self.citations = citations
             textView = view
-            let width = view.bounds.width
-            let changed = source != attributed || self.colorScheme != colorScheme || self.streaming != streaming || abs(layoutWidth - width) > 8
+            let width = proposedWidth ?? (layoutWidth > 0 ? layoutWidth : view.bounds.width)
+            let changed = source != attributed || self.colorScheme != colorScheme || self.streaming != streaming || abs(layoutWidth - width) > 0.5
             self.colorScheme = colorScheme
             self.streaming = streaming
             source = attributed
@@ -486,6 +411,7 @@ private struct CiteText: NSViewRepresentable {
                 .cursor: NSCursor.pointingHand,
             ]
             guard changed else { return }
+            measuredSize = nil
             underlined = nil
             view.clearUnderline()
             let next = decorated(attributed, color: color, maxWidth: width > 40 ? width : 640)

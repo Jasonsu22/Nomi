@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 
 enum AnswerDocument {
-    enum Piece: Equatable {
+    enum Piece: Equatable, Sendable {
         case heading(Int, String)
         case paragraph(String)
         case list(ordered: Bool, items: [String])
@@ -653,8 +653,17 @@ enum AnswerInline {
                     break
                 }
             }
-            result.append(styled(String(source[index]), size: size, weight: weight))
+            // Style an ordinary run once, rather than constructing and bridging an
+            // attributed string (and looking up a font) for every single character.
+            let start = index
             index = source.index(after: index)
+            while index < source.endIndex {
+                let character = source[index]
+                if "`\\$[【*_".contains(character) { break }
+                if character == "h", source[index...].hasPrefix("http://") || source[index...].hasPrefix("https://") { break }
+                index = source.index(after: index)
+            }
+            result.append(styled(String(source[start..<index]), size: size, weight: weight))
         }
         return result
     }

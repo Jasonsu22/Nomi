@@ -327,19 +327,23 @@ extension AppModel {
                     }
                     let carried = answer
                     let cited = blocks
+                    let updates = ChatStreamUpdates { [weak self] partial in
+                        guard let self, self.chatGeneratingID == id, self.chatTask?.isCancelled == false else { return }
+                        let shown = ChatTools.parse(ChatContext.streamingDisplay(partial), streaming: true).visible
+                        let combined = self.joinedAnswer(carried, shown)
+                        self.pendingAnswer = combined
+                        self.pendingCitations = ChatContext.citations(in: combined, blocks: cited)
+                    }
+                    defer { updates.cancel() }
                     let text = try await self.completeChat(
                         mode: mode,
                         profile: profile,
                         system: system,
                         prompt: prompt,
                         images: promptImages
-                    ) { [weak self] partial in
-                        let shown = ChatTools.parse(ChatContext.streamingDisplay(partial), streaming: true).visible
-                        let combined = self?.joinedAnswer(carried, shown) ?? shown
-                        self?.pendingAnswer = combined
-                        self?.pendingCitations = ChatContext.citations(in: combined, blocks: cited)
-                    }
+                    ) { partial in updates.submit(partial) }
                     try Task.checkCancellation()
+                    updates.flush()
                     let parsed = ChatTools.parse(ChatContext.splitVisual(text, streaming: false).text, streaming: false)
                     answer = joinedAnswer(answer, parsed.visible)
                     briefs.append(contentsOf: parsed.calls.filter { $0.name == ChatTools.createDemo }.map(\.body))
