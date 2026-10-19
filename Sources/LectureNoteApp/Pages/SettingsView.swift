@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import SwiftUI
 
@@ -5,6 +6,7 @@ struct SettingsView: View {
     var model: AppModel
     @AppStorage(InterfaceLanguage.key) private var interfaceLanguage = InterfaceLanguage.system.rawValue
     @AppStorage(InterfaceAppearance.key) private var appearance = InterfaceAppearance.system.rawValue
+    @AppStorage(MicrophonePrompt.key) private var microphonePrompt = MicrophonePrompt.ask.rawValue
 
     var body: some View {
         PageScaffold(title: tr("设置")) {
@@ -31,7 +33,19 @@ struct SettingsView: View {
                             .selectedTextPickerWidth((InterfaceAppearance(rawValue: appearance) ?? .system).title)
                         }
                         divider
-                        row(tr("麦克风权限"), microphone)
+                        settingRow(tr("麦克风权限")) {
+                            Picker(tr("麦克风权限"), selection: $microphonePrompt) {
+                                ForEach(MicrophonePrompt.allCases) { item in
+                                    Text(item.title).tag(item.rawValue)
+                                }
+                            }
+                            .labelsHidden()
+                            .selectedTextPickerWidth((MicrophonePrompt(rawValue: microphonePrompt) ?? .ask).title)
+                            .onChange(of: microphonePrompt) { _, value in
+                                guard value == MicrophonePrompt.allow.rawValue else { return }
+                                Task { await allowMicrophoneNow() }
+                            }
+                        }
                     }
                     .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
 
@@ -70,20 +84,39 @@ struct SettingsView: View {
         .padding(.vertical, 14)
     }
 
-    private func row(_ title: String, _ value: String) -> some View {
-        settingRow(title) { Text(value) }
+    private func allowMicrophoneNow() async {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            return
+        case .denied:
+            openMicrophoneSettings()
+        default:
+            let granted = await requestMicrophoneAccess()
+            if !granted { openMicrophoneSettings() }
+        }
     }
 
-    private var microphone: String {
-        switch AVAudioApplication.shared.recordPermission {
-        case .granted: tr("已允许")
-        case .denied: tr("已拒绝")
-        default: tr("开始时询问")
+    private func openMicrophoneSettings() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+        ]
+        for raw in candidates {
+            guard let url = URL(string: raw), NSWorkspace.shared.open(url) else { continue }
+            return
         }
     }
 
     private var divider: some View {
         Rectangle().fill(AppColor.separator).frame(height: 1).padding(.leading, Space.s4)
+    }
+}
+
+private func requestMicrophoneAccess() async -> Bool {
+    await withCheckedContinuation { continuation in
+        AVAudioApplication.requestRecordPermission { granted in
+            continuation.resume(returning: granted)
+        }
     }
 }
 

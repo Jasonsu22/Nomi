@@ -80,6 +80,7 @@
 "帮助" = "Help";
 "开始录制" = "Start Recording";
 "开始时询问" = "Ask When Recording Starts";
+"全部允许" = "Always Allow";
 "开始转录" = "Start Transcription";
 "引擎未启动" = "Engine Unavailable";
 "引擎没有启动" = "The engine did not start";

@@ -27,6 +27,20 @@ enum InterfaceLanguage: String, CaseIterable, Identifiable {
     var locale: Locale { Locale(identifier: self == .chinese ? "zh-Hans" : "en") }
 }
 
+enum MicrophonePrompt: String, CaseIterable, Identifiable {
+    case ask
+    case allow
+
+    static let key = "nomi.microphonePrompt"
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .ask: tr("开始时询问")
+        case .allow: tr("全部允许")
+        }
+    }
+}
+
 enum InterfaceAppearance: String, CaseIterable, Identifiable {
     case system, light, dark
     static let key = "nomi.appearance"

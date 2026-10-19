@@ -11,6 +11,12 @@ struct InterfacePreferencesTests {
         #expect(InterfaceLanguage.resolved("zh-Hans", preferredLanguages: ["en-US"]) == .chinese)
     }
 
+    @Test func microphonePromptIsAskOrAllow() {
+        #expect(MicrophonePrompt(rawValue: "ask") == .ask)
+        #expect(MicrophonePrompt(rawValue: "allow") == .allow)
+        #expect(MicrophonePrompt(rawValue: "granted") == nil)
+    }
+
     @Test func appearanceCanReturnToTheSystem() {
         #expect(InterfaceAppearance.system.colorScheme == nil)
         #expect(InterfaceAppearance.light.colorScheme == .light)
