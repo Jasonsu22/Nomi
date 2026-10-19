@@ -2,7 +2,7 @@ import Foundation
 
 extension AppModel {
     var assistantIsBusy: Bool {
-        assistantStates.values.contains { $0.isGenerating } || (engine as? LocalEngine)?.isGenerating == true
+        chatGeneratingID != nil || assistantStates.values.contains { $0.isGenerating } || (engine as? LocalEngine)?.isGenerating == true
     }
 
     var canGenerateAssistant: Bool {

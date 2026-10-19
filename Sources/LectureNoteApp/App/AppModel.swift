@@ -66,6 +66,15 @@ final class AppModel {
     let localModels = LocalModelLibrary()
     let llmConfiguration = LLMConfiguration()
     var assistantStates: [UUID: MeetingAssistantState] = [:]
+    var chats: [ChatSession] = []
+    var currentChatID: UUID?
+    var chatGeneratingID: UUID?
+    var pendingQuestion: String?
+    var chatError: String?
+    var chatDraftRestore: String?
+    var chatFocusRequest = 0
+    @ObservationIgnored var chatTask: Task<Void, Never>?
+    var chatsReady = false
     var recordingSetupPresented = false
     private(set) var recordingResumeID: UUID?
     var recordingSourceLanguage: String {
@@ -107,6 +116,13 @@ final class AppModel {
                 sourcesPersistence = true
             } catch {
                 sourceError = tr("无法读取资料库，原文件已保留。")
+            }
+            do {
+                chats = try ChatStore.load().sorted { $0.updatedAt > $1.updatedAt }
+                chatsReady = true
+                currentChatID = chats.first?.id
+            } catch {
+                chatError = tr("无法读取对话记录，原文件已保留。")
             }
         }
         if case .category(let id) = self.filter, self.category(for: id) == nil {

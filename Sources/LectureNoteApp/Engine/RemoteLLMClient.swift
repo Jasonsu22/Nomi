@@ -25,8 +25,11 @@ enum RemoteLLMClient {
         return result.sorted()
     }
 
-    static func generate(profile: LLMAPIProfile, key: String, system: String, prompt: String) async throws -> String {
+    static func generate(profile: LLMAPIProfile, key: String, system: String, prompt: String, allowsWeb: Bool = false) async throws -> String {
         let profile = try profile.validated()
+        if allowsWeb, profile.format != .anthropic, URL(string: profile.baseURL)?.host == "api.openai.com" {
+            return try await responses(profile: profile, key: key, system: system, prompt: prompt)
+        }
         var request = request(profile: profile, path: profile.format == .anthropic ? "messages" : "chat/completions", key: key)
         request.httpMethod = "POST"
         var body: [String: Any] = ["model": profile.modelID, "stream": false]
@@ -34,6 +37,10 @@ enum RemoteLLMClient {
             body["system"] = system
             body["max_tokens"] = 2048
             body["messages"] = [["role": "user", "content": prompt]]
+            if allowsWeb {
+                body["tools"] = [["type": "web_search_20250305", "name": "web_search", "max_uses": 3]]
+                request.setValue("web-search-2025-03-05", forHTTPHeaderField: "anthropic-beta")
+            }
         } else {
             body["messages"] = [["role": "system", "content": system], ["role": "user", "content": prompt]]
             if URL(string: profile.baseURL)?.host == "api.openai.com" {
@@ -47,8 +54,9 @@ enum RemoteLLMClient {
         let object = try await perform(request, key: key)
         let text: String
         if profile.format == .anthropic {
-            text = (object["content"] as? [[String: Any]] ?? [])
-                .filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined(separator: "\n")
+            let blocks = object["content"] as? [[String: Any]] ?? []
+            text = blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined(separator: "\n")
+                + webLinks(in: blocks)
         } else {
             let message = (object["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]
             text = message?["content"] as? String
@@ -57,6 +65,52 @@ enum RemoteLLMClient {
         }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw llmError(tr("模型未返回文字，请检查所选模型和接口格式。")) }
         return text
+    }
+
+    private static func responses(profile: LLMAPIProfile, key: String, system: String, prompt: String) async throws -> String {
+        var request = request(profile: profile, path: "responses", key: key)
+        request.httpMethod = "POST"
+        let body: [String: Any] = [
+            "model": profile.modelID,
+            "instructions": system,
+            "input": prompt,
+            "tools": [["type": "web_search"]],
+            "max_output_tokens": 2048,
+            "store": false,
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let object = try await perform(request, key: key)
+        var parts: [String] = []
+        for item in object["output"] as? [[String: Any]] ?? [] {
+            guard item["type"] as? String == "message" else { continue }
+            for block in item["content"] as? [[String: Any]] ?? [] {
+                if let text = block["text"] as? String { parts.append(text) }
+                parts.append(contentsOf: annotations(in: block))
+            }
+        }
+        let text = parts.joined(separator: "\n")
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw llmError(tr("模型未返回文字，请检查所选模型和接口格式。")) }
+        return text
+    }
+
+    private static func webLinks(in blocks: [[String: Any]]) -> String {
+        let links = blocks.flatMap { block in
+            (block["citations"] as? [[String: Any]] ?? []).compactMap { cite -> String? in
+                guard let url = cite["url"] as? String else { return nil }
+                let title = (cite["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return title.isEmpty ? url : "\(title) \(url)"
+            }
+        }
+        guard !links.isEmpty else { return "" }
+        return "\n" + links.joined(separator: "\n")
+    }
+
+    private static func annotations(in block: [String: Any]) -> [String] {
+        (block["annotations"] as? [[String: Any]] ?? []).compactMap { note in
+            guard let url = note["url"] as? String else { return nil }
+            let title = (note["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return title.isEmpty ? url : "\(title) \(url)"
+        }
     }
 
     private static func request(profile: LLMAPIProfile, path: String, key: String) -> URLRequest {

@@ -41,6 +41,12 @@ struct LectureNoteApp: App {
                 }
                 .keyboardShortcut(".", modifiers: .command)
                 .disabled(model.engine.session.phase == .idle || model.engine.session.phase == .stopping)
+
+                Button(tr("新会话")) {
+                    model.beginNewChat()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(model.page != .ask)
             }
             CommandGroup(after: .sidebar) {
                 Button(tr("搜索会议")) {
