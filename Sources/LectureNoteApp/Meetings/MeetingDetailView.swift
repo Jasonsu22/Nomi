@@ -258,7 +258,7 @@ struct MeetingDetailView: View {
         _ title: String,
         help: String,
         isPresented: Binding<Bool>,
-        @ViewBuilder content: () -> Content
+        @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         Button {
             isPresented.wrappedValue = true
