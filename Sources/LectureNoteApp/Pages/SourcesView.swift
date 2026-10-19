@@ -431,14 +431,6 @@ struct SourcesView: View {
                 .fixedSize()
                 .help(tr("移到分类"))
                 Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([SourceStore.fileURL(for: source)])
-                } label: {
-                    Image(systemName: "folder")
-                        .foregroundStyle(AppColor.textSecondary)
-                }
-                .buttonStyle(.plain)
-                .help(tr("在 Finder 中显示"))
-                Button {
                     deleting = source
                 } label: {
                     Image(systemName: "trash")
@@ -447,7 +439,6 @@ struct SourcesView: View {
                 .buttonStyle(.plain)
                 .help(tr("删除"))
                 }
-                .frame(width: 128, alignment: .leading)
             }
         }
         .font(AppFont.caption)
@@ -464,6 +455,9 @@ struct SourcesView: View {
         Button(tr("重命名")) { presentRename(source) }
         Menu(tr("移到分类")) {
             categoryMoveItems(for: moveTargets(source))
+        }
+        Button(tr("在访达中打开")) {
+            NSWorkspace.shared.activateFileViewerSelecting([SourceStore.fileURL(for: source)])
         }
         Button(tr("下载")) { download(source) }
         Button(role: .destructive) { presentDelete(source) } label: {

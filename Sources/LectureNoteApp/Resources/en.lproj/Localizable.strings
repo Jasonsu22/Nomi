@@ -1,6 +1,7 @@
 "%@ · 转写 %d 段 · 音频尚未录制" = "%@ · %d transcript paragraphs · No recorded audio";
 "%@ · 转写 %d 段 · 音频 %d 段" = "%@ · %d transcript paragraphs · %d audio recordings";
 "在 Finder 中显示" = "Show in Finder";
+"在访达中打开" = "Open in Finder";
 "管理" = "Manage";
 "全选" = "Select All";
 "已选 %d" = "%d selected";
