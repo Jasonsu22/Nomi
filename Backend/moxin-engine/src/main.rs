@@ -13,6 +13,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
@@ -83,17 +84,48 @@ fn replay_wav(args: Vec<String>) -> Result<()> {
     }
     let samples = read_wav(Path::new(&input))?;
     write_event(&mut file, &state_event(&pipeline, "listening"))?;
+    let started = Instant::now();
+    let mut latencies_ms = Vec::new();
     for chunk in samples.chunks(1600) {
+        let chunk_started = Instant::now();
         for event in pipeline.push_audio(chunk) {
+            if let OutEvent::Commit { id, end, .. } = &event {
+                let latency_ms = chunk_started.elapsed().as_millis();
+                latencies_ms.push(latency_ms);
+                eprintln!("commit id={id} audio_end={end:.2} latency_ms={latency_ms}");
+            }
             write_event(&mut file, &event)?;
         }
     }
     write_event(&mut file, &state_event(&pipeline, "stopping"))?;
+    let finish_started = Instant::now();
     for event in pipeline.finish() {
+        if let OutEvent::Commit { id, end, .. } = &event {
+            let latency_ms = finish_started.elapsed().as_millis();
+            latencies_ms.push(latency_ms);
+            eprintln!("commit id={id} audio_end={end:.2} latency_ms={latency_ms}");
+        }
         write_event(&mut file, &event)?;
     }
     write_event(&mut file, &state_event(&pipeline, "idle"))?;
+    let audio_secs = samples.len() as f64 / 16_000.0;
+    let wall_secs = started.elapsed().as_secs_f64();
+    let (p50, p95) = percentiles_ms(&latencies_ms);
+    eprintln!(
+        "latency_summary commits={} p50_ms={p50} p95_ms={p95} audio_secs={audio_secs:.1} wall_secs={wall_secs:.1}",
+        latencies_ms.len()
+    );
     Ok(())
+}
+
+fn percentiles_ms(values: &[u128]) -> (u128, u128) {
+    if values.is_empty() {
+        return (0, 0);
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    let pick = |fraction: f64| sorted[((sorted.len() - 1) as f64 * fraction).round() as usize];
+    (pick(0.50), pick(0.95))
 }
 
 fn write_event(file: &mut impl Write, event: &OutEvent) -> Result<()> {
