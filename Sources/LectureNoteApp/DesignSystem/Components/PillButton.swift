@@ -17,6 +17,7 @@ struct PillButton: View {
                 .background(hovering ? AppColor.surfaceInset : AppColor.surface, in: Capsule())
         }
         .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
         .onHover { hovering = $0 }
         .animation(Motion.fade(reduceMotion), value: hovering)
     }
@@ -65,6 +66,7 @@ struct TrailingBarSwap<Idle: View, Manage: View>: View {
                 idle().transition(transition)
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
         .animation(Motion.layout(reduceMotion), value: managing)
     }
 
