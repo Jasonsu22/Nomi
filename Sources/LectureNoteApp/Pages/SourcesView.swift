@@ -328,19 +328,18 @@ struct SourcesView: View {
 
     private func sourceRow(_ source: KnowledgeSource) -> some View {
         HStack(spacing: Space.s3) {
-            Button {
-                NSWorkspace.shared.open(SourceStore.fileURL(for: source))
-            } label: {
-                HStack(spacing: Space.s3) {
-                    sourceIcon(source.fileName)
-                    Text(source.title)
-                        .font(AppFont.secondary.weight(.semibold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
+            HStack(spacing: Space.s3) {
+                sourceIcon(source.fileName)
+                Text(source.title)
+                    .font(AppFont.secondary.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                NSWorkspace.shared.open(SourceStore.fileURL(for: source))
+            }
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(formatRelativeTime(source.importedAt))
                 .frame(width: 110, alignment: .leading)
@@ -381,24 +380,61 @@ struct SourcesView: View {
         .foregroundStyle(AppColor.textSecondary)
         .padding(.horizontal, Space.s4)
         .padding(.vertical, 14)
+        .contentShape(Rectangle())
         .contextMenu {
-            Button(tr("打开")) {
-                NSWorkspace.shared.open(SourceStore.fileURL(for: source))
-            }
-            Button(tr("重命名")) {
-                renameDraft = source.title
-                renaming = source
-            }
+            Button(tr("重命名")) { presentRename(source) }
             Menu(tr("移到分类")) {
                 categoryButtons(for: source)
             }
-            Button(tr("在 Finder 中显示")) {
-                NSWorkspace.shared.activateFileViewerSelecting([SourceStore.fileURL(for: source)])
-            }
-            Button(role: .destructive) {
-                deleting = source
-            } label: {
+            Button(tr("下载")) { download(source) }
+            Button(role: .destructive) { presentDelete(source) } label: {
                 Text(tr("删除")).foregroundStyle(.red)
+            }
+        }
+    }
+
+    /// The menu closes in the same turn it sets state, which swallows the alert.
+    private func presentRename(_ source: KnowledgeSource) {
+        Task { @MainActor in
+            renameDraft = source.title
+            renaming = source
+        }
+    }
+
+    private func presentDelete(_ source: KnowledgeSource) {
+        Task { @MainActor in
+            deleting = source
+        }
+    }
+
+    private func download(_ source: KnowledgeSource) {
+        let file = SourceStore.fileURL(for: source)
+        let name = source.fileName
+        Task { @MainActor in
+            guard let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible) else {
+                model.sourceError = tr("找不到窗口，无法打开保存面板。")
+                return
+            }
+            let panel = NSSavePanel()
+            panel.canCreateDirectories = true
+            panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            panel.nameFieldStringValue = name
+            if let type = UTType(filenameExtension: (name as NSString).pathExtension) {
+                panel.allowedContentTypes = [type]
+            }
+            panel.beginSheetModal(for: window) { response in
+                guard response == .OK, let destination = panel.url else { return }
+                guard destination.standardizedFileURL != file.standardizedFileURL else { return }
+                do {
+                    if FileManager.default.fileExists(atPath: destination.path) {
+                        try FileManager.default.removeItem(at: destination)
+                    }
+                    try FileManager.default.copyItem(at: file, to: destination)
+                } catch {
+                    Task { @MainActor in
+                        model.sourceError = error.localizedDescription
+                    }
+                }
             }
         }
     }
@@ -406,25 +442,35 @@ struct SourcesView: View {
     @ViewBuilder
     private func categoryButtons(for source: KnowledgeSource) -> some View {
         Button(tr("未分类")) {
-            withAnimation(Motion.layout(reduceMotion)) {
-                model.assign(source: source.id, category: nil)
+            let id = source.id
+            Task { @MainActor in
+                withAnimation(Motion.layout(reduceMotion)) {
+                    model.assign(source: id, category: nil)
+                }
             }
         }
         ForEach(model.categories.sorted { $0.sortOrder < $1.sortOrder }) { category in
             Button(category.name) {
-                withAnimation(Motion.layout(reduceMotion)) {
-                    model.assign(source: source.id, category: category.id)
+                let id = source.id
+                let categoryID = category.id
+                Task { @MainActor in
+                    withAnimation(Motion.layout(reduceMotion)) {
+                        model.assign(source: id, category: categoryID)
+                    }
                 }
             }
         }
         Divider()
         Button {
-            draft = CategoryDraft(
-                name: "",
-                colorIndex: model.categories.count % CategoryPalette.swatches.count,
-                symbol: CategorySymbols.all[0]
-            )
-            creatingForSource = source.id
+            let id = source.id
+            Task { @MainActor in
+                draft = CategoryDraft(
+                    name: "",
+                    colorIndex: model.categories.count % CategoryPalette.swatches.count,
+                    symbol: CategorySymbols.all[0]
+                )
+                creatingForSource = id
+            }
         } label: {
             Label(tr("新建分类"), systemImage: "plus")
         }
