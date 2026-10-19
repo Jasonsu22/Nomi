@@ -79,6 +79,7 @@ final class AppModel {
     private var meetingLinksReady = false
     var chatGeneratingID: UUID?
     var pendingQuestion: String?
+    var pendingAnswer = ""
     var chatError: String?
     var chatDraftRestore: String?
     var chatFocusRequest = 0

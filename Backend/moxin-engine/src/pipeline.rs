@@ -231,7 +231,7 @@ impl Pipeline {
         Ok(())
     }
 
-    pub fn generate_assistant(&mut self, system: String, prompt: String, max_tokens: usize) -> Result<String> {
+    pub fn generate_assistant(&mut self, system: String, prompt: String, max_tokens: usize, on_text: &mut dyn FnMut(&str)) -> Result<String> {
         self.load_assistant()?;
         let id = self.next_request;
         self.next_request += 1;
@@ -240,10 +240,22 @@ impl Pipeline {
         } else {
             self.assistant.as_mut().unwrap()
         };
-        match worker.request(WorkerRequest::Generate { id, system, prompt, max_tokens: max_tokens.clamp(1, 2048) }, &[])? {
-            WorkerEvent::Result { text, .. } => Ok(text),
-            WorkerEvent::Failed { message, .. } => Err(anyhow!(message)),
-            other => Err(anyhow!("大模型返回了无效结果：{other:?}")),
+        write_frame(
+            &mut worker.stdin,
+            &WorkerRequest::Generate { id, system, prompt, max_tokens: max_tokens.clamp(1, 2048) },
+            &[],
+        )?;
+        loop {
+            let (header, _) = read_frame(&mut worker.stdout)?;
+            match serde_json::from_slice::<WorkerEvent>(&header)? {
+                WorkerEvent::Token { text, .. } => on_text(&text),
+                WorkerEvent::Result { text, .. } => {
+                    on_text(&text);
+                    return Ok(text);
+                }
+                WorkerEvent::Failed { message, .. } => return Err(anyhow!(message)),
+                other => return Err(anyhow!("大模型返回了无效结果：{other:?}")),
+            }
         }
     }
 

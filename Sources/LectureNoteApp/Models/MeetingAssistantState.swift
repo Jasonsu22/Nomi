@@ -16,6 +16,7 @@ final class MeetingAssistantState {
     var summaryModelName = ""
     var isGenerating = false
     var generatingSummary = false
+    var draft = ""
     var error: String?
     @ObservationIgnored var task: Task<Void, Never>?
 }

@@ -57,7 +57,10 @@ fn main() -> Result<()> {
                 }
             }
             WorkerRequest::Generate { id, system, prompt, max_tokens } => {
-                match state.generate(&system, &prompt, max_tokens.clamp(1, 2048)) {
+                let result = state.generate_streaming(&system, &prompt, max_tokens.clamp(1, 2048), &mut |text| {
+                    write_frame(&mut stdout, &WorkerEvent::Token { id, text: text.to_string() }, &[])
+                });
+                match result {
                     Ok(text) => write_frame(&mut stdout, &WorkerEvent::Result { id, text }, &[])?,
                     Err(error) => write_frame(&mut stdout, &WorkerEvent::Failed { id, message: error.to_string() }, &[])?,
                 }
@@ -104,6 +107,16 @@ impl Worker {
     }
 
     fn generate(&mut self, system_prompt: &str, user_text: &str, max_tokens: usize) -> Result<String> {
+        self.generate_streaming(system_prompt, user_text, max_tokens, &mut |_| Ok(()))
+    }
+
+    fn generate_streaming(
+        &mut self,
+        system_prompt: &str,
+        user_text: &str,
+        max_tokens: usize,
+        emit: &mut dyn FnMut(&str) -> io::Result<()>,
+    ) -> Result<String> {
         let prompt_ids = prompt_tokens(&mut self.tokenizer, &self.chat_template, &self.model_id, system_prompt, user_text)?;
         if prompt_ids.len() > 16_384 {
             return Err(anyhow!("会议内容过长，请选择较短的会议或使用支持更长上下文的 API 模型"));
@@ -113,11 +126,11 @@ impl Worker {
             TextModel::Qwen3(model) => {
                 let mut cache = Vec::new();
                 let generator = qwen3_mlx::Generate::<qwen3_mlx::KVCache>::new(model, &mut cache, 0.0, &prompt);
-                collect_response(generator, &mut self.tokenizer, &self.eos_tokens, max_tokens)
+                collect_response(generator, &mut self.tokenizer, &self.eos_tokens, max_tokens, emit)
             }
             TextModel::Qwen35(model) => {
                 let generator = qwen3_5_35b_mlx::Generate::new(model, 0.0, &prompt);
-                collect_response(generator, &mut self.tokenizer, &self.eos_tokens, max_tokens)
+                collect_response(generator, &mut self.tokenizer, &self.eos_tokens, max_tokens, emit)
             }
         };
         unsafe { mlx_sys::mlx_clear_cache(); }
@@ -125,8 +138,15 @@ impl Worker {
     }
 }
 
-fn collect_response<E: std::fmt::Display>(generator: impl Iterator<Item = std::result::Result<mlx_rs::Array, E>>, tokenizer: &mut Tokenizer, eos_tokens: &HashSet<u32>, max_tokens: usize) -> Result<String> {
+fn collect_response<E: std::fmt::Display>(
+    generator: impl Iterator<Item = std::result::Result<mlx_rs::Array, E>>,
+    tokenizer: &mut Tokenizer,
+    eos_tokens: &HashSet<u32>,
+    max_tokens: usize,
+    emit: &mut dyn FnMut(&str) -> io::Result<()>,
+) -> Result<String> {
     let mut ids = Vec::new();
+    let mut sent = String::new();
     let started = Instant::now();
     for token_result in generator.take(max_tokens) {
         if started.elapsed().as_secs_f32() >= 120.0 { break; }
@@ -134,10 +154,28 @@ fn collect_response<E: std::fmt::Display>(generator: impl Iterator<Item = std::r
         let id = token.item::<u32>();
         if eos_tokens.contains(&id) { break; }
         ids.push(id);
+        // Decode the whole sequence so a token boundary cannot split a character, then send the new visible text.
+        let decoded = tokenizer.decode(&ids, true).map_err(|error| anyhow!("解码失败：{error:?}"))?;
+        let visible = visible_answer(&decoded);
+        if visible != sent {
+            emit(&visible).map_err(|error| anyhow!("写出文字失败：{error}"))?;
+            sent = visible;
+        }
     }
-    // Decode the complete sequence so a chunk boundary cannot split a Unicode character.
-    let text = tokenizer.decode(&ids, true).map_err(|error| anyhow!("解码失败：{error:?}"))?;
-    Ok(text.rsplit_once("</think>").map_or(text.as_str(), |(_, answer)| answer).trim().to_string())
+    let decoded = tokenizer.decode(&ids, true).map_err(|error| anyhow!("解码失败：{error:?}"))?;
+    let visible = visible_answer(&decoded).trim().to_string();
+    if visible.is_empty() { Ok(decoded.trim().to_string()) } else { Ok(visible) }
+}
+
+fn visible_answer(text: &str) -> String {
+    if let Some((_, answer)) = text.rsplit_once("</think>") {
+        return answer.trim_start().to_string();
+    }
+    let trimmed = text.trim_start();
+    if trimmed.starts_with("<think") || matches!(trimmed, "<" | "<t" | "<th" | "<thi" | "<thin") {
+        return String::new();
+    }
+    text.to_string()
 }
 
 fn prompt_tokens(tokenizer: &mut Tokenizer, chat_template: &str, model_id: &str, system_prompt: &str, user_text: &str) -> Result<Vec<u32>> {

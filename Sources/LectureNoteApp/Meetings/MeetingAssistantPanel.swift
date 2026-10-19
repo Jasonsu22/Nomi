@@ -14,14 +14,16 @@ struct MeetingAssistantPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s4) {
                     if summary {
-                        if let text = state?.summary {
+                        if state?.isGenerating == true, let draft = state?.draft, !draft.isEmpty {
+                            result(draft, modelName: state?.summaryModelName ?? "")
+                        } else if let text = state?.summary {
                             result(text, modelName: state?.summaryModelName ?? "")
                         } else {
                             Text(tr("生成这场会议的要点、术语和结论。"))
                                 .font(AppFont.secondary).foregroundStyle(AppColor.textSecondary)
                         }
                     } else {
-                        if state?.answers.isEmpty != false {
+                        if state?.answers.isEmpty != false && (state?.draft.isEmpty != false) {
                             Text(tr("根据这场会议的转写提问，回答会引用相关时间。"))
                                 .font(AppFont.secondary).foregroundStyle(AppColor.textSecondary)
                         }
@@ -30,6 +32,9 @@ struct MeetingAssistantPanel: View {
                                 Text(answer.question).font(AppFont.body.weight(.medium))
                                 result(answer.answer, modelName: answer.modelName)
                             }
+                        }
+                        if state?.isGenerating == true, let draft = state?.draft, !draft.isEmpty {
+                            result(draft, modelName: "")
                         }
                     }
                 }

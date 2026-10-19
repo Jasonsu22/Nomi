@@ -499,11 +499,19 @@ struct AskView: View {
                     .padding(.vertical, 10)
                     .background(AppColor.accentSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
-            HStack(spacing: Space.s2) {
-                ProgressView().controlSize(.small)
-                Text(tr("正在回答…"))
-                    .font(AppFont.secondary)
-                    .foregroundStyle(AppColor.textSecondary)
+            if model.pendingAnswer.isEmpty {
+                HStack(spacing: Space.s2) {
+                    ProgressView().controlSize(.small)
+                    Text(tr("正在回答…"))
+                        .font(AppFont.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
+                }
+            } else {
+                Text(model.pendingAnswer)
+                    .font(AppFont.body)
+                    .foregroundStyle(AppColor.textPrimary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 680, alignment: .leading)
             }
         }
     }

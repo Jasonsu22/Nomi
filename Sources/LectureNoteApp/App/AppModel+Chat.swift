@@ -257,6 +257,7 @@ extension AppModel {
             $0.profileID = mode == .api ? profile?.id : nil
         }
         pendingQuestion = question
+        pendingAnswer = ""
         chatGeneratingID = id
         chatTask = Task { [weak self] in
             guard let self else { return }
@@ -264,6 +265,7 @@ extension AppModel {
                 if self.chatGeneratingID == id {
                     self.chatGeneratingID = nil
                     self.pendingQuestion = nil
+                    self.pendingAnswer = ""
                     self.chatTask = nil
                 }
             }
@@ -310,10 +312,14 @@ extension AppModel {
                         key: key,
                         system: system,
                         prompt: prompt
-                    )
+                    ) { [weak self] partial in
+                        self?.pendingAnswer = partial
+                    }
                 } else {
                     guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
-                    text = try await engine.generate(system: system, prompt: prompt)
+                    text = try await engine.generate(system: system, prompt: prompt) { [weak self] partial in
+                        self?.pendingAnswer = partial
+                    }
                 }
                 try Task.checkCancellation()
                 self.finishChat(id, question: question, answer: text, modelName: name, citations: ChatContext.citations(in: text, blocks: blocks), error: nil)

@@ -52,20 +52,22 @@ extension AppModel {
         let name = assistantModelName
         state.isGenerating = true
         state.generatingSummary = summary
+        state.draft = ""
         state.error = nil
         state.task = Task { [weak self, weak state] in
             guard let self, let state else { return }
-            defer { state.isGenerating = false; state.task = nil }
+            defer { state.isGenerating = false; state.draft = ""; state.task = nil }
             do {
                 let text: String
+                let show: @MainActor (String) -> Void = { [weak state] partial in state?.draft = partial }
                 if mode == .api {
                     guard let profile else { throw llmError(tr("请先在设置中选择 API 配置。")) }
                     let key = try LLMKeychain.read(profile)
                     guard profile.isLoopback || !key.isEmpty else { throw llmError(tr("请输入 API 密钥。")) }
-                    text = try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt)
+                    text = try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, onUpdate: show)
                 } else {
                     guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
-                    text = try await engine.generate(system: system, prompt: prompt)
+                    text = try await engine.generate(system: system, prompt: prompt, onUpdate: show)
                 }
                 if summary { state.summary = text; state.summaryModelName = name }
                 else { state.answers.append(.init(question: question ?? "", answer: text, modelName: name)) }
