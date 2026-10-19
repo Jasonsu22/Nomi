@@ -28,6 +28,14 @@ struct RecordingLanguagePicker: View {
         }
         .clickCursor()
     }
+
+    func sourceField() -> some View {
+        inputPicker.labelsHidden()
+    }
+
+    func targetField() -> some View {
+        translationPicker.labelsHidden()
+    }
 }
 
 struct RecordingSetupView: View {

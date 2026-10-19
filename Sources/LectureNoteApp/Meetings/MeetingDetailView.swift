@@ -13,7 +13,8 @@ struct MeetingDetailView: View {
         let stored = UserDefaults.standard.double(forKey: MeetingDetailView.sideWidthKey)
         return stored > 0 ? stored : 340
     }()
-    @State private var showingLanguages = false
+    @State private var showingSourceLanguage = false
+    @State private var showingTargetLanguage = false
     @State private var showingStartTime = false
     @State private var creatingCategory = false
     @State private var categoryDraft = CategoryDraft()
@@ -158,19 +159,25 @@ struct MeetingDetailView: View {
                     }
                 }
                 categoryChip(meeting)
-                Button {
-                    showingLanguages = true
-                } label: {
-                    metaChip("\(languageName(model.recordingSourceLanguage)) → \(languageName(model.recordingTargetLanguage))")
+                languageChip(
+                    languageName(model.recordingSourceLanguage),
+                    help: tr("输入语言"),
+                    isPresented: $showingSourceLanguage
+                ) {
+                    RecordingLanguagePicker(source: $model.recordingSourceLanguage, target: $model.recordingTargetLanguage)
+                        .sourceField()
                 }
-                .buttonStyle(.plain.clicking())
-                .popover(isPresented: $showingLanguages, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-                    VStack(alignment: .leading, spacing: Space.s4) {
-                        RecordingLanguagePicker(source: $model.recordingSourceLanguage, target: $model.recordingTargetLanguage)
-                            .disabled(model.engine.session.phase != .idle)
-                    }
-                    .padding(Space.s4)
-                    .frame(width: 300)
+                Text("→")
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .accessibilityHidden(true)
+                languageChip(
+                    languageName(model.recordingTargetLanguage),
+                    help: tr("目标翻译语言"),
+                    isPresented: $showingTargetLanguage
+                ) {
+                    RecordingLanguagePicker(source: $model.recordingSourceLanguage, target: $model.recordingTargetLanguage)
+                        .targetField()
                 }
                 audioInputChip
             }
@@ -245,6 +252,27 @@ struct MeetingDetailView: View {
         .disabled(model.engine.session.phase != .idle)
         .accessibilityLabel(tr("输入源"))
         .help(model.audioInputs.selectionTitle)
+    }
+
+    private func languageChip<Content: View>(
+        _ title: String,
+        help: String,
+        isPresented: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Button {
+            isPresented.wrappedValue = true
+        } label: {
+            metaChip(title)
+        }
+        .buttonStyle(.plain.clicking())
+        .help(help)
+        .popover(isPresented: isPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            content()
+                .disabled(model.engine.session.phase != .idle)
+                .padding(Space.s4)
+                .frame(width: 240)
+        }
     }
 
     private func metaChip(_ text: String) -> some View {
