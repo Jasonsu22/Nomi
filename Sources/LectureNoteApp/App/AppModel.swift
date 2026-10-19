@@ -482,8 +482,19 @@ final class AppModel {
     }
 
     func assign(source id: UUID, category categoryID: UUID?) {
-        guard let index = sources.firstIndex(where: { $0.id == id }) else { return }
-        sources[index].categoryID = categoryID
+        assign(sources: [id], category: categoryID)
+    }
+
+    func assign(sources ids: Set<UUID>, category categoryID: UUID?) {
+        guard !ids.isEmpty else { return }
+        var updated = sources
+        var changed = false
+        for index in updated.indices where ids.contains(updated[index].id) && updated[index].categoryID != categoryID {
+            updated[index].categoryID = categoryID
+            changed = true
+        }
+        guard changed else { return }
+        sources = updated
     }
 
     func rename(source id: UUID, to title: String) {
@@ -493,9 +504,46 @@ final class AppModel {
     }
 
     func deleteSource(_ id: UUID) {
-        guard let source = sources.first(where: { $0.id == id }) else { return }
-        SourceStore.remove(source)
-        sources.removeAll { $0.id == id }
+        deleteSources([id])
+    }
+
+    func deleteSources(_ ids: Set<UUID>) {
+        let removing = sources.filter { ids.contains($0.id) }
+        guard !removing.isEmpty else { return }
+        for source in removing {
+            SourceStore.remove(source)
+        }
+        sources.removeAll { ids.contains($0.id) }
+    }
+
+    func downloadSourcesByCategory() {
+        let files = sources.map { source in
+            let folder = source.categoryID.flatMap { category(for: $0)?.name } ?? tr("未分类")
+            return SourceExportFile(sourceURL: SourceStore.fileURL(for: source), folder: folder, fileName: source.fileName)
+        }
+        guard !files.isEmpty else { return }
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible) else {
+            sourceError = tr("找不到窗口，无法打开保存面板。")
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = tr("下载")
+        panel.message = tr("按分类建文件夹，把资料复制进去。")
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try SourceStore.exportGrouped(files, into: url)
+            } catch {
+                Task { @MainActor in
+                    self.sourceError = error.localizedDescription
+                }
+            }
+        }
     }
 
     func discardSources(_ staged: [KnowledgeSource]) {

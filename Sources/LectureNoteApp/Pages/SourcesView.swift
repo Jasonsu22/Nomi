@@ -16,7 +16,12 @@ struct SourcesView: View {
     @State private var creating = false
     @State private var draft = CategoryDraft()
     @State private var dropTargeted = false
-    @State private var creatingForSource: UUID?
+    @State private var managing = false
+    @State private var selectedIDs: Set<UUID> = []
+    @State private var confirmingBulkDelete = false
+    @State private var groupByCategory = true
+    @State private var movingIDs: Set<UUID> = []
+    @State private var creatingForMove = false
     @Environment(\.appReduceMotion) private var reduceMotion
     @Namespace private var chipNamespace
 
@@ -36,24 +41,26 @@ struct SourcesView: View {
     }
 
     var body: some View {
-        PageScaffold(title: tr("资料")) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Space.s4) {
-                    HStack(spacing: Space.s3) {
-                        SearchField(text: $query, isFocused: $searchFocused, prompt: tr("搜索资料"))
-                        addButton
-                    }
-                    chips
-                    summary
-                    if visible.isEmpty {
-                        empty
-                    } else {
-                        groups
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.s5) {
+                header
+                HStack(spacing: Space.s3) {
+                    SearchField(text: $query, isFocused: $searchFocused, prompt: tr("搜索资料"))
+                    addButton
                 }
-                .pageColumn()
-                .padding(.bottom, Space.s7)
+                chips
+                summary
+                if visible.isEmpty {
+                    empty
+                } else if groupByCategory {
+                    groups
+                } else {
+                    sourceCard(visible)
+                }
             }
+            .pageColumn()
+            .padding(.top, 28)
+            .padding(.bottom, Space.s7)
         }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             receiveDrop(providers)
@@ -92,15 +99,23 @@ struct SourcesView: View {
         } message: {
             Text(tr("资料库里的副本会被删掉，原来的文件还在。"))
         }
-        .sheet(isPresented: creatingForSourcePresented) {
+        .alert(trf("删除这 %d 份资料？", selectedIDs.count), isPresented: $confirmingBulkDelete) {
+            Button(tr("删除"), role: .destructive) {
+                removeSources(selectedIDs, leaveManageMode: true)
+            }
+            Button(tr("取消"), role: .cancel) {}
+        } message: {
+            Text(tr("资料库里的副本会被删掉，原来的文件还在。"))
+        }
+        .sheet(isPresented: $creatingForMove) {
             CategoryEditor(title: tr("新建分类"), draft: $draft) {
-                if let id = model.addCategory(name: draft.name, colorIndex: draft.colorIndex, symbol: draft.symbol, select: false),
-                   let sourceID = creatingForSource {
+                let ids = movingIDs
+                if let id = model.addCategory(name: draft.name, colorIndex: draft.colorIndex, symbol: draft.symbol, select: false) {
                     withAnimation(Motion.layout(reduceMotion)) {
-                        model.assign(source: sourceID, category: id)
+                        model.assign(sources: ids, category: id)
                     }
                 }
-                creatingForSource = nil
+                movingIDs = []
             }
         }
         .alert(tr("资料"), isPresented: sourceErrorPresented) {
@@ -108,6 +123,59 @@ struct SourcesView: View {
         } message: {
             Text(model.sourceError ?? "")
         }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: Space.s3) {
+            Text(tr("资料"))
+                .font(AppFont.pageTitle)
+                .foregroundStyle(AppColor.textPrimary)
+            Spacer(minLength: Space.s3)
+            if managing {
+                PillButton(title: tr("完成")) { endManaging() }
+                Text(trf("已选 %d", selectedIDs.count))
+                    .font(AppFont.secondary.weight(.medium))
+                    .foregroundStyle(AppColor.textSecondary)
+                PillButton(title: tr("全选")) { selectAllVisible() }
+                PillMenu(title: tr("移到分类"), enabled: !selectedIDs.isEmpty) {
+                    categoryMoveItems(for: selectedIDs)
+                }
+                PillButton(title: tr("删除"), tint: .red) { confirmingBulkDelete = true }
+                    .disabled(selectedIDs.isEmpty)
+                    .opacity(selectedIDs.isEmpty ? 0.4 : 1)
+            } else {
+                PillButton(title: tr("下载")) { model.downloadSourcesByCategory() }
+                    .help(tr("按分类建文件夹，把资料复制进去。"))
+                    .disabled(model.sources.isEmpty)
+                    .opacity(model.sources.isEmpty ? 0.4 : 1)
+                PillButton(title: tr("管理")) {
+                    selectedIDs.removeAll()
+                    managing = true
+                }
+                sortControl
+                categoryToggle
+            }
+        }
+        .frame(height: 36)
+    }
+
+    private var categoryToggle: some View {
+        Button {
+            withAnimation(Motion.layout(reduceMotion)) {
+                groupByCategory.toggle()
+            }
+        } label: {
+            Text(tr("分类"))
+                .font(AppFont.secondary.weight(.medium))
+                .foregroundStyle(groupByCategory ? AppColor.onSelection : AppColor.textSecondary)
+                .padding(.horizontal, 12)
+                .frame(height: 30)
+                .background(groupByCategory ? AppColor.selection : Color.clear, in: Capsule())
+                .padding(3)
+                .background(AppColor.surface, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(tr("按分类分组"))
     }
 
     private var addButton: some View {
@@ -218,7 +286,6 @@ struct SourcesView: View {
                 .foregroundStyle(AppColor.accent)
             }
             Spacer()
-            sortControl
         }
     }
 
@@ -253,7 +320,7 @@ struct SourcesView: View {
                 .font(AppFont.secondary.weight(.medium))
                 .foregroundStyle(selected ? AppColor.onSelection : AppColor.textSecondary)
                 .padding(.horizontal, 12)
-                .frame(height: 26)
+                .frame(height: 30)
                 .background(selected ? AppColor.selection : Color.clear, in: Capsule())
         }
         .buttonStyle(.plain)
@@ -279,17 +346,7 @@ struct SourcesView: View {
             ForEach(sections) { section in
                 VStack(alignment: .leading, spacing: Space.s3) {
                     CategorySectionTitle(title: section.title, count: section.sources.count, colorIndex: section.colorIndex)
-                    VStack(spacing: 0) {
-                        ForEach(section.sources) { source in
-                            if source.id != section.sources.first?.id {
-                                Rectangle().fill(AppColor.separator).frame(height: 1)
-                            }
-                            sourceRow(source)
-                                .transition(.opacity)
-                        }
-                    }
-                    .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                    .animation(Motion.layout(reduceMotion), value: section.sources.map(\.id))
+                    sourceCard(section.sources)
                 }
                 .transition(.opacity)
             }
@@ -311,26 +368,49 @@ struct SourcesView: View {
         return sections
     }
 
+    private func sourceCard(_ sources: [KnowledgeSource]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(sources) { source in
+                if source.id != sources.first?.id {
+                    Rectangle().fill(AppColor.separator).frame(height: 1)
+                }
+                sourceRow(source)
+                    .transition(.opacity)
+            }
+        }
+        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .animation(Motion.layout(reduceMotion), value: sources.map(\.id))
+    }
+
     private func sourceRow(_ source: KnowledgeSource) -> some View {
         HStack(spacing: Space.s3) {
-            HStack(spacing: Space.s3) {
-                sourceIcon(source.fileName)
-                Text(source.title)
-                    .font(AppFont.secondary.weight(.semibold))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
+            Button {
+                activate(source)
+            } label: {
+                HStack(spacing: Space.s3) {
+                    if managing {
+                        Image(systemName: selectedIDs.contains(source.id) ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 18))
+                            .foregroundStyle(selectedIDs.contains(source.id) ? AppColor.accent : AppColor.textSecondary)
+                            .frame(width: 22)
+                    }
+                    sourceIcon(source.fileName)
+                    Text(source.title)
+                        .font(AppFont.secondary.weight(.semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text(formatRelativeTime(source.importedAt))
+                        .frame(width: 110, alignment: .leading)
+                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                NSWorkspace.shared.open(SourceStore.fileURL(for: source))
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Text(formatRelativeTime(source.importedAt))
-                .frame(width: 110, alignment: .leading)
-            HStack(spacing: Space.s2) {
+            .buttonStyle(.plain)
+            .contextMenu { sourceMenu(source) }
+            if !managing {
+                HStack(spacing: Space.s2) {
                 Menu {
-                    categoryButtons(for: source)
+                    categoryMoveItems(for: [source.id])
                 } label: {
                     Image(systemName: "tag")
                         .font(.system(size: 13, weight: .medium))
@@ -358,22 +438,70 @@ struct SourcesView: View {
                 }
                 .buttonStyle(.plain)
                 .help(tr("删除"))
+                }
+                .frame(width: 128, alignment: .leading)
             }
-            .frame(width: 128, alignment: .leading)
         }
         .font(AppFont.caption)
         .foregroundStyle(AppColor.textSecondary)
         .padding(.horizontal, Space.s4)
         .padding(.vertical, 14)
         .contentShape(Rectangle())
-        .contextMenu {
-            Button(tr("重命名")) { presentRename(source) }
-            Menu(tr("移到分类")) {
-                categoryButtons(for: source)
+        .contextMenu { sourceMenu(source) }
+    }
+
+    @ViewBuilder
+    private func sourceMenu(_ source: KnowledgeSource) -> some View {
+        Button(tr("重命名")) { presentRename(source) }
+        Menu(tr("移到分类")) {
+            categoryMoveItems(for: moveTargets(source))
+        }
+        Button(tr("下载")) { download(source) }
+        Button(role: .destructive) { presentDelete(source) } label: {
+            Text(tr("删除")).foregroundStyle(.red)
+        }
+    }
+
+    private func activate(_ source: KnowledgeSource) {
+        if managing {
+            if selectedIDs.contains(source.id) {
+                selectedIDs.remove(source.id)
+            } else {
+                selectedIDs.insert(source.id)
             }
-            Button(tr("下载")) { download(source) }
-            Button(role: .destructive) { presentDelete(source) } label: {
-                Text(tr("删除")).foregroundStyle(.red)
+            return
+        }
+        NSWorkspace.shared.open(SourceStore.fileURL(for: source))
+    }
+
+    private func moveTargets(_ source: KnowledgeSource) -> Set<UUID> {
+        if managing, selectedIDs.contains(source.id) {
+            return selectedIDs
+        }
+        return [source.id]
+    }
+
+    private func selectAllVisible() {
+        selectedIDs = Set(visible.map(\.id))
+    }
+
+    private func endManaging() {
+        managing = false
+        selectedIDs.removeAll()
+    }
+
+    private func removeSources(_ ids: Set<UUID>, leaveManageMode: Bool) {
+        let removed = ids
+        Task { @MainActor in
+            withAnimation(Motion.layout(reduceMotion)) {
+                model.deleteSources(removed)
+                selectedIDs.subtract(removed)
+            }
+            guard leaveManageMode else { return }
+            try? await Task.sleep(for: .seconds(reduceMotion ? 0.2 : 0.32))
+            withAnimation(Motion.fade(reduceMotion)) {
+                managing = false
+                selectedIDs.removeAll()
             }
         }
     }
@@ -425,36 +553,37 @@ struct SourcesView: View {
     }
 
     @ViewBuilder
-    private func categoryButtons(for source: KnowledgeSource) -> some View {
+    private func categoryMoveItems(for ids: Set<UUID>) -> some View {
         Button(tr("未分类")) {
-            let id = source.id
+            let ids = ids
             Task { @MainActor in
                 withAnimation(Motion.layout(reduceMotion)) {
-                    model.assign(source: id, category: nil)
+                    model.assign(sources: ids, category: nil)
                 }
             }
         }
         ForEach(model.categories.sorted { $0.sortOrder < $1.sortOrder }) { category in
             Button(category.name) {
-                let id = source.id
+                let ids = ids
                 let categoryID = category.id
                 Task { @MainActor in
                     withAnimation(Motion.layout(reduceMotion)) {
-                        model.assign(source: id, category: categoryID)
+                        model.assign(sources: ids, category: categoryID)
                     }
                 }
             }
         }
         Divider()
         Button {
-            let id = source.id
+            let ids = ids
             Task { @MainActor in
                 draft = CategoryDraft(
                     name: "",
                     colorIndex: model.categories.count % CategoryPalette.swatches.count,
                     symbol: CategorySymbols.all[0]
                 )
-                creatingForSource = id
+                movingIDs = ids
+                creatingForMove = true
             }
         } label: {
             Label(tr("新建分类"), systemImage: "plus")
@@ -535,10 +664,6 @@ struct SourcesView: View {
 
     private var deletingPresented: Binding<Bool> {
         Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
-    }
-
-    private var creatingForSourcePresented: Binding<Bool> {
-        Binding(get: { creatingForSource != nil }, set: { if !$0 { creatingForSource = nil } })
     }
 
     private var sourceErrorPresented: Binding<Bool> {

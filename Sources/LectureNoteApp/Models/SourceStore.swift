@@ -1,6 +1,12 @@
 import Foundation
 import UniformTypeIdentifiers
 
+struct SourceExportFile: Sendable {
+    var sourceURL: URL
+    var folder: String
+    var fileName: String
+}
+
 enum SourceStore {
     static let allowedExtensions: Set<String> = [
         "pdf", "ppt", "pptx", "key", "doc", "docx", "txt", "md", "png", "jpg", "jpeg", "heic",
@@ -77,6 +83,40 @@ enum SourceStore {
 
     static func remove(_ source: KnowledgeSource) {
         try? FileManager.default.removeItem(at: directory(for: source.id))
+    }
+
+    /// Copies each file into a category folder under `directory`. Same names in one folder get a numeric suffix.
+    @discardableResult
+    static func exportGrouped(_ files: [SourceExportFile], into directory: URL) throws -> [URL] {
+        let accessing = directory.startAccessingSecurityScopedResource()
+        defer { if accessing { directory.stopAccessingSecurityScopedResource() } }
+        var written: [URL] = []
+        var used: Set<String> = []
+        for file in files {
+            let folder = safeFileName(file.folder)
+            let dir = directory.appendingPathComponent(folder, isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let destination = uniqueDestination(in: dir, folder: folder, name: safeFileName(file.fileName), used: &used)
+            try FileManager.default.copyItem(at: file.sourceURL, to: destination)
+            written.append(destination)
+        }
+        return written
+    }
+
+    private static func uniqueDestination(in directory: URL, folder: String, name: String, used: inout Set<String>) -> URL {
+        let ext = (name as NSString).pathExtension
+        let base = (name as NSString).deletingPathExtension
+        var candidate = name
+        var number = 2
+        while true {
+            let key = folder + "/" + candidate.lowercased()
+            if !used.contains(key), !FileManager.default.fileExists(atPath: directory.appendingPathComponent(candidate).path) {
+                used.insert(key)
+                return directory.appendingPathComponent(candidate)
+            }
+            candidate = ext.isEmpty ? "\(base) \(number)" : "\(base) \(number).\(ext)"
+            number += 1
+        }
     }
 
     private static func safeFileName(_ name: String) -> String {

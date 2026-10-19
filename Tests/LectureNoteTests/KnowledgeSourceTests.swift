@@ -35,6 +35,32 @@ struct KnowledgeSourceTests {
         board.clearContents()
     }
 
+    @Test func groupedDownloadPutsFilesInCategoryFolders() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nomi-export-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let notes = root.appendingPathComponent("notes.pdf")
+        let slides = root.appendingPathComponent("slides.pdf")
+        let extra = root.appendingPathComponent("extra.pdf")
+        try Data("notes".utf8).write(to: notes)
+        try Data("slides".utf8).write(to: slides)
+        try Data("extra".utf8).write(to: extra)
+        let destination = root.appendingPathComponent("out", isDirectory: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let written = try SourceStore.exportGrouped([
+            SourceExportFile(sourceURL: notes, folder: "英语课", fileName: "notes.pdf"),
+            SourceExportFile(sourceURL: slides, folder: "计算机课", fileName: "slides.pdf"),
+            SourceExportFile(sourceURL: extra, folder: "英语课", fileName: "notes.pdf"),
+        ], into: destination)
+
+        #expect(written.map { $0.lastPathComponent } == ["notes.pdf", "slides.pdf", "notes 2.pdf"])
+        #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("英语课/notes.pdf").path))
+        #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("英语课/notes 2.pdf").path))
+        #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("计算机课/slides.pdf").path))
+        #expect(try String(contentsOf: notes, encoding: .utf8) == "notes")
+    }
+
     @Test func draggingACategoryTakesTheTargetSlot() {
         let english = category("英语课", 0)
         let math = category("数学课", 1)
