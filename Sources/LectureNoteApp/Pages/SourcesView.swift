@@ -431,6 +431,17 @@ struct SourcesView: View {
         adding = true
     }
 
+    private func receiveDrop(_ providers: [NSItemProvider]) {
+        for provider in providers {
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                guard let url = fileURL(fromDroppedItem: item) else { return }
+                Task { @MainActor in
+                    stage([url])
+                }
+            }
+        }
+    }
+
     private func discardIfNeeded() {
         guard !committed else {
             committed = false
@@ -438,23 +449,6 @@ struct SourcesView: View {
         }
         model.discardSources(staged)
         staged = []
-    }
-
-    private func receiveDrop(_ providers: [NSItemProvider]) {
-        for provider in providers {
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                let url: URL?
-                if let data = item as? Data {
-                    url = URL(dataRepresentation: data, relativeTo: nil)
-                } else {
-                    url = item as? URL
-                }
-                guard let url else { return }
-                Task { @MainActor in
-                    stage([url])
-                }
-            }
-        }
     }
 
     private var renamingPresented: Binding<Bool> {
@@ -481,6 +475,7 @@ private struct AddSourceSheet: View {
     var onStage: ([URL]) -> Void
     var onCommit: () -> Void
     @State private var picking = false
+    @State private var dropTargeted = false
     @State private var creatingFor: UUID?
     @State private var draft = CategoryDraft()
 
@@ -492,37 +487,18 @@ private struct AddSourceSheet: View {
                 .font(AppFont.secondary)
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if staged.isEmpty {
-                Button { picking = true } label: {
-                    VStack(spacing: Space.s2) {
-                        Image(systemName: "arrow.down.doc")
-                            .font(.system(size: 22, weight: .medium))
-                        Text(tr("选择 PDF、幻灯片、文档或图片"))
-                            .font(AppFont.secondary)
-                    }
-                    .foregroundStyle(AppColor.textSecondary)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 140)
-                    .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-                            .strokeBorder(AppColor.outline, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                    }
-                }
-                .buttonStyle(.plain)
-            } else {
+            dropBox
+            if !staged.isEmpty {
                 VStack(spacing: 0) {
                     ForEach($staged) { $source in
                         pendingRow($source)
                     }
                 }
                 .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                Button { picking = true } label: {
-                    Label(tr("继续添加"), systemImage: "plus")
-                        .font(AppFont.secondary.weight(.medium))
+                .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
+                    receiveDrop(providers)
+                    return true
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(AppColor.accent)
             }
             HStack {
                 Spacer()
@@ -558,6 +534,41 @@ private struct AddSourceSheet: View {
     }
 
     @Environment(\.dismiss) private var dismiss
+
+    private var dropBox: some View {
+        VStack(spacing: Space.s2) {
+            Image(systemName: "arrow.down.doc")
+                .font(.system(size: 22, weight: .medium))
+            Text(tr("把 PDF、幻灯片、文档或图片拖到这里，或点击选择"))
+                .font(AppFont.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .foregroundStyle(dropTargeted ? AppColor.accent : AppColor.textSecondary)
+        .padding(.horizontal, Space.s4)
+        .frame(maxWidth: .infinity)
+        .frame(height: staged.isEmpty ? 140 : 96)
+        .background(
+            (dropTargeted ? AppColor.accent.opacity(0.08) : AppColor.surfaceInset),
+            in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                .strokeBorder(
+                    dropTargeted ? AppColor.accent : AppColor.outline,
+                    style: StrokeStyle(lineWidth: dropTargeted ? 2 : 1, dash: [5, 4])
+                )
+        }
+        .overlay {
+            FileDropBox(
+                isTargeted: { dropTargeted = $0 },
+                onClick: { picking = true },
+                onDrop: onStage
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(tr("把 PDF、幻灯片、文档或图片拖到这里，或点击选择"))
+    }
 
     private func pendingRow(_ source: Binding<KnowledgeSource>) -> some View {
         HStack(spacing: Space.s3) {
@@ -599,6 +610,17 @@ private struct AddSourceSheet: View {
             .help(tr("删除"))
         }
         .padding(Space.s4)
+    }
+
+    private func receiveDrop(_ providers: [NSItemProvider]) {
+        for provider in providers {
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                guard let url = fileURL(fromDroppedItem: item) else { return }
+                Task { @MainActor in
+                    onStage([url])
+                }
+            }
+        }
     }
 
     private var creatingPresented: Binding<Bool> {

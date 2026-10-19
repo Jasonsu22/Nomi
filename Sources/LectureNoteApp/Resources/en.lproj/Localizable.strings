@@ -19,7 +19,7 @@
 "没有匹配的资料" = "No matching sources";
 "把课件加到课程分类里。分类和会议是同一套，一份资料就对应这个课的转录。" = "Add course files to a category. Categories are shared with meetings, so a file stays with that course's transcripts.";
 "文件会复制进资料库，原来的文件还在原处。分类和会议用的是同一套。" = "A copy is saved in the library. The original file stays where it is. Categories are shared with meetings.";
-"选择 PDF、幻灯片、文档或图片" = "Choose a PDF, slides, document, or image";
+"把 PDF、幻灯片、文档或图片拖到这里，或点击选择" = "Drop a PDF, slides, document, or image here, or click to choose";
 "删除这份资料？" = "Delete this source?";
 "资料库里的副本会被删掉，原来的文件还在。" = "The library copy is deleted. The original file stays where it is.";
 "查看会议" = "Show Meetings";
