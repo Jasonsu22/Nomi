@@ -58,7 +58,13 @@ final class AppModel {
             if openMeetingID == nil { meetingCompact = false }
         }
     }
-    var meetingCompact = false
+    var meetingCompact = false {
+        didSet {
+            if meetingCompact { windowAllowsCompact = true }
+        }
+    }
+    /// Stays on until the window has finished growing back, so the minimum size does not jump.
+    var windowAllowsCompact = false
     var exportError: String?
     var storageError: String?
     var sourceError: String?

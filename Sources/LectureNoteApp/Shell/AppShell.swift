@@ -8,25 +8,24 @@ struct AppShell: View {
     private var compact: Bool { model.meetingCompact && model.openMeetingID != nil }
 
     var body: some View {
-        Group {
+        ZStack {
             if compact, let meetingID = model.openMeetingID {
                 CompactMeetingView(model: model, meetingID: meetingID, reduceMotion: reduce)
+                    .transition(.opacity)
             } else {
-                VStack(spacing: 0) {
-                    TopBar(model: model, reduceMotion: reduce)
-                    HStack(spacing: 0) {
-                        Rail(model: model, reduceMotion: reduce)
-                        page
-                            .id(model.page)
-                            .transition(.pageEnter(reduceMotion: reduce))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                    }
-                }
+                browser
+                    .transition(.opacity)
             }
         }
+        .animation(MeetingWindowFrame.animation(reduceMotion: reduce), value: compact)
         .background(AppColor.canvas.ignoresSafeArea())
-        .background { MeetingWindowFrame(compact: compact) }
+        .background {
+            MeetingWindowFrame(
+                compact: compact,
+                reduceMotion: reduce,
+                allowsCompactFrame: $model.windowAllowsCompact
+            )
+        }
         .overlay {
             if let image = model.enlargedImage {
                 ChatImageLightbox(image: image, name: model.enlargedImageName, fileURL: model.enlargedImageURL, reduceMotion: reduce) {
@@ -72,6 +71,21 @@ struct AppShell: View {
     }
 
     private var reduce: Bool { reduceMotion }
+
+    private var browser: some View {
+        VStack(spacing: 0) {
+            TopBar(model: model, reduceMotion: reduce)
+            HStack(spacing: 0) {
+                Rail(model: model, reduceMotion: reduce)
+                page
+                    .id(model.page)
+                    .transition(.pageEnter(reduceMotion: reduce))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
     @ViewBuilder
     private var page: some View {

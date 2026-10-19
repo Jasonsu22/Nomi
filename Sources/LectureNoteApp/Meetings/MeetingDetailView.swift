@@ -115,7 +115,9 @@ struct MeetingDetailView: View {
 
                 Spacer(minLength: Space.s2)
                 Button {
-                    model.meetingCompact = true
+                    withAnimation(MeetingWindowFrame.animation(reduceMotion: reduceMotion)) {
+                        model.meetingCompact = true
+                    }
                 } label: {
                     Image(systemName: "square.on.square")
                         .font(.system(size: 14, weight: .medium))

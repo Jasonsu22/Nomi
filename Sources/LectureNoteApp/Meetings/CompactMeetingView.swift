@@ -49,7 +49,9 @@ struct CompactMeetingView: View {
                     .lineLimit(1)
                 Spacer(minLength: Space.s2)
                 Button {
-                    model.meetingCompact = false
+                    withAnimation(MeetingWindowFrame.animation(reduceMotion: reduceMotion)) {
+                        model.meetingCompact = false
+                    }
                 } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 13, weight: .semibold))
