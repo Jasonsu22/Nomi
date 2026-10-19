@@ -18,6 +18,7 @@
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6.2">
   <img src="https://img.shields.io/badge/Rust-engine-000000?style=flat-square&logo=rust&logoColor=white" alt="Rust">
   <img src="https://img.shields.io/badge/Apple%20Silicon-MLX-555555?style=flat-square" alt="Apple Silicon">
+  <img src="https://img.shields.io/badge/license-MIT-20B68A?style=flat-square" alt="MIT License">
 </p>
 
 界面是 SwiftUI，引擎是 Rust。产品名是 Nomi，Swift 模块名是 `LectureNoteApp`。识别和翻译在这台 Mac 上完成；提问和摘要可以用本机模型，也可以改用你自己的 API。
@@ -68,14 +69,13 @@ bash scripts/refresh-app.sh
 
 打包脚本只从 `Backend/target` 复制 `moxin-engine`、`asr-worker`、`llm-worker` 和 `mlx.metallib`。缺任何一个都会停止打包。
 
-## 🔒 不依赖 Moxin 目录
+## 🔒 可以单独编译
 
-编译和运行都不读取旁边的 Moxin-Voice 或 Moxin-Studio 目录。
+编译和运行不需要再克隆 [Moxin-Voice](https://github.com/moxin-org/Moxin-Voice) 或 [Moxin-Studio](https://github.com/moxin-org/Moxin-Studio)。引擎、两个 worker，以及改过的 Qwen3-ASR 加载器已经在 `Backend/` 里。应用自己拉起这个引擎，退出时关掉它。调试构建找 `Backend/target/debug/moxin-engine`；打包后的应用只用包内的那一份。
 
-- Swift 包没有指向仓库外的路径依赖。
-- 引擎、两个 worker，以及改过的 Qwen3-ASR 加载器都在 `Backend/` 里。
-- 应用启动后自己拉起本机引擎，退出时关掉引擎和它的 worker。调试构建找 `Backend/target/debug/moxin-engine`；打包后的应用只用包内的那一份。
-- 已经下载的模型权重仍放在 `~/.OminiX/models`。这是模型文件目录，不是 Moxin 的源码。换一台没有这些文件的 Mac 时，在设置里重新下载即可。
+已经下载的模型权重仍放在 `~/.OminiX/models`。这是模型文件目录。换一台没有这些文件的 Mac 时，在设置里重新下载即可。
+
+实时转写这条路径是从 Moxin-Voice 继续做下来的。谢谢。见[致谢](#-致谢)。
 
 ## 🗂️ 数据
 
@@ -100,6 +100,23 @@ cargo test --manifest-path Backend/Cargo.toml --locked
 
 推送到 `main` 或打开拉取请求时，GitHub Actions 会在 macOS 26 上编译并测试 Swift 界面，并在 Linux 上测试不依赖 MLX 的引擎（`voice-core`、`moxin-engine`）。语音识别和翻译 worker 需要 Apple 的 MLX，不在这台 Linux 运行器上编译。
 
+## 🙏 致谢
+
+Nomi 自己的界面和为这个应用写的部分使用 MIT。从别的项目拿来的代码和想法，仍使用那些项目原来的许可。
+
+| 项目 | Nomi 用到了什么 | 他们的许可 |
+| --- | --- | --- |
+| [Moxin-Voice](https://github.com/moxin-org/Moxin-Voice) | 实时转写引擎、语音识别和翻译 worker，以及共用的语音流水线。Nomi 在 `Backend/` 里接着改。 | Apache-2.0 |
+| [Moxin-Studio](https://github.com/moxin-org/Moxin-Studio) | 本机模型管理的做法，以及文本 API 服务商的范围。 | Apache-2.0 |
+| [OminiX-MLX](https://github.com/OminiX-ai/OminiX-MLX) | Apple Silicon 上的推理库，固定在 `6aac996`。`Backend/vendor/qwen3-asr-mlx/` 里改过的识别加载器来自这里。 | Apache-2.0。随仓库附带的加载器同时带有 MIT 文本。 |
+| [Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) | 提示词格式，以及识别结果的解析方式。 | Apache-2.0 |
+| [MLX](https://github.com/ml-explore/mlx) | OminiX-MLX 底下的数组计算框架。 | MIT |
+
 ## 📄 许可
 
-`Backend/` 使用 Apache License 2.0，见 [Backend/LICENSE](Backend/LICENSE)。`Backend/vendor/qwen3-asr-mlx/` 同时提供 MIT 和 Apache-2.0 许可。界面源码目前没有单独的许可证文件。
+Nomi 自己的源码使用 [MIT](LICENSE)。Copyright 2026 Jason Su。
+
+引进和附带的代码保留原来的许可：
+
+- `Backend/` 从 Moxin-Voice 接过来，仍是 [Apache-2.0](Backend/LICENSE)。
+- `Backend/vendor/qwen3-asr-mlx/` 仍使用随它附带的 [MIT](Backend/vendor/qwen3-asr-mlx/LICENSE-MIT) 和 [Apache-2.0](Backend/vendor/qwen3-asr-mlx/LICENSE-APACHE)。

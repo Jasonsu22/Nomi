@@ -1,6 +1,6 @@
 # Nomi local backend
 
-Standalone Rust workspace containing the HTTP/WebSocket engine, ASR and language-model workers, shared voice pipeline, and the patched Qwen3-ASR loader. Imported from the local Moxin-Voice integration at commit `2ab501d`; the source repository is preserved separately. Original licensing is retained in LICENSE and vendor/qwen3-asr-mlx/LICENSE-*.
+Standalone Rust workspace containing the HTTP/WebSocket engine, ASR and language-model workers, shared voice pipeline, and the patched Qwen3-ASR loader. The live transcription path continues from [Moxin-Voice](https://github.com/moxin-org/Moxin-Voice) at commit `2ab501d`. This backend stays Apache-2.0 (`LICENSE`). The vendored ASR loader keeps the MIT and Apache-2.0 texts in `vendor/qwen3-asr-mlx/`. Nomi’s own application code is MIT at the repository root.
 
 Build together with the app using `bash scripts/build-app.sh` from the project root. For backend-only development, run `cargo build --locked -p moxin-engine -p asr-worker -p llm-worker` here. Dependencies are pinned by Cargo.lock and the OminiX-MLX Git revision in each manifest.
 
