@@ -95,6 +95,29 @@ struct AnswerDocumentTests {
         #expect(widget.first?.1.lowercased().contains("<meta") == false)
     }
 
+    @Test func finishedPageWithoutAClosingFenceBecomesAWidget() {
+        let pieces = AnswerDocument.pieces(in: """
+        ```html
+        <!DOCTYPE html>
+        <html><head><title>轨道</title></head><body><canvas id="c"></canvas></body></html>
+        """)
+        let widget = pieces.compactMap { piece -> String? in
+            if case .widget(let title, _) = piece { return title }
+            return nil
+        }
+        #expect(widget == ["轨道"])
+    }
+
+    @Test func truncatedPageStaysCode() {
+        let pieces = AnswerDocument.pieces(in: """
+        ```html
+        <!DOCTYPE html>
+        <html><body><script>let
+        """)
+        #expect(pieces.contains { if case .code(let body) = $0 { return body.contains("let") } else { return false } })
+        #expect(!pieces.contains { if case .widget = $0 { return true } else { return false } })
+    }
+
     @Test func completePageWithAnExternalScriptStaysCode() {
         let pieces = AnswerDocument.pieces(in: """
         ```
@@ -120,8 +143,9 @@ struct AnswerDocumentTests {
         #expect(!open.contains { if case .paragraph(let text) = $0 { return text.contains("<svg>") || text.contains("#") } else { return false } })
 
         let closed = AnswerDocument.pieces(in: "```html\n<input type=\"range\">\n```\n结尾", streaming: true)
-        #expect(closed.first == .preparing)
-        #expect(!closed.contains { if case .widget = $0 { return true } else { return false } })
+        #expect(closed.contains { if case .widget = $0 { return true } else { return false } })
+        #expect(!closed.contains { if case .preparing = $0 { return true } else { return false } })
+        #expect(!closed.contains { if case .code = $0 { return true } else { return false } })
         #expect(closed.contains { if case .paragraph("结尾") = $0 { return true } else { return false } })
     }
 
@@ -209,8 +233,10 @@ struct AnswerDocumentTests {
     @Test func displayInstructionFollowsTheModelLanguage() {
         let chinese = ChatContext.systemPrompt(language: "Simplified Chinese", allowsWeb: false)
         #expect(chinese.contains("语言为 html 的围栏"))
+        #expect(chinese.contains("明确要求"))
         let english = ChatContext.systemPrompt(language: "English", allowsWeb: false)
         #expect(english.contains("Write the answer in Markdown"))
+        #expect(english.contains("explicitly asks to display"))
         #expect(!english.contains("语言为 html"))
     }
 }

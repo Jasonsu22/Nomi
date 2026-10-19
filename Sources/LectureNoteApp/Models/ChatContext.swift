@@ -80,9 +80,9 @@ enum ChatContext {
     /// Added when a question is sent. The editable prompt stays unchanged.
     static func displayInstruction(language: String) -> String {
         if language == "Simplified Chinese" {
-            return "用 Markdown 写回答。只有当一个小交互能帮用户理解时，才加一块语言为 html 的围栏。围栏里写片段或完整页面都可以，用滑块、按钮、内联样式、内联脚本和内联 SVG。不要引用外部地址，一条回答最多两块。"
+            return "用 Markdown 写回答。讲解一个知识点时，如果它适合用交互或可视化来理解，先写完 Markdown 正文，再自动加一块语言为 html 的围栏，把这个知识点展示出来。围栏里可以是片段或完整页面，使用滑块、按钮、内联样式、内联脚本和内联 SVG，不要引用外部地址，一条回答最多两块。如果用户只是要求编写 HTML，用普通代码围栏给出源码，围栏语言不要写成 html。只有用户明确要求在对话里直接展示或运行这段 HTML 时，才使用语言为 html 的围栏。"
         }
-        return "Write the answer in Markdown. Add an html fence only when a small interaction would help the student understand. The fence may contain a fragment or a complete page, using sliders, buttons, inline styles, inline scripts, and inline SVG. Do not reference external addresses, and use at most two such fences."
+        return "Write the answer in Markdown. When explaining a point that would be clearer as an interaction or a visualization, finish the Markdown first, then add one html fence that shows it. The fence may contain a fragment or a complete page, using sliders, buttons, inline styles, inline scripts, and inline SVG. Do not reference external addresses, and use at most two such fences. If the user only asks you to write HTML, give the source in an ordinary code fence and do not label that fence html. Use an html fence only when the user explicitly asks to display or run that HTML in the conversation."
     }
 
     /// The one editable system prompt. Reply language and enabled skills are added when a question is sent.

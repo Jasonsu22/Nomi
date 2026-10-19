@@ -43,7 +43,7 @@ enum RemoteLLMClient {
             body = [
                 "model": profile.modelID,
                 "system": system,
-                "max_tokens": 2048,
+                "max_tokens": 8192,
                 "messages": [["role": "user", "content": prompt]],
                 "stream": true,
             ]
@@ -54,19 +54,17 @@ enum RemoteLLMClient {
                 "stream": true,
             ]
             if host(of: profile) == "api.openai.com" {
-                chat["max_completion_tokens"] = 2048
                 chat["store"] = false
             } else if isMiniMax(profile) {
-                chat["max_completion_tokens"] = 2048
-            } else {
-                chat["max_tokens"] = 2048
+                // Omitting this uses a short server default and cuts the reply off. The value is that API's own maximum, so the model stops when it is finished.
+                chat["max_completion_tokens"] = miniMaxOutputCeiling(profile.modelID)
             }
             body = chat
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 60
-        configuration.timeoutIntervalForResource = 300
+        configuration.timeoutIntervalForResource = 3600
         let session = URLSession(configuration: configuration, delegate: SameOriginRedirects(), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
         let (bytes, response) = try await session.bytes(for: request)
@@ -186,6 +184,11 @@ enum RemoteLLMClient {
 
     private static func isMiniMax(_ profile: LLMAPIProfile) -> Bool {
         host(of: profile).contains("minimax")
+    }
+
+    /// MiniMax stops a reply at this budget. M3 can use 512K; other models on that API can use 200K.
+    private static func miniMaxOutputCeiling(_ modelID: String) -> Int {
+        modelID.lowercased().contains("m3") ? 524_288 : 204_800
     }
 
     private static func perform(_ request: URLRequest, key: String) async throws -> [String: Any] {

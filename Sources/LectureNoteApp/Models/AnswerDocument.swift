@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -25,12 +26,13 @@ enum AnswerDocument {
                 result.append(contentsOf: markdown(region.body, streaming: streaming))
             case .fence:
                 let body = region.body
-                if streaming, htmlTitle(region.info) != nil {
+                if streaming, !region.closed, isDisplayFence(region.info, body: body) {
                     result.append(.preparing)
                     continue
                 }
                 guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                if region.closed,
+                let ready = region.closed || finishedDocument(body)
+                if ready,
                    body.utf8.count <= widgetByteLimit,
                    widgets < widgetLimit,
                    let title = widgetTitle(info: region.info, body: body),
@@ -82,13 +84,14 @@ enum AnswerDocument {
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; frame-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
         <style>
         :root { color-scheme: light dark; --nomi-text: \(text); --nomi-surface: \(surface); --nomi-accent: \(accent); }
-        html, body { margin: 0; background: var(--nomi-surface); color: var(--nomi-text); font: 13px -apple-system, BlinkMacSystemFont, sans-serif; }
+        html, body { margin: 0; background: var(--nomi-surface); color: var(--nomi-text); font: 15px -apple-system, BlinkMacSystemFont, sans-serif; }
         body { padding: 8px; box-sizing: border-box; }
         button, input { font: inherit; color: inherit; }
         </style>
         </head>
         <body>
         \(fragment)
+        <style>html, body { min-height: 0 !important; height: auto !important; }</style>
         </body>
         </html>
         """
@@ -272,6 +275,21 @@ enum AnswerDocument {
             if !tag.contains("charset") && !tag.contains("viewport") && !contentType { return true }
         }
         return false
+    }
+
+    /// A fence the app will render, rather than show as source.
+    private static func isDisplayFence(_ info: String, body: String) -> Bool {
+        if htmlTitle(info) != nil { return true }
+        let trimmed = info.trimmingCharacters(in: .whitespaces)
+        guard trimmed.isEmpty else { return false }
+        let folded = body.lowercased()
+        return folded.contains("<!doctype") || containsTag(folded, "html")
+    }
+
+    /// An unfinished fence can still be shown once the page itself has been closed.
+    private static func finishedDocument(_ html: String) -> Bool {
+        let folded = html.lowercased()
+        return containsTag(folded, "/body") || containsTag(folded, "/html")
     }
 
     private static func htmlTitle(_ info: String) -> String? {
@@ -517,9 +535,10 @@ enum MathFormula {
     }
 
     static func block(_ latex: String) -> AttributedString {
-        var text = AttributedString("\u{FFFC}")
+        let raw = NSMutableAttributedString(string: "\u{FFFC}")
+        raw.addAttribute(.font, value: NSFont.systemFont(ofSize: 18), range: NSRange(location: 0, length: raw.length))
+        var text = AttributedString(raw)
         text.link = url(latex: latex, display: true)
-        text.font = .system(size: 18)
         return text
     }
 }
@@ -589,16 +608,12 @@ enum AnswerInline {
             if source[index] == "*", !source[index...].hasPrefix("**") {
                 let content = source.index(after: index)
                 if let end = closing(source, from: content, marker: "*") {
-                    var inner = render(String(source[content..<end]), size: size, weight: weight, citations: citations, streaming: streaming)
-                    inner.font = Font.system(size: size, weight: weight).italic()
-                    result.append(inner)
+                    result.append(withItalic(render(String(source[content..<end]), size: size, weight: weight, citations: citations, streaming: streaming), size: size, weight: weight))
                     index = source.index(after: end)
                     continue
                 }
                 if streaming, content < source.endIndex, source[content] != " ", source[content] != "\n" {
-                    var inner = render(String(source[content...]), size: size, weight: weight, citations: citations, streaming: true)
-                    inner.font = Font.system(size: size, weight: weight).italic()
-                    result.append(inner)
+                    result.append(withItalic(render(String(source[content...]), size: size, weight: weight, citations: citations, streaming: true), size: size, weight: weight))
                     break
                 }
             }
@@ -718,19 +733,35 @@ enum AnswerInline {
         return (text, source.index(after: urlEnd))
     }
 
+    private static func withItalic(_ source: AttributedString, size: CGFloat, weight: Font.Weight) -> AttributedString {
+        let text = NSMutableAttributedString(attributedString: NSAttributedString(source))
+        guard text.length > 0 else { return source }
+        text.addAttribute(.font, value: appFont(size: size, weight: weight, italic: true, code: false), range: NSRange(location: 0, length: text.length))
+        return AttributedString(text)
+    }
+
+    /// SwiftUI fonts do not survive into the text view, which would otherwise draw the answer at 12pt.
     private static func styled(_ text: String, size: CGFloat, weight: Font.Weight, italic: Bool = false, code: Bool = false) -> AttributedString {
-        var part = AttributedString(text)
-        var attributes = AttributeContainer()
-        if code {
-            attributes.font = .system(size: size, design: .monospaced)
-            attributes.foregroundColor = AppColor.textSecondary
-        } else {
-            var font = Font.system(size: size, weight: weight)
-            if italic { font = font.italic() }
-            attributes.font = font
-            attributes.foregroundColor = AppColor.textPrimary
-        }
-        part.mergeAttributes(attributes)
-        return part
+        let raw = NSMutableAttributedString(string: text)
+        let range = NSRange(location: 0, length: raw.length)
+        guard range.length > 0 else { return AttributedString(text) }
+        raw.addAttribute(.font, value: appFont(size: size, weight: weight, italic: italic, code: code), range: range)
+        raw.addAttribute(.foregroundColor, value: code ? AppColor.nsTextSecondary : AppColor.nsTextPrimary, range: range)
+        return AttributedString(raw)
+    }
+
+    private static func appFont(size: CGFloat, weight: Font.Weight, italic: Bool, code: Bool) -> NSFont {
+        if code { return NSFont.monospacedSystemFont(ofSize: size, weight: .regular) }
+        let base = NSFont.systemFont(ofSize: size, weight: nsWeight(weight))
+        guard italic else { return base }
+        return NSFontManager.shared.convert(base, toHaveTrait: .italicFontMask)
+    }
+
+    private static func nsWeight(_ weight: Font.Weight) -> NSFont.Weight {
+        if weight == .semibold { return .semibold }
+        if weight == .bold { return .bold }
+        if weight == .medium { return .medium }
+        if weight == .light { return .light }
+        return .regular
     }
 }

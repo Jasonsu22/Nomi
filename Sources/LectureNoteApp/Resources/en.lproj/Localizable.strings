@@ -232,6 +232,7 @@
 "API 密钥" = "API Key";
 "API 密钥（已保存时留空保留）" = "API Key (leave blank to keep the saved key)";
 "模型" = "Model";
+"模型已从 %@ 换成 %@" = "Model changed from %@ to %@.";
 "模型列表" = "Model List";
 "添加模型" = "Add Model";
 "API 请求失败（HTTP %d）：%@" = "API request failed (HTTP %d): %@";

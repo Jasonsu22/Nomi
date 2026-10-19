@@ -141,11 +141,19 @@ struct AskView: View {
                     } else if let session {
                         ScrollView {
                             VStack(alignment: .leading, spacing: Space.s5) {
-                                ForEach(session.turns) { turn in
+                                ForEach(Array(session.turns.enumerated()), id: \.element.id) { index, turn in
+                                    if index > 0, modelDidChange(session.turns[index - 1].modelName, turn.modelName) {
+                                        ModelChangeNote(from: session.turns[index - 1].modelName, to: turn.modelName)
+                                    }
                                     turnView(turn)
                                 }
                                 if model.chatGeneratingID == session.id, let question = model.pendingQuestion {
+                                    if let previous = session.turns.last?.modelName, modelDidChange(previous, model.assistantModelName) {
+                                        ModelChangeNote(from: previous, to: model.assistantModelName)
+                                    }
                                     pendingView(question)
+                                } else if let previous = session.turns.last?.modelName, modelDidChange(previous, model.assistantModelName) {
+                                    ModelChangeNote(from: previous, to: model.assistantModelName)
                                 }
                             }
                             .padding(Space.s5)
@@ -467,15 +475,10 @@ struct AskView: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             } else if !turn.answer.isEmpty {
-                VStack(alignment: .leading, spacing: Space.s2) {
-                    AnswerBody(source: turn.answer, citations: turn.citations) { citation in
-                        model.openCitation(citation)
-                    }
-                        .frame(maxWidth: 680, alignment: .leading)
-                    Text(turn.modelName)
-                        .font(AppFont.caption)
-                        .foregroundStyle(AppColor.textSecondary)
+                AnswerBody(source: turn.answer, citations: turn.citations) { citation in
+                    model.openCitation(citation)
                 }
+                .frame(maxWidth: 680, alignment: .leading)
             }
         }
     }
@@ -555,6 +558,10 @@ struct AskView: View {
         if historyPresented { setHistory(false) }
     }
 
+    private func modelDidChange(_ previous: String, _ next: String) -> Bool {
+        !previous.isEmpty && !next.isEmpty && previous != next
+    }
+
     private func send() {
         guard model.chatGeneratingID == nil else { return }
         let text = draft
@@ -583,6 +590,34 @@ struct AskView: View {
             deleteID = session.id
             deletingChat = true
         }
+    }
+}
+
+private struct ModelChangeNote: View {
+    var from: String
+    var to: String
+
+    var body: some View {
+        HStack(spacing: Space.s3) {
+            line
+            HStack(spacing: 6) {
+                Image(systemName: "cube")
+                Text(trf("模型已从 %@ 换成 %@", from, to))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+            .font(AppFont.caption)
+            .foregroundStyle(AppColor.textSecondary)
+            line
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var line: some View {
+        Rectangle()
+            .fill(AppColor.separator)
+            .frame(height: 1)
+            .frame(maxWidth: .infinity)
     }
 }
 

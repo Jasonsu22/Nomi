@@ -11,7 +11,14 @@ enum AppColor {
     static let onAccent = Color(light: 0xFFFFFF, dark: 0x0F1216)
     static let accentSoft = Color(light: 0xE3F3FF, dark: 0x1A2C3A)
     static let textPrimary = Color(light: 0x111418, dark: 0xE6E8EB)
+    static let nsTextPrimary = NSColor.nomi(light: 0x111418, dark: 0xE6E8EB)
     static let textSecondary = Color(
+        light: 0x5E6670,
+        dark: 0x9AA3AD,
+        lightIncreased: 0x3E4650,
+        darkIncreased: 0xC5CED6
+    )
+    static let nsTextSecondary = NSColor.nomi(
         light: 0x5E6670,
         dark: 0x9AA3AD,
         lightIncreased: 0x3E4650,
@@ -23,7 +30,13 @@ enum AppColor {
 
 extension Color {
     init(light: UInt32, dark: UInt32, lightIncreased: UInt32? = nil, darkIncreased: UInt32? = nil) {
-        let dynamic = NSColor(name: nil) { appearance in
+        self.init(nsColor: .nomi(light: light, dark: dark, lightIncreased: lightIncreased, darkIncreased: darkIncreased))
+    }
+}
+
+extension NSColor {
+    static func nomi(light: UInt32, dark: UInt32, lightIncreased: UInt32? = nil, darkIncreased: UInt32? = nil) -> NSColor {
+        NSColor(name: nil) { appearance in
             let match = appearance.bestMatch(from: [
                 .accessibilityHighContrastDarkAqua,
                 .accessibilityHighContrastAqua,
@@ -41,11 +54,8 @@ extension Color {
                 return NSColor(hex: light)
             }
         }
-        self.init(nsColor: dynamic)
     }
-}
 
-extension NSColor {
     convenience init(hex: UInt32, alpha: CGFloat = 1) {
         self.init(
             srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,

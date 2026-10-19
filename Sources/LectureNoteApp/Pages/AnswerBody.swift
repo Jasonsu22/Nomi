@@ -53,10 +53,11 @@ struct AnswerBody: View {
         style.paragraphSpacing = 4
         let text = NSMutableAttributedString()
         for (index, item) in items.enumerated() {
-            var marker = AttributedString(ordered ? "\(index + 1).\t" : "•\t")
-            marker.font = Font.system(size: 15)
-            marker.foregroundColor = AppColor.textSecondary
-            text.append(NSAttributedString(marker))
+            let marker = NSAttributedString(
+                string: ordered ? "\(index + 1).\t" : "•\t",
+                attributes: [.font: font, .foregroundColor: AppColor.nsTextSecondary]
+            )
+            text.append(marker)
             text.append(NSAttributedString(AnswerInline.render(item, citations: linkedCitations, streaming: streaming)))
             if index + 1 < items.count {
                 text.append(NSAttributedString(string: "\n"))
@@ -72,10 +73,13 @@ struct AnswerBody: View {
     }
 
     private func codeText(_ code: String) -> AttributedString {
-        var text = AttributedString(code)
-        text.font = .system(size: 13, design: .monospaced)
-        text.foregroundColor = AppColor.textPrimary
-        return text
+        let raw = NSMutableAttributedString(string: code)
+        let range = NSRange(location: 0, length: raw.length)
+        if range.length > 0 {
+            raw.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 15, weight: .regular), range: range)
+            raw.addAttribute(.foregroundColor, value: AppColor.nsTextPrimary, range: range)
+        }
+        return AttributedString(raw)
     }
 
     @ViewBuilder
@@ -94,9 +98,12 @@ struct AnswerBody: View {
         case .math(let latex):
             answerText(MathFormula.block(latex))
         case .preparing:
-            Text(tr("正在准备图示…"))
-                .font(AppFont.secondary)
-                .foregroundStyle(AppColor.textSecondary)
+            HStack(spacing: Space.s2) {
+                ProgressView().controlSize(.small)
+                Text(tr("正在准备图示…"))
+                    .font(AppFont.secondary)
+                    .foregroundStyle(AppColor.textSecondary)
+            }
         case .table(let header, let rows):
             Grid(alignment: .leading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
                 GridRow {
@@ -139,7 +146,7 @@ private struct HtmlAnswerCard: View {
             HtmlAnswerWebView(html: html) { reported in
                 height = reported
             }
-            .frame(height: min(max(height, 44), 480))
+            .frame(height: min(max(height, 44), 720))
             .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
             .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         }
@@ -347,6 +354,7 @@ private struct CiteText: NSViewRepresentable {
         view.textContainerInset = .zero
         view.textContainer?.lineFragmentPadding = 0
         view.textContainer?.widthTracksTextView = false
+        view.font = .systemFont(ofSize: 15)
         view.isVerticallyResizable = true
         view.isHorizontallyResizable = false
         view.focusRingType = .none
