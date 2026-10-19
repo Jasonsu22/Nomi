@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct PromptSettingsSection: View {
@@ -222,26 +223,13 @@ private struct SkillEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
-            Text(tr("技能"))
+            Text(isNew ? tr("添加技能") : tr("编辑技能"))
                 .font(AppFont.sectionTitle)
             TextField(tr("技能名称"), text: $draft.name)
                 .textFieldStyle(.roundedBorder)
-            TextEditor(text: $draft.body)
-                .font(AppFont.secondary)
-                .scrollContentBackground(.hidden)
-                .padding(Space.s3)
+            SkillBodyField(text: $draft.body, placeholder: tr("写下这段技能要模型怎么做。"))
                 .frame(height: 180)
                 .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
-                .overlay(alignment: .topLeading) {
-                    if draft.body.isEmpty {
-                        Text(tr("写下这段技能要模型怎么做。"))
-                            .font(AppFont.secondary)
-                            .foregroundStyle(AppColor.textSecondary)
-                            .padding(.horizontal, Space.s4)
-                            .padding(.vertical, Space.s3 + 8)
-                            .allowsHitTesting(false)
-                    }
-                }
             if let error {
                 Text(error)
                     .font(AppFont.caption)
@@ -286,5 +274,110 @@ private struct SkillEditor: View {
         draft.body = body
         prompts.upsert(draft)
         dismiss()
+    }
+}
+
+/// The placeholder is drawn in the same text container as the typed line, and it
+/// goes away as soon as marked text exists, before a Chinese candidate is committed.
+private struct SkillBodyField: NSViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = SkillBodyTextView()
+        textView.delegate = context.coordinator
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.focusRingType = .none
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.font = SkillBodyTextView.editorFont
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .labelColor
+        textView.typingAttributes = SkillBodyTextView.typingAttributes
+        textView.textContainerInset = SkillBodyTextView.editorInset
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.string = text
+        textView.placeholder = placeholder
+
+        let scroll = NSScrollView()
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.borderType = .noBorder
+        scroll.focusRingType = .none
+        scroll.documentView = textView
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let textView = scroll.documentView as? SkillBodyTextView else { return }
+        textView.placeholder = placeholder
+        if textView.string != text, !textView.hasMarkedText() {
+            textView.string = text
+        }
+        textView.needsDisplay = true
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: SkillBodyField
+        init(_ parent: SkillBodyField) { self.parent = parent }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? SkillBodyTextView else { return }
+            parent.text = textView.string
+            textView.needsDisplay = true
+        }
+    }
+}
+
+private final class SkillBodyTextView: NSTextView {
+    static let editorFont = NSFont.systemFont(ofSize: 13)
+    static let editorInset = NSSize(width: 12, height: 10)
+    static var typingAttributes: [NSAttributedString.Key: Any] {
+        [.font: editorFont, .foregroundColor: NSColor.labelColor]
+    }
+
+    var placeholder = ""
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        needsDisplay = true
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard !hasMarkedText(), string.isEmpty, !placeholder.isEmpty,
+              let layoutManager, let container = textContainer else { return }
+        layoutManager.ensureLayout(for: container)
+        var line = layoutManager.extraLineFragmentUsedRect
+        if line.isEmpty { line = layoutManager.extraLineFragmentRect }
+        line.origin.x += textContainerInset.width
+        line.origin.y += textContainerInset.height
+        line.size.width = max(line.width, bounds.width - line.minX - textContainerInset.width)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font ?? Self.editorFont,
+            .foregroundColor: NSColor.placeholderTextColor,
+        ]
+        (placeholder as NSString).draw(
+            with: line,
+            options: [.usesLineFragmentOrigin],
+            attributes: attributes
+        )
     }
 }

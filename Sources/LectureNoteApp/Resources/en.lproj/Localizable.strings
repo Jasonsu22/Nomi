@@ -331,7 +331,8 @@
 "录制中" = "Recording";
 "先选择会议或资料。" = "Select meetings or sources first.";
 "重命名对话" = "Rename Chat";
-"技能" = "Skill";
+"技能" = "Skills";
+"编辑技能" = "Edit Skill";
 "添加技能" = "Add Skill";
 "默认系统提示词" = "Default System Prompt";
 "默认回复语言" = "Default Reply Language";
