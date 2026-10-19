@@ -430,15 +430,10 @@ struct AskView: View {
                     .textSelection(.enabled)
             } else if !turn.answer.isEmpty {
                 VStack(alignment: .leading, spacing: Space.s2) {
-                    AnswerBody(source: turn.answer)
-                        .frame(maxWidth: 680, alignment: .leading)
-                    if !turn.citations.isEmpty {
-                        ChipFlow(spacing: Space.s2) {
-                            ForEach(turn.citations) { citation in
-                                citationChip(citation)
-                            }
-                        }
+                    AnswerBody(source: turn.answer, citations: turn.citations) { citation in
+                        model.openCitation(citation)
                     }
+                    .frame(maxWidth: 680, alignment: .leading)
                     Text(turn.modelName)
                         .font(AppFont.caption)
                         .foregroundStyle(AppColor.textSecondary)
@@ -470,27 +465,6 @@ struct AskView: View {
                     .frame(maxWidth: 680, alignment: .leading)
             }
         }
-    }
-
-    private func citationChip(_ citation: ChatCitation) -> some View {
-        let openable = model.citationIsOpenable(citation)
-        let label = citation.detail.isEmpty || citation.detail == citation.title
-            ? citation.title
-            : "\(citation.title) · \(citation.detail)"
-        let symbol = citation.url != nil ? "globe" : (citation.sourceID != nil ? "doc" : "clock")
-        return Button { model.openCitation(citation) } label: {
-            HStack(spacing: 4) {
-                Image(systemName: symbol)
-                Text(label).lineLimit(1)
-            }
-            .font(AppFont.caption)
-            .foregroundStyle(openable ? AppColor.accent : AppColor.textSecondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(openable ? AppColor.accentSoft : AppColor.surfaceInset, in: Capsule())
-        }
-        .buttonStyle(.plain.clicking())
-        .disabled(!openable)
     }
 
     private var historyButton: some View {
@@ -596,41 +570,3 @@ private struct AskIconButton: View {
     }
 }
 
-private struct ChipFlow: Layout {
-    var spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 640
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-        return CGSize(width: width, height: y + rowHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var rowHeight: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX {
-                x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-    }
-}

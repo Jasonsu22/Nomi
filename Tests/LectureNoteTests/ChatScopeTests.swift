@@ -149,7 +149,9 @@ struct ChatScopeTests {
         #expect(citations.count == 2)
         #expect(citations[0].meetingID == block.meetingID)
         #expect(citations[0].detail == "12:30")
+        #expect(citations[0].passage == 1)
         #expect(citations[1].url == "https://example.com/a")
+        #expect(citations[1].passage == nil)
     }
 
     @Test func plainTextFileBecomesABlock() throws {

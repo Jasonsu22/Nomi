@@ -146,8 +146,10 @@ enum ChatContext {
     static func citations(in answer: String, blocks: [ContextBlock]) -> [ChatCitation] {
         var result: [ChatCitation] = []
         var seenNumbers = Set<Int>()
-        let numbers = /\[(\d+)\]/
+        let numbers = /[\[【](\d+)[\]】]/
         for match in answer.matches(of: numbers) {
+            let end = match.range.upperBound
+            if end < answer.endIndex, answer[end] == "(" { continue }
             guard let number = Int(match.1), seenNumbers.insert(number).inserted,
                   blocks.indices.contains(number - 1) else { continue }
             let block = blocks[number - 1]
@@ -155,7 +157,8 @@ enum ChatContext {
                 title: block.title,
                 detail: block.detail,
                 meetingID: block.meetingID,
-                sourceID: block.sourceID
+                sourceID: block.sourceID,
+                passage: number
             ))
         }
         var seenLinks = Set<String>()
@@ -167,6 +170,28 @@ enum ChatContext {
             result.append(ChatCitation(title: host, detail: host, url: url))
         }
         return result
+    }
+
+    /// Maps each [n] in the answer to the citation that should replace it.
+    static func linkedCitations(in answer: String, citations: [ChatCitation]) -> [Int: ChatCitation] {
+        let stored = citations.filter { $0.passage != nil }
+        if !stored.isEmpty {
+            var map: [Int: ChatCitation] = [:]
+            for citation in stored {
+                if let passage = citation.passage { map[passage] = citation }
+            }
+            return map
+        }
+        var numbers: [Int] = []
+        var seen = Set<Int>()
+        let pattern = /[\[【](\d+)[\]】]/
+        for match in answer.matches(of: pattern) {
+            let end = match.range.upperBound
+            if end < answer.endIndex, answer[end] == "(" { continue }
+            guard let number = Int(match.1), seen.insert(number).inserted else { continue }
+            numbers.append(number)
+        }
+        return Dictionary(uniqueKeysWithValues: zip(numbers, citations).map { ($0.0, $0.1) })
     }
 
     static func tokens(in text: String) -> [String] {
