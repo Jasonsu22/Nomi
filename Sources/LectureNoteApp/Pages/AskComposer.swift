@@ -15,7 +15,6 @@ struct AskComposerField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let textView = SubmitTextView()
-        textView.bridge = context.coordinator
         textView.delegate = context.coordinator
         textView.isRichText = false
         textView.importsGraphics = false
@@ -52,7 +51,6 @@ struct AskComposerField: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = scroll.documentView as? SubmitTextView else { return }
-        textView.bridge = context.coordinator
         textView.placeholder = placeholder
         if textView.string != text {
             textView.string = text
@@ -72,21 +70,20 @@ struct AskComposerField: NSViewRepresentable {
             parent.text = textView.string
             textView.needsDisplay = true
         }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            let newline = commandSelector == #selector(NSResponder.insertNewline(_:))
+                || commandSelector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:))
+            guard newline, !textView.hasMarkedText() else { return false }
+            if NSApp.currentEvent?.modifierFlags.contains(.shift) == true { return false }
+            parent.onSubmit()
+            return true
+        }
     }
 }
 
 final class SubmitTextView: NSTextView {
-    var bridge: AskComposerField.Coordinator?
     var placeholder = ""
-
-    override func keyDown(with event: NSEvent) {
-        let isReturn = event.keyCode == 36 || event.keyCode == 76
-        if isReturn && !event.modifierFlags.contains(.shift) {
-            bridge?.parent.onSubmit()
-            return
-        }
-        super.keyDown(with: event)
-    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
