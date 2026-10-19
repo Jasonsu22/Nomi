@@ -7,6 +7,21 @@ struct MeetingCategory: Identifiable, Equatable, Codable {
     var colorIndex: Int
     var symbol: String
     var sortOrder: Int
+
+    /// Moves `id` into the slot `targetID` currently occupies. Categories after the
+    /// gap shift along, and `sortOrder` is rewritten as 0, 1, 2… in the new order.
+    static func placing(_ categories: [MeetingCategory], moving id: UUID, at targetID: UUID) -> [MeetingCategory]? {
+        var ordered = categories.sorted { $0.sortOrder < $1.sortOrder }
+        guard let from = ordered.firstIndex(where: { $0.id == id }),
+              let to = ordered.firstIndex(where: { $0.id == targetID }),
+              from != to else { return nil }
+        let moving = ordered.remove(at: from)
+        ordered.insert(moving, at: to)
+        for index in ordered.indices {
+            ordered[index].sortOrder = index
+        }
+        return ordered
+    }
 }
 
 enum CategoryFilter: Equatable {
@@ -110,6 +125,66 @@ enum CategoryPalette {
 
     private static func clamped(_ index: Int) -> Int {
         min(max(0, index), swatches.count - 1)
+    }
+}
+
+struct CategorySectionTitle: View {
+    var title: String
+    var count: Int
+    var colorIndex: Int?
+
+    var body: some View {
+        HStack(spacing: Space.s2) {
+            if let colorIndex {
+                Circle().fill(CategoryPalette.ink(colorIndex)).frame(width: 8, height: 8)
+            }
+            Text(title)
+                .font(AppFont.sectionTitle)
+                .foregroundStyle(AppColor.textPrimary)
+            Text("\(count)")
+                .font(AppFont.caption)
+                .foregroundStyle(AppColor.textSecondary)
+        }
+    }
+}
+
+extension View {
+    /// Drag this category chip onto another to change their order.
+    func categoryDrag(_ id: UUID, reduceMotion: Bool, move: @escaping (UUID, UUID) -> Void) -> some View {
+        modifier(CategoryDragModifier(id: id, reduceMotion: reduceMotion, move: move))
+    }
+}
+
+private struct CategoryDragModifier: ViewModifier {
+    var id: UUID
+    var reduceMotion: Bool
+    var move: (UUID, UUID) -> Void
+    @State private var targeted = false
+
+    func body(content: Content) -> some View {
+        content
+            .draggable(CategoryDragToken.prefix + id.uuidString)
+            .dropDestination(for: String.self) { items, _ in
+                guard let dragged = items.compactMap(CategoryDragToken.id).first, dragged != id else { return false }
+                withAnimation(Motion.layout(reduceMotion)) {
+                    move(dragged, id)
+                }
+                return true
+            } isTargeted: { targeted = $0 }
+            .overlay {
+                if targeted {
+                    Capsule().strokeBorder(AppColor.accent, lineWidth: 1.5)
+                }
+            }
+    }
+}
+
+private enum CategoryDragToken {
+    static let prefix = "nomi-category:"
+
+    static func id(in payload: String) -> UUID? {
+        guard payload.hasPrefix(prefix) else { return nil }
+        return UUID(uuidString: String(payload.dropFirst(prefix.count)))
     }
 }
 

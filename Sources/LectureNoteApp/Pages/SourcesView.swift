@@ -16,6 +16,8 @@ struct SourcesView: View {
     @State private var creating = false
     @State private var draft = CategoryDraft()
     @State private var dropTargeted = false
+    @State private var creatingForSource: UUID?
+    @Environment(\.appReduceMotion) private var reduceMotion
     @Namespace private var chipNamespace
 
     private var visible: [KnowledgeSource] {
@@ -46,7 +48,7 @@ struct SourcesView: View {
                     if visible.isEmpty {
                         empty
                     } else {
-                        table
+                        groups
                     }
                 }
                 .pageColumn()
@@ -90,6 +92,17 @@ struct SourcesView: View {
         } message: {
             Text(tr("资料库里的副本会被删掉，原来的文件还在。"))
         }
+        .sheet(isPresented: creatingForSourcePresented) {
+            CategoryEditor(title: tr("新建分类"), draft: $draft) {
+                if let id = model.addCategory(name: draft.name, colorIndex: draft.colorIndex, symbol: draft.symbol, select: false),
+                   let sourceID = creatingForSource {
+                    withAnimation(Motion.layout(reduceMotion)) {
+                        model.assign(source: sourceID, category: id)
+                    }
+                }
+                creatingForSource = nil
+            }
+        }
         .alert(tr("资料"), isPresented: sourceErrorPresented) {
             Button(tr("好"), role: .cancel) { model.sourceError = nil }
         } message: {
@@ -121,6 +134,10 @@ struct SourcesView: View {
                         dot: CategoryPalette.ink(category.colorIndex),
                         filter: .category(category.id)
                     )
+                    .categoryDrag(category.id, reduceMotion: reduceMotion) { dragged, target in
+                        model.placeCategory(dragged, at: target)
+                    }
+                    .help(tr("拖动调整顺序"))
                 }
                 chip(
                     title: trf("未分类 %d", model.sources.filter { $0.categoryID == nil }.count),
@@ -160,7 +177,9 @@ struct SourcesView: View {
     private func chip(title: String, dot: Color?, filter: CategoryFilter) -> some View {
         let selected = activeFilter == filter
         return Button {
-            self.filter = filter
+            withAnimation(Motion.layout(reduceMotion)) {
+                self.filter = filter
+            }
         } label: {
             HStack(spacing: 6) {
                 if let dot {
@@ -226,7 +245,9 @@ struct SourcesView: View {
     private func sortButton(_ option: SourceSort, _ title: String) -> some View {
         let selected = sort == option
         return Button {
-            sort = option
+            withAnimation(Motion.layout(reduceMotion)) {
+                sort = option
+            }
         } label: {
             Text(title)
                 .font(AppFont.secondary.weight(.medium))
@@ -252,15 +273,43 @@ struct SourcesView: View {
         .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
     }
 
-    private var table: some View {
-        VStack(spacing: 0) {
+    private var groups: some View {
+        let sections = sourceSections(visible)
+        return VStack(alignment: .leading, spacing: Space.s5) {
             tableHeader
-            ForEach(visible) { source in
-                Rectangle().fill(AppColor.separator).frame(height: 1)
-                sourceRow(source)
+            ForEach(sections) { section in
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    CategorySectionTitle(title: section.title, count: section.sources.count, colorIndex: section.colorIndex)
+                    VStack(spacing: 0) {
+                        ForEach(section.sources) { source in
+                            if source.id != section.sources.first?.id {
+                                Rectangle().fill(AppColor.separator).frame(height: 1)
+                            }
+                            sourceRow(source)
+                                .transition(.opacity)
+                        }
+                    }
+                    .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                    .animation(Motion.layout(reduceMotion), value: section.sources.map(\.id))
+                }
+                .transition(.opacity)
             }
         }
-        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .animation(Motion.layout(reduceMotion), value: sections.map(\.id))
+    }
+
+    private func sourceSections(_ sources: [KnowledgeSource]) -> [SourceSection] {
+        var sections: [SourceSection] = []
+        for category in model.categories.sorted(by: { $0.sortOrder < $1.sortOrder }) {
+            let items = sources.filter { $0.categoryID == category.id }
+            guard !items.isEmpty else { continue }
+            sections.append(SourceSection(id: category.id.uuidString, title: category.name, colorIndex: category.colorIndex, sources: items))
+        }
+        let loose = sources.filter { $0.categoryID == nil }
+        if !loose.isEmpty {
+            sections.append(SourceSection(id: "none", title: tr("未分类"), colorIndex: CategoryPalette.uncategorizedIndex, sources: loose))
+        }
+        return sections
     }
 
     private var tableHeader: some View {
@@ -269,15 +318,12 @@ struct SourcesView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(tr("时间"))
                 .frame(width: 110, alignment: .leading)
-            Text(tr("分类"))
-                .frame(width: 120, alignment: .leading)
             Text(tr("操作"))
-                .frame(width: 64, alignment: .trailing)
+                .frame(width: 128, alignment: .trailing)
         }
         .font(AppFont.caption)
         .foregroundStyle(AppColor.textSecondary)
         .padding(.horizontal, Space.s4)
-        .padding(.vertical, Space.s3)
     }
 
     private func sourceRow(_ source: KnowledgeSource) -> some View {
@@ -298,9 +344,20 @@ struct SourcesView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(formatRelativeTime(source.importedAt))
                 .frame(width: 110, alignment: .leading)
-            categoryMenu(source)
-                .frame(width: 120, alignment: .leading)
             HStack(spacing: Space.s2) {
+                Menu {
+                    categoryButtons(for: source)
+                } label: {
+                    Image(systemName: "tag")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .frame(width: 20, height: 20)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(tr("移到分类"))
                 Button {
                     NSWorkspace.shared.activateFileViewerSelecting([SourceStore.fileURL(for: source)])
                 } label: {
@@ -318,7 +375,7 @@ struct SourcesView: View {
                 .buttonStyle(.plain)
                 .help(tr("删除"))
             }
-            .frame(width: 64, alignment: .trailing)
+            .frame(width: 128, alignment: .trailing)
         }
         .font(AppFont.caption)
         .foregroundStyle(AppColor.textSecondary)
@@ -346,29 +403,19 @@ struct SourcesView: View {
         }
     }
 
-    private func categoryMenu(_ source: KnowledgeSource) -> some View {
-        Menu {
-            categoryButtons(for: source)
-        } label: {
-            HStack(spacing: 4) {
-                Text(model.category(for: source.categoryID)?.name ?? tr("未分类"))
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-            }
-            .foregroundStyle(AppColor.textPrimary)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-    }
-
     @ViewBuilder
     private func categoryButtons(for source: KnowledgeSource) -> some View {
-        Button(tr("未分类")) { model.assign(source: source.id, category: nil) }
+        Button(tr("未分类")) {
+            withAnimation(Motion.layout(reduceMotion)) {
+                model.assign(source: source.id, category: nil)
+            }
+        }
         ForEach(model.categories.sorted { $0.sortOrder < $1.sortOrder }) { category in
-            Button(category.name) { model.assign(source: source.id, category: category.id) }
+            Button(category.name) {
+                withAnimation(Motion.layout(reduceMotion)) {
+                    model.assign(source: source.id, category: category.id)
+                }
+            }
         }
         Divider()
         Button {
@@ -377,7 +424,7 @@ struct SourcesView: View {
                 colorIndex: model.categories.count % CategoryPalette.swatches.count,
                 symbol: CategorySymbols.all[0]
             )
-            creating = true
+            creatingForSource = source.id
         } label: {
             Label(tr("新建分类"), systemImage: "plus")
         }
@@ -459,9 +506,20 @@ struct SourcesView: View {
         Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
     }
 
+    private var creatingForSourcePresented: Binding<Bool> {
+        Binding(get: { creatingForSource != nil }, set: { if !$0 { creatingForSource = nil } })
+    }
+
     private var sourceErrorPresented: Binding<Bool> {
         Binding(get: { model.sourceError != nil }, set: { if !$0 { model.sourceError = nil } })
     }
+}
+
+private struct SourceSection: Identifiable {
+    var id: String
+    var title: String
+    var colorIndex: Int?
+    var sources: [KnowledgeSource]
 }
 
 private enum SourceSort {

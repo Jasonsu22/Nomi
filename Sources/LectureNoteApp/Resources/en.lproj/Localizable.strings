@@ -167,7 +167,8 @@
 "转写会一起删掉。" = "The transcript will also be deleted.";
 "输入源" = "Audio Input";
 "返回会议列表" = "Back to Meetings";
-"这个分类下的会议会变成未分类。" = "Meetings in this category will become uncategorized.";
+"这个分类下的会议和资料会变成未分类。" = "Meetings and sources in this category will become uncategorized.";
+"拖动调整顺序" = "Drag to reorder";
 "这场还没有转写。" = "This meeting has no transcript yet.";
 "进行中" = "Live";
 "连接转录服务失败" = "Could not connect to the transcription service";

@@ -102,7 +102,7 @@ struct MeetingListView: View {
             }
             Button(tr("取消"), role: .cancel) {}
         } message: {
-            Text(tr("这个分类下的会议会变成未分类。"))
+            Text(tr("这个分类下的会议和资料会变成未分类。"))
         }
         .sheet(isPresented: $creatingForMove) {
             CategoryEditor(title: tr("新建分类"), draft: $draft) {
@@ -217,6 +217,10 @@ struct MeetingListView: View {
                             editing = nil
                         }
                     }
+                    .categoryDrag(category.id, reduceMotion: reduceMotion) { dragged, target in
+                        model.placeCategory(dragged, at: target)
+                    }
+                    .help(tr("拖动调整顺序"))
                 }
                 chip(
                     title: trf("未分类 %d", model.count(in: .uncategorized)),
@@ -287,17 +291,7 @@ struct MeetingListView: View {
         VStack(alignment: .leading, spacing: Space.s5) {
             ForEach(sectionModels(meetings)) { section in
                 VStack(alignment: .leading, spacing: Space.s3) {
-                    HStack(spacing: Space.s2) {
-                        if let colorIndex = section.colorIndex {
-                            Circle().fill(CategoryPalette.ink(colorIndex)).frame(width: 8, height: 8)
-                        }
-                        Text(section.title)
-                            .font(AppFont.sectionTitle)
-                            .foregroundStyle(AppColor.textPrimary)
-                        Text("\(section.meetings.count)")
-                            .font(AppFont.caption)
-                            .foregroundStyle(AppColor.textSecondary)
-                    }
+                    CategorySectionTitle(title: section.title, count: section.meetings.count, colorIndex: section.colorIndex)
                     if section.showsNow {
                         NowDivider()
                     }

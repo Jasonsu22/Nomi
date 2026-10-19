@@ -445,6 +445,11 @@ final class AppModel {
         return category.id
     }
 
+    func placeCategory(_ id: UUID, at targetID: UUID) {
+        guard let updated = MeetingCategory.placing(categories, moving: id, at: targetID) else { return }
+        categories = updated
+    }
+
     func updateCategory(_ id: UUID, name: String, colorIndex: Int, symbol: String) {
         guard let index = categories.firstIndex(where: { $0.id == id }) else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
