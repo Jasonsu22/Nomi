@@ -541,11 +541,11 @@ enum AnswerInline {
         if opener == "[", next < source.endIndex, source[next] == "(" { return nil }
         guard let number = Int(source[digitsStart..<index]),
               let citation = citations[number],
-              !citation.inlineLabel.isEmpty else { return nil }
+              !citation.inlineLabel.isEmpty,
+              let url = citation.inlineURL else { return nil }
         var text = styled(citation.inlineLabel, size: max(size - 1, 12), weight: .medium)
         text.foregroundColor = AppColor.accent
-        text.underlineStyle = .single
-        if let url = citation.inlineURL { text.link = url }
+        text.link = url
         return (text, next)
     }
 

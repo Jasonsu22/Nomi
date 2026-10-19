@@ -211,6 +211,24 @@ struct ChatCitation: Codable, Equatable, Identifiable, Sendable {
         }
         return nil
     }
+
+    var symbolName: String {
+        Self.symbolName(title: title, detail: detail, url: url, meetingID: meetingID, sourceID: sourceID)
+    }
+
+    static func symbolName(title: String, detail: String, url: String?, meetingID: UUID? = nil, sourceID: UUID? = nil) -> String {
+        let folded = [title, detail, url ?? ""].map { $0.lowercased() }
+        if folded.contains(where: looksLikePDF) { return "doc.richtext" }
+        if url != nil { return "globe" }
+        if meetingID != nil { return "clock" }
+        if sourceID != nil { return "doc" }
+        return "globe"
+    }
+
+    private static func looksLikePDF(_ value: String) -> Bool {
+        let path = value.split(whereSeparator: { $0 == "?" || $0 == "#" }).first.map(String.init) ?? value
+        return path.hasSuffix(".pdf")
+    }
 }
 
 struct ChatTurn: Codable, Equatable, Identifiable, Sendable {

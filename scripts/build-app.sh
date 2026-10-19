@@ -81,4 +81,5 @@ cat > "$app/Contents/Info.plist" <<'EOF'
 EOF
 
 touch "$app"
+"$root/scripts/sign-app.sh" "$app"
 echo "$app"

@@ -25,4 +25,5 @@ cp "$binary" "$app/Contents/MacOS/Nomi"
 rm -rf "$app/Contents/Resources/"*.bundle
 cp -R "$bundle" "$app/Contents/Resources/"
 touch "$app"
+"$root/scripts/sign-app.sh" "$app"
 echo "$app"

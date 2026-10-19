@@ -9,10 +9,6 @@ struct AnswerBody: View {
     var onOpenCitation: (ChatCitation) -> Void = { _ in }
     @Environment(\.colorScheme) private var colorScheme
 
-    private var linked: [Int: ChatCitation] {
-        ChatContext.linkedCitations(in: source, citations: citations)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             if streaming {
@@ -33,7 +29,7 @@ struct AnswerBody: View {
             } else {
                 let pieces = AnswerDocument.pieces(in: source)
                 if pieces.isEmpty {
-                    answerText(AnswerInline.render(source, citations: linked))
+                    answerText(AnswerInline.render(source, citations: linkedCitations))
                 } else {
                     ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
                         pieceView(piece)
@@ -42,10 +38,10 @@ struct AnswerBody: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .environment(\.openURL, OpenURLAction { url in
-            open(url)
-            return .handled
-        })
+    }
+
+    private var linkedCitations: [Int: ChatCitation] {
+        ChatContext.linkedCitations(in: source, citations: citations)
     }
 
     private func open(_ url: URL) {
@@ -62,8 +58,33 @@ struct AnswerBody: View {
         }
     }
 
+    /// The marker and the sentence share one text view, so their baselines match.
+    private func listText(ordered: Bool, items: [String]) -> AttributedString {
+        let font = NSFont.systemFont(ofSize: 15)
+        let widest = ordered ? "\(max(items.count, 1))." : "•"
+        let indent = ceil((widest as NSString).size(withAttributes: [.font: font]).width) + 8
+        let style = NSMutableParagraphStyle()
+        style.tabStops = [NSTextTab(textAlignment: .left, location: indent)]
+        style.defaultTabInterval = indent
+        style.headIndent = indent
+        style.paragraphSpacing = 4
+        let text = NSMutableAttributedString()
+        for (index, item) in items.enumerated() {
+            var marker = AttributedString(ordered ? "\(index + 1).\t" : "•\t")
+            marker.font = Font.system(size: 15)
+            marker.foregroundColor = AppColor.textSecondary
+            text.append(NSAttributedString(marker))
+            text.append(NSAttributedString(AnswerInline.render(item, citations: linkedCitations)))
+            if index + 1 < items.count {
+                text.append(NSAttributedString(string: "\n"))
+            }
+        }
+        text.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: text.length))
+        return AttributedString(text)
+    }
+
     private func answerText(_ text: AttributedString) -> some View {
-        AnswerText(attributed: text, onOpen: open)
+        CiteText(attributed: text, citations: citations, colorScheme: colorScheme, onOpen: open)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -71,20 +92,11 @@ struct AnswerBody: View {
     private func pieceView(_ piece: AnswerDocument.Piece) -> some View {
         switch piece {
         case .heading(let level, let text):
-            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: linked))
+            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: linkedCitations))
         case .paragraph(let text):
-            answerText(AnswerInline.render(text, citations: linked))
+            answerText(AnswerInline.render(text, citations: linkedCitations))
         case .list(let ordered, let items):
-            VStack(alignment: .leading, spacing: Space.s1) {
-                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                        Text(ordered ? "\(index + 1)." : "•")
-                            .font(AppFont.body)
-                            .foregroundStyle(AppColor.textSecondary)
-                        answerText(AnswerInline.render(item, citations: linked))
-                    }
-                }
-            }
+            answerText(listText(ordered: ordered, items: items))
         case .code(let code):
             Text(code)
                 .font(.system(size: 13, design: .monospaced))
@@ -97,13 +109,13 @@ struct AnswerBody: View {
             Grid(alignment: .leading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: linked))
+                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: linkedCitations))
                     }
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            answerText(AnswerInline.render(cell, size: 13, citations: linked))
+                            answerText(AnswerInline.render(cell, size: 13, citations: linkedCitations))
                         }
                     }
                 }
@@ -242,17 +254,96 @@ private struct HtmlAnswerWebView: NSViewRepresentable {
     }
 }
 
-/// Selectable answer text. Ordinary characters keep the text cursor; a link uses the pointing hand.
-private struct AnswerText: NSViewRepresentable {
+private struct CitePreview: Equatable {
+    var title: String
+    var host: String
+    var detail: String
+    var symbol: String
+    var url: URL
+}
+
+private enum CiteLink {
+    static func host(_ url: URL) -> String {
+        guard let host = url.host, !host.isEmpty else { return "" }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
+    static func url(from value: Any?) -> URL? {
+        if let url = value as? URL { return url }
+        if let text = value as? String { return URL(string: text) }
+        return nil
+    }
+
+    static func accent(_ scheme: ColorScheme) -> NSColor {
+        scheme == .dark
+            ? NSColor(srgbRed: 124 / 255, green: 196 / 255, blue: 242 / 255, alpha: 1)
+            : NSColor(srgbRed: 0, green: 74 / 255, blue: 119 / 255, alpha: 1)
+    }
+}
+
+private struct CitePreviewCard: View {
+    var preview: CitePreview
+    var onOpen: () -> Void
+    var onInside: (Bool) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s2) {
+                Image(systemName: preview.symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppColor.accent)
+                Text(preview.host.isEmpty ? preview.title : preview.host)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: Space.s2)
+                Button(action: onOpen) {
+                    HStack(spacing: 3) {
+                        Text(tr("打开"))
+                        Image(systemName: "arrow.up.right")
+                    }
+                    .font(AppFont.caption.weight(.medium))
+                    .foregroundStyle(AppColor.accent)
+                }
+                .buttonStyle(.plain.clicking())
+            }
+            if !preview.host.isEmpty, preview.title != preview.host {
+                Text(preview.title)
+                    .font(AppFont.secondary.weight(.semibold))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .lineLimit(2)
+            }
+            if !preview.detail.isEmpty {
+                Text(preview.detail)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .lineLimit(3)
+            }
+        }
+        .padding(Space.s3)
+        .frame(width: 300, alignment: .leading)
+        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                .stroke(AppColor.separator, lineWidth: 1)
+        }
+        .onHover(perform: onInside)
+    }
+}
+
+/// Selectable answer text. A link uses the pointing hand, and shows its card while the pointer is over it.
+private struct CiteText: NSViewRepresentable {
     var attributed: AttributedString
+    var citations: [ChatCitation]
+    var colorScheme: ColorScheme
     var onOpen: (URL) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onOpen: onOpen)
     }
 
-    func makeNSView(context: Context) -> LinkTextView {
-        let view = LinkTextView()
+    func makeNSView(context: Context) -> CiteTextView {
+        let view = CiteTextView()
         view.drawsBackground = false
         view.isEditable = false
         view.isSelectable = true
@@ -267,20 +358,18 @@ private struct AnswerText: NSViewRepresentable {
         view.isHorizontallyResizable = false
         view.focusRingType = .none
         view.delegate = context.coordinator
-        view.textStorage?.setAttributedString(NSAttributedString(attributed))
+        view.hover = context.coordinator
+        context.coordinator.apply(attributed, citations: citations, colorScheme: colorScheme, to: view)
         return view
     }
 
-    func updateNSView(_ view: LinkTextView, context: Context) {
+    func updateNSView(_ view: CiteTextView, context: Context) {
         context.coordinator.onOpen = onOpen
-        let next = NSAttributedString(attributed)
-        if view.attributedString() != next {
-            view.textStorage?.setAttributedString(next)
-        }
-        view.window?.invalidateCursorRects(for: view)
+        view.hover = context.coordinator
+        context.coordinator.apply(attributed, citations: citations, colorScheme: colorScheme, to: view)
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: LinkTextView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: CiteTextView, context: Context) -> CGSize? {
         let proposed = proposal.width ?? .infinity
         let width = proposed.isFinite ? max(proposed, 1) : 10_000
         guard let container = nsView.textContainer, let layout = nsView.layoutManager else {
@@ -292,30 +381,238 @@ private struct AnswerText: NSViewRepresentable {
         return CGSize(width: width, height: max(ceil(used.height), 1))
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var onOpen: (URL) -> Void
+        private var citations: [ChatCitation] = []
+        private var colorScheme: ColorScheme = .light
+        private var source: AttributedString?
+        private var underlined: NSRange?
+        private var shownURL: URL?
+        private var pendingURL: URL?
+        private var showTicket = 0
+        private var closeTicket = 0
+        private var pointerInsideCard = false
+        private let popover = NSPopover()
+        private let host = NSHostingController(rootView: AnyView(EmptyView()))
 
         init(onOpen: @escaping (URL) -> Void) {
             self.onOpen = onOpen
+            super.init()
+            popover.behavior = .applicationDefined
+            popover.animates = false
+            host.sizingOptions = .preferredContentSize
+            popover.contentViewController = host
+        }
+
+        func apply(_ attributed: AttributedString, citations: [ChatCitation], colorScheme: ColorScheme, to view: CiteTextView) {
+            self.citations = citations
+            let changed = source != attributed || self.colorScheme != colorScheme
+            self.colorScheme = colorScheme
+            source = attributed
+            let color = CiteLink.accent(colorScheme)
+            view.linkTextAttributes = [
+                .foregroundColor: color,
+                .underlineStyle: 0,
+                .cursor: NSCursor.pointingHand,
+            ]
+            guard changed else { return }
+            underlined = nil
+            view.textStorage?.setAttributedString(decorated(attributed, color: color))
+            view.window?.invalidateCursorRects(for: view)
+        }
+
+        func hoverMoved(_ view: CiteTextView, at point: NSPoint?) {
+            guard let point, let link = view.link(at: point) else {
+                NSCursor.iBeam.set()
+                pendingURL = nil
+                showTicket += 1
+                scheduleClose(view)
+                return
+            }
+            NSCursor.pointingHand.set()
+            cancelClose()
+            view.underline(link.range)
+            underlined = link.range
+            if shownURL == link.url, popover.isShown { return }
+            if pendingURL == link.url { return }
+            if popover.isShown { closeCard() }
+            pendingURL = link.url
+            showTicket += 1
+            let ticket = showTicket
+            let preview = preview(for: link.url, label: link.label)
+            let rect = link.rect
+            Task { @MainActor [weak self, weak view] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, let view, self.showTicket == ticket, self.pendingURL == link.url else { return }
+                self.present(preview, url: link.url, rect: rect, in: view)
+            }
+        }
+
+        func hoverExited(_ view: CiteTextView) {
+            NSCursor.iBeam.set()
+            scheduleClose(view)
         }
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-            let url: URL?
-            if let value = link as? URL {
-                url = value
-            } else if let value = link as? String {
-                url = URL(string: value)
-            } else {
-                url = nil
-            }
-            guard let url else { return false }
+            guard let url = CiteLink.url(from: link) else { return false }
             onOpen(url)
+            close(textView)
             return true
+        }
+
+        private func scheduleClose(_ view: NSTextView?) {
+            closeTicket += 1
+            let ticket = closeTicket
+            Task { @MainActor [weak self, weak view] in
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, self.closeTicket == ticket, !self.pointerInsideCard else { return }
+                self.close(view)
+            }
+        }
+
+        private func cancelClose() {
+            closeTicket += 1
+        }
+
+        private func present(_ preview: CitePreview, url: URL, rect: CGRect, in view: CiteTextView) {
+            pendingURL = nil
+            shownURL = url
+            host.rootView = AnyView(CitePreviewCard(preview: preview, onOpen: { [weak self, weak view] in
+                self?.onOpen(url)
+                self?.close(view)
+            }, onInside: { [weak self, weak view] inside in
+                guard let self else { return }
+                self.pointerInsideCard = inside
+                if inside { self.cancelClose() } else { self.scheduleClose(view) }
+            }))
+            popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
+        }
+
+        private func closeCard() {
+            shownURL = nil
+            if popover.isShown { popover.performClose(nil) }
+        }
+
+        private func close(_ view: NSTextView?) {
+            pendingURL = nil
+            showTicket += 1
+            pointerInsideCard = false
+            if let cite = view as? CiteTextView {
+                cite.clearUnderline()
+            }
+            underlined = nil
+            closeCard()
+        }
+
+        private func preview(for url: URL, label: String) -> CitePreview {
+            if let citation = citation(for: url) {
+                let web = url.scheme == "http" || url.scheme == "https"
+                let host = web ? CiteLink.host(url) : ""
+                let title = citation.title.isEmpty || citation.title == host || citation.title == citation.url ? label : citation.title
+                let detail = citation.detail == title || citation.detail == host || citation.detail == citation.url ? "" : citation.detail
+                return CitePreview(title: title, host: host, detail: detail, symbol: citation.symbolName, url: url)
+            }
+            return CitePreview(
+                title: label,
+                host: CiteLink.host(url),
+                detail: "",
+                symbol: ChatCitation.symbolName(title: label, detail: "", url: url.absoluteString),
+                url: url
+            )
+        }
+
+        private func citation(for url: URL) -> ChatCitation? {
+            if url.scheme == "nomi-cite", let id = UUID(uuidString: url.host ?? "") {
+                return citations.first { $0.id == id }
+            }
+            return citations.first { citation in
+                guard let raw = citation.url, let parsed = URL(string: raw) else { return false }
+                return parsed.absoluteString == url.absoluteString
+            }
+        }
+
+        private func decorated(_ source: AttributedString, color: NSColor) -> NSAttributedString {
+            let text = NSMutableAttributedString(attributedString: NSAttributedString(source))
+            var ranges: [NSRange] = []
+            text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+                if value != nil { ranges.append(range) }
+            }
+            for range in ranges.reversed() {
+                guard let url = CiteLink.url(from: text.attribute(.link, at: range.location, effectiveRange: nil)) else { continue }
+                let label = text.attributedSubstring(from: range).string
+                let font = text.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 15)
+                let icon = icon(url: url, label: label, font: font, color: color)
+                let gap = leadingGap(in: text, before: range.location, font: font)
+                text.insert(gap, at: range.location)
+                text.insert(icon, at: range.location + gap.length)
+                let whole = NSRange(location: range.location + gap.length, length: range.length + icon.length)
+                text.addAttribute(.link, value: url, range: whole)
+                text.addAttribute(.foregroundColor, value: color, range: whole)
+                text.addAttribute(.cursor, value: NSCursor.pointingHand, range: whole)
+                text.removeAttribute(.underlineStyle, range: whole)
+            }
+            return text
+        }
+
+        /// One ordinary space before a link that sits against the previous word. The space stays outside the link.
+        private func leadingGap(in text: NSAttributedString, before index: Int, font: NSFont) -> NSAttributedString {
+            guard index > 0 else { return NSAttributedString() }
+            let previous = (text.string as NSString).substring(with: NSRange(location: index - 1, length: 1))
+            guard previous.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else { return NSAttributedString() }
+            let color = text.attribute(.foregroundColor, at: index - 1, effectiveRange: nil) as? NSColor ?? NSColor.labelColor
+            let gapFont = text.attribute(.font, at: index - 1, effectiveRange: nil) as? NSFont ?? font
+            return NSAttributedString(string: " ", attributes: [.font: gapFont, .foregroundColor: color])
+        }
+
+        private func icon(url: URL, label: String, font: NSFont, color: NSColor) -> NSAttributedString {
+            let symbol = citation(for: url)?.symbolName ?? ChatCitation.symbolName(title: label, detail: "", url: url.absoluteString)
+            let config = NSImage.SymbolConfiguration(pointSize: font.pointSize * 0.86, weight: .semibold)
+            guard let symbolImage = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config) else {
+                return NSAttributedString()
+            }
+            let image = NSImage(size: symbolImage.size, flipped: false) { rect in
+                color.setFill()
+                rect.fill()
+                symbolImage.draw(in: rect, from: .zero, operation: .destinationIn, fraction: 1)
+                return true
+            }
+            image.isTemplate = false
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            // Same vertical center as the old capsule: the symbol sits in the middle of the line, not on the baseline.
+            let y = (font.ascender + font.descender - image.size.height) / 2
+            attachment.bounds = CGRect(x: 0, y: y, width: image.size.width, height: image.size.height)
+            let result = NSMutableAttributedString(attachment: attachment)
+            result.append(NSAttributedString(string: "\u{2009}", attributes: [.font: font]))
+            return result
         }
     }
 }
 
-private final class LinkTextView: NSTextView {
+private final class CiteTextView: NSTextView {
+    weak var hover: CiteText.Coordinator?
+    private var tracking: NSTrackingArea?
+    private var underlined: NSRange?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.acceptsMouseMovedEvents = true
+    }
+
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .iBeam)
         guard let layoutManager, let container = textContainer, let storage = textStorage, storage.length > 0 else { return }
@@ -337,6 +634,22 @@ private final class LinkTextView: NSTextView {
         }
     }
 
+    override func cursorUpdate(with event: NSEvent) {
+        if link(at: convert(event.locationInWindow, from: nil)) == nil {
+            NSCursor.iBeam.set()
+        } else {
+            NSCursor.pointingHand.set()
+        }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        hover?.hoverMoved(self, at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hover?.hoverExited(self)
+    }
+
     override func layout() {
         super.layout()
         window?.invalidateCursorRects(for: self)
@@ -350,5 +663,55 @@ private final class LinkTextView: NSTextView {
             layoutManager?.ensureLayout(for: container)
         }
         window?.invalidateCursorRects(for: self)
+    }
+
+    func link(at point: NSPoint) -> (range: NSRange, rect: CGRect, url: URL, label: String)? {
+        guard let layoutManager, let container = textContainer, let storage = textStorage, storage.length > 0 else { return nil }
+        let origin = textContainerOrigin
+        let local = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+        let index = layoutManager.characterIndex(for: local, in: container, fractionOfDistanceBetweenInsertionPoints: nil)
+        guard index < storage.length else { return nil }
+        var range = NSRange()
+        guard let url = CiteLink.url(from: storage.attribute(.link, at: index, effectiveRange: &range)) else { return nil }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var hit: CGRect?
+        layoutManager.enumerateEnclosingRects(
+            forGlyphRange: glyphs,
+            withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+            in: container
+        ) { rect, stop in
+            var box = rect
+            box.origin.x += origin.x
+            box.origin.y += origin.y
+            let padded = box.insetBy(dx: -2, dy: -1)
+            if padded.contains(point) {
+                hit = box
+                stop.pointee = true
+            }
+        }
+        guard let hit else { return nil }
+        let label = storage.attributedSubstring(from: range).string.replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespaces)
+        return (range, hit, url, label)
+    }
+
+    func underline(_ range: NSRange) {
+        guard let storage = textStorage else { return }
+        if underlined == range { return }
+        clearUnderline()
+        storage.enumerateAttribute(.attachment, in: range) { value, subrange, _ in
+            if value == nil {
+                storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: subrange)
+            }
+        }
+        underlined = range
+    }
+
+    func clearUnderline() {
+        guard let underlined, let storage = textStorage, NSMaxRange(underlined) <= storage.length else {
+            underlined = nil
+            return
+        }
+        storage.removeAttribute(.underlineStyle, range: underlined)
+        self.underlined = nil
     }
 }

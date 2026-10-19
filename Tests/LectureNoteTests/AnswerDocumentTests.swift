@@ -124,15 +124,20 @@ struct AnswerDocumentTests {
     @Test func passageNumberBecomesTheSourceName() {
         let web = ChatCitation(title: "香港電台網站", detail: "rthk9.rthk.hk", url: "https://rthk9.rthk.hk/", passage: 1)
         let meeting = ChatCitation(title: "计算机网络", detail: "12:30", meetingID: UUID(), passage: 2)
-        let rendered = AnswerInline.render("约 27°C。[1] 另一处是【2】，未知的 [9] 留着。", citations: [1: web, 2: meeting])
+        let file = ChatCitation(title: "01 - Introduction.pdf", detail: "", sourceID: UUID(), passage: 3)
+        let rendered = AnswerInline.render("约 27°C。[1] 另一处是【2】，课件见 [3]，未知的 [9] 留着。", citations: [1: web, 2: meeting, 3: file])
         let plain = String(rendered.characters)
         #expect(plain.contains("香港電台網站"))
         #expect(plain.contains("计算机网络"))
+        #expect(plain.contains("Introduction.pdf"))
         #expect(plain.contains("[9]"))
         #expect(!plain.contains("[1]"))
         #expect(!plain.contains("【2】"))
-        #expect(rendered.runs.contains { $0.link?.host == "rthk9.rthk.hk" })
+        #expect(rendered.runs.contains { $0.link?.host == "rthk9.rthk.hk" && $0.underlineStyle == nil })
         #expect(rendered.runs.contains { $0.link?.scheme == "nomi-cite" })
+        #expect(web.symbolName == "globe")
+        #expect(meeting.symbolName == "clock")
+        #expect(file.symbolName == "doc.richtext")
     }
 
     @Test func onlyHttpLinksOpen() {
