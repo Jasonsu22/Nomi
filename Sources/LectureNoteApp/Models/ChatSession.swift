@@ -232,13 +232,46 @@ struct ChatCitation: Codable, Equatable, Identifiable, Sendable {
 }
 
 struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
-    var id = UUID()
+    var id: UUID
     var question: String
     var answer: String
     var modelName: String
-    var createdAt = Date()
-    var citations: [ChatCitation] = []
+    var createdAt: Date
+    var citations: [ChatCitation]
     var error: String?
+    var images: [ChatImage]
+
+    init(
+        id: UUID = UUID(),
+        question: String,
+        answer: String,
+        modelName: String,
+        createdAt: Date = .now,
+        citations: [ChatCitation] = [],
+        error: String? = nil,
+        images: [ChatImage] = []
+    ) {
+        self.id = id
+        self.question = question
+        self.answer = answer
+        self.modelName = modelName
+        self.createdAt = createdAt
+        self.citations = citations
+        self.error = error
+        self.images = images
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        question = try container.decodeIfPresent(String.self, forKey: .question) ?? ""
+        answer = try container.decodeIfPresent(String.self, forKey: .answer) ?? ""
+        modelName = try container.decodeIfPresent(String.self, forKey: .modelName) ?? ""
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
+        citations = try container.decodeIfPresent([ChatCitation].self, forKey: .citations) ?? []
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+        images = try container.decodeIfPresent([ChatImage].self, forKey: .images) ?? []
+    }
 }
 
 struct ChatSession: Codable, Equatable, Identifiable, Sendable {

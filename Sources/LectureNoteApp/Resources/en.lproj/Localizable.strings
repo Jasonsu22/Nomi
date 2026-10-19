@@ -397,3 +397,14 @@
 "将链接存储为…" = "Save link as…";
 "无法保存文件" = "Couldn’t save the file";
 "无法保存链接" = "Couldn’t save the link";
+"关闭" = "Close";
+"拷贝图片" = "Copy image";
+"将图片存储为…" = "Save image as…";
+"一次最多 8 张图片。" = "You can add up to 8 images at a time.";
+"只能加入图片。" = "Only images can be added.";
+"单张图片不能超过 10 MB。" = "Each image must be under 10 MB.";
+"这张图片无法读取。" = "This image couldn’t be read.";
+"图片无法显示" = "Couldn’t display the image";
+"当前模型看不到图片，图片只会留在对话里。" = "This model can’t see images. They stay in the chat only.";
+"添加图片" = "Add image";
+"移走图片" = "Remove image";

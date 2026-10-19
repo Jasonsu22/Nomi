@@ -58,7 +58,9 @@ extension AppModel {
                 chatFocusRequest += 1
                 return
             }
-            chats.removeAll { $0.anchorMeetingID == anchor && $0.turns.isEmpty && $0.id != chatGeneratingID }
+            let removing = chats.filter { $0.anchorMeetingID == anchor && $0.turns.isEmpty && $0.id != chatGeneratingID }.map(\.id)
+            discardComposerImages(removing)
+            chats.removeAll { removing.contains($0.id) }
             let session = ChatSession(anchorMeetingID: anchor)
             chats.insert(session, at: 0)
             meetingChatID[anchor] = session.id
@@ -71,7 +73,9 @@ extension AppModel {
             return
         }
         let scope = (currentChat?.anchorMeetingID == nil ? currentChat?.scope : nil) ?? ChatScope()
-        chats.removeAll { $0.anchorMeetingID == nil && $0.turns.isEmpty && $0.id != chatGeneratingID }
+        let removing = chats.filter { $0.anchorMeetingID == nil && $0.turns.isEmpty && $0.id != chatGeneratingID }.map(\.id)
+        discardComposerImages(removing)
+        chats.removeAll { removing.contains($0.id) }
         let session = ChatSession(scope: scope)
         chats.insert(session, at: 0)
         currentChatID = session.id
@@ -99,6 +103,8 @@ extension AppModel {
                 visualTasks[turn.id] = nil
                 preparingVisualTurnIDs.remove(turn.id)
             }
+            ChatImages.delete(session.turns.flatMap(\.images))
+            discardComposerImages([id])
         }
         let anchor = chats.first { $0.id == id }?.anchorMeetingID
         chats.removeAll { $0.id == id }
@@ -221,9 +227,9 @@ extension AppModel {
     }
 
     @discardableResult
-    func ask(_ question: String, anchor: UUID? = nil) -> Bool {
+    func ask(_ question: String, images: [ChatImageDraft] = [], anchor: UUID? = nil) -> Bool {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !question.isEmpty else { return false }
+        guard !question.isEmpty || !images.isEmpty else { return false }
         if let anchor { ensureMeetingChat(anchor) } else { ensureChat() }
         let resolvedID = anchor.flatMap { meetingChatID[$0] } ?? currentChatID
         guard chatGeneratingID == nil, canGenerateAssistant, let id = resolvedID,
@@ -264,6 +270,7 @@ extension AppModel {
             $0.profileID = mode == .api ? profile?.id : nil
         }
         pendingQuestion = question
+        pendingImageDrafts = images
         pendingAnswer = ""
         chatGeneratingID = id
         chatTask = Task { [weak self] in
@@ -274,6 +281,7 @@ extension AppModel {
                     self.pendingQuestion = nil
                     self.pendingAnswer = ""
                     self.pendingCitations = []
+                    self.pendingImageDrafts = []
                     self.chatTask = nil
                 }
             }
@@ -281,6 +289,9 @@ extension AppModel {
                 let packed = ChatContext.pack(await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources), question: question)
                 if hasScope && packed.isEmpty { throw llmError(tr("所选范围里还没有可以阅读的文字。")) }
                 try Task.checkCancellation()
+                let seesImages = ChatImages.seesImages(mode: mode, modelID: profile?.modelID ?? "")
+                let imagePlan = ChatContext.attachedImages(history: history, currentCount: images.count)
+                let promptImages = seesImages ? self.promptImages(current: images, history: imagePlan.history) : []
                 var blocks = packed
                 var answer = ""
                 var briefs: [String] = []
@@ -296,7 +307,13 @@ extension AppModel {
                         tools: true,
                         webTool: allowsWeb ? (searched ? .used : .available) : .off
                     )
-                    var prompt = ChatContext.userPrompt(question: question, history: history, blocks: blocks)
+                    var prompt = ChatContext.userPrompt(
+                        question: question,
+                        history: history,
+                        blocks: blocks,
+                        omittedImageTurns: seesImages ? imagePlan.omittedTurnIDs : [],
+                        mentionsOlderImages: seesImages && imagePlan.mentionsOlderImages
+                    )
                     if round > 0 {
                         let draft = answer.trimmingCharacters(in: .whitespacesAndNewlines)
                         if draft.isEmpty {
@@ -314,7 +331,8 @@ extension AppModel {
                         mode: mode,
                         profile: profile,
                         system: system,
-                        prompt: prompt
+                        prompt: prompt,
+                        images: promptImages
                     ) { [weak self] partial in
                         let shown = ChatTools.parse(ChatContext.streamingDisplay(partial), streaming: true).visible
                         let combined = self?.joinedAnswer(carried, shown) ?? shown
@@ -335,7 +353,8 @@ extension AppModel {
                         blocks.append(contentsOf: found.blocks)
                     }
                 }
-                let turnID = self.finishChat(id, question: question, answer: answer, modelName: name, citations: ChatContext.citations(in: answer, blocks: blocks), error: nil)
+                let stored = self.storedImages(images)
+                let turnID = self.finishChat(id, question: question, answer: answer, modelName: name, citations: ChatContext.citations(in: answer, blocks: blocks), error: nil, images: stored)
                 self.pendingAnswer = ""
                 self.pendingCitations = []
                 if let webNotice { self.chatError = webNotice }
@@ -350,14 +369,14 @@ extension AppModel {
                     )
                 }
             } catch is CancellationError {
-                if self.currentChatID == id { self.chatDraftRestore = question }
+                self.restoreDraft(id, question: question, images: images)
             } catch let error as URLError where error.code == .cancelled {
-                if self.currentChatID == id { self.chatDraftRestore = question }
+                self.restoreDraft(id, question: question, images: images)
             } catch {
                 if Task.isCancelled {
-                    if self.currentChatID == id { self.chatDraftRestore = question }
+                    self.restoreDraft(id, question: question, images: images)
                 } else {
-                    self.finishChat(id, question: question, answer: "", modelName: name, citations: [], error: error.localizedDescription)
+                    self.finishChat(id, question: question, answer: "", modelName: name, citations: [], error: error.localizedDescription, images: self.storedImages(images))
                 }
             }
         }
@@ -403,13 +422,14 @@ extension AppModel {
         profile: LLMAPIProfile?,
         system: String,
         prompt: String,
+        images: [ModelImage] = [],
         onUpdate: @escaping @MainActor (String) -> Void
     ) async throws -> String {
         if mode == .api {
             guard let profile else { throw llmError(tr("请先在设置中选择 API 配置。")) }
             let key = try LLMKeychain.read(profile)
             guard profile.isLoopback || !key.isEmpty else { throw llmError(tr("请输入 API 密钥。")) }
-            return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, onUpdate: onUpdate)
+            return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
         }
         guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
         return try await engine.generate(system: system, prompt: prompt, onUpdate: onUpdate)
@@ -506,23 +526,60 @@ extension AppModel {
     }
 
     @discardableResult
-    private func finishChat(_ id: UUID, question: String, answer: String, modelName: String, citations: [ChatCitation], error: String?) -> UUID? {
+    private func finishChat(_ id: UUID, question: String, answer: String, modelName: String, citations: [ChatCitation], error: String?, images: [ChatImage] = []) -> UUID? {
         guard chats.contains(where: { $0.id == id }) else { return nil }
         let turn = ChatTurn(
             question: question,
             answer: answer,
             modelName: modelName,
             citations: citations,
-            error: error
+            error: error,
+            images: images
         )
         mutate(id) { session in
             if !session.titleCustom && session.title.isEmpty {
-                session.title = String(question.prefix(20))
+                let source = question.isEmpty ? (images.first?.name ?? "") : question
+                session.title = String(source.prefix(20))
             }
             session.turns.append(turn)
         }
         pendingQuestion = nil
+        pendingImageDrafts = []
         return turn.id
+    }
+
+    private func storedImages(_ drafts: [ChatImageDraft]) -> [ChatImage] {
+        drafts.compactMap { ChatImages.promote($0) }
+    }
+
+    private func promptImages(current: [ChatImageDraft], history: [ChatImage]) -> [ModelImage] {
+        var images: [ModelImage] = []
+        for draft in current.prefix(ChatImages.countLimit) {
+            if let payload = ChatImages.payload(url: draft.fileURL, mime: draft.mime) {
+                images.append(payload)
+            }
+        }
+        for image in history where images.count < ChatImages.countLimit {
+            if let payload = ChatImages.payload(url: image.fileURL(), mime: image.mime) {
+                images.append(payload)
+            }
+        }
+        return images
+    }
+
+    private func restoreDraft(_ id: UUID, question: String, images: [ChatImageDraft]) {
+        composerImages[id] = images
+        let showing = currentChatID == id || meetingChatID.values.contains(id)
+        if showing { chatDraftRestore = question }
+    }
+
+    private func discardComposerImages(_ ids: [UUID]) {
+        for id in ids {
+            for draft in composerImages[id] ?? [] {
+                ChatImages.discard(draft)
+            }
+            composerImages[id] = nil
+        }
     }
 
     private func passageBlocks(meetings: [Meeting], sources: [KnowledgeSource]) async -> [ContextBlock] {

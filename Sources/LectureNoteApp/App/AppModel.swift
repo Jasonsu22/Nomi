@@ -86,6 +86,11 @@ final class AppModel {
     var pendingQuestion: String?
     var pendingAnswer = ""
     var pendingCitations: [ChatCitation] = []
+    var pendingImageDrafts: [ChatImageDraft] = []
+    var composerImages: [UUID: [ChatImageDraft]] = [:]
+    var enlargedImage: NSImage?
+    var enlargedImageName = "image.png"
+    var enlargedImageURL: URL?
     /// Turns whose demonstration is being written by a separate request.
     var preparingVisualTurnIDs: Set<UUID> = []
     var chatError: String?
@@ -417,6 +422,7 @@ final class AppModel {
 
     func shutdown() {
         persistMeetings()
+        ChatImages.removeTemporary()
         (engine as? LocalEngine)?.shutdown()
     }
 

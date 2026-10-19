@@ -1,11 +1,14 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AskComposerField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
     var focused: Bool
     var onSubmit: () -> Void
+    var onPasteImages: (NSPasteboard) -> Bool
+    var onRemoveLastImage: () -> Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -15,7 +18,11 @@ struct AskComposerField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let textView = SubmitTextView()
+        textView.registerForDraggedTypes([.fileURL, .png, .tiff, NSPasteboard.PasteboardType(UTType.jpeg.identifier)])
         textView.delegate = context.coordinator
+        textView.onPasteImages = { context.coordinator.parent.onPasteImages($0) }
+        textView.onRemoveLastImage = { context.coordinator.parent.onRemoveLastImage() }
+        textView.onDropImages = { context.coordinator.parent.onPasteImages($0) }
         textView.isRichText = false
         textView.importsGraphics = false
         textView.isEditable = true
@@ -51,6 +58,9 @@ struct AskComposerField: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = scroll.documentView as? SubmitTextView else { return }
+        textView.onPasteImages = { context.coordinator.parent.onPasteImages($0) }
+        textView.onRemoveLastImage = { context.coordinator.parent.onRemoveLastImage() }
+        textView.onDropImages = { context.coordinator.parent.onPasteImages($0) }
         textView.placeholder = placeholder
         if textView.string != text {
             textView.string = text
@@ -72,6 +82,9 @@ struct AskComposerField: NSViewRepresentable {
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.deleteBackward(_:)), textView.string.isEmpty {
+                return parent.onRemoveLastImage()
+            }
             let newline = commandSelector == #selector(NSResponder.insertNewline(_:))
                 || commandSelector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:))
             guard newline, !textView.hasMarkedText() else { return false }
@@ -84,6 +97,40 @@ struct AskComposerField: NSViewRepresentable {
 
 final class SubmitTextView: NSTextView {
     var placeholder = ""
+    var onPasteImages: ((NSPasteboard) -> Bool)?
+    var onDropImages: ((NSPasteboard) -> Bool)?
+    var onRemoveLastImage: (() -> Bool)?
+    private var lastImagePasteChange = -1
+    private var lastImagePasteTime: TimeInterval = 0
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(paste(_:)), ChatImages.containsImage(NSPasteboard.general) {
+            return true
+        }
+        return super.validateMenuItem(menuItem)
+    }
+
+    override func paste(_ sender: Any?) {
+        let board = NSPasteboard.general
+        if ChatImages.containsImage(board) {
+            let now = ProcessInfo.processInfo.systemUptime
+            if board.changeCount == lastImagePasteChange, now - lastImagePasteTime < 0.2 {
+                return
+            }
+            lastImagePasteChange = board.changeCount
+            lastImagePasteTime = now
+        }
+        if onPasteImages?(board) == true { return }
+        super.paste(sender)
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        ChatImages.containsImage(sender.draggingPasteboard) ? .copy : []
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        onDropImages?(sender.draggingPasteboard) == true
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)

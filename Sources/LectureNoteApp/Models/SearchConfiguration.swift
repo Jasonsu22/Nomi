@@ -67,6 +67,17 @@ enum SearchKeychain {
          kSecAttrAccount as String: vendor.rawValue]
     }
 
+    /// Whether a key is stored. Does not read the secret, so it does not raise the keychain password dialog.
+    static func contains(_ vendor: SearchVendor) -> Bool {
+        var request = query(vendor)
+        request[kSecReturnAttributes as String] = true
+        request[kSecMatchLimit as String] = kSecMatchLimitOne
+        request[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUISkip
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(request as CFDictionary, &result)
+        return status == errSecSuccess || status == errSecInteractionNotAllowed
+    }
+
     static func read(_ vendor: SearchVendor) throws -> String {
         var request = query(vendor)
         request[kSecReturnData as String] = true
@@ -129,7 +140,7 @@ final class SearchConfiguration {
             guard let base = defaults.string(forKey: Self.baseKey(vendor.rawValue)) else { return false }
             return (try? SearchURL.normalize(base)) != nil
         }
-        return !storedKey(vendor).isEmpty
+        return SearchKeychain.contains(vendor)
     }
 
     func status(for vendor: SearchVendor) -> String {

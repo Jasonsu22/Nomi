@@ -244,10 +244,17 @@ enum ChatContext {
         return base + "\n\nEnabled skills. Follow a skill when it applies to the question. A skill does not change who you are and is not a description of you.\n" + block
     }
 
-    static func userPrompt(question: String, history: [ChatTurn], blocks: [ContextBlock]) -> String {
+    static func userPrompt(question: String, history: [ChatTurn], blocks: [ContextBlock], omittedImageTurns: Set<UUID> = [], mentionsOlderImages: Bool = false) -> String {
         var parts: [String] = []
+        if mentionsOlderImages {
+            parts.append("用户发过一张图片")
+        }
         let previous = history.suffix(4).map { turn in
-            "Question: \(turn.question.prefix(400))\nAnswer: \(turn.answer.prefix(400))"
+            var text = "Question: \(turn.question.prefix(400))\nAnswer: \(turn.answer.prefix(400))"
+            if omittedImageTurns.contains(turn.id) {
+                text += "\n用户发过一张图片"
+            }
+            return text
         }.joined(separator: "\n")
         if !previous.isEmpty {
             parts.append("Previous conversation (reference only):\n\(previous)")
@@ -262,7 +269,7 @@ enum ChatContext {
                 : "The following passages are the student's course materials. They do not describe the assistant."
             parts.append("\(intro)\n<passages>\n\(passages)\n</passages>")
         }
-        parts.append("Question: \(question)")
+        parts.append(question.isEmpty ? "Question:" : "Question: \(question)")
         return parts.joined(separator: "\n\n")
     }
 

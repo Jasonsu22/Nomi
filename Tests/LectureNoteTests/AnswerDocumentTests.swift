@@ -305,4 +305,53 @@ struct AnswerDocumentTests {
         #expect(source == "```html\n<div>演示</div>\n```")
         #expect(ChatContext.htmlFence(from: "NONE") == nil)
     }
+
+    @Test func anHttpsImageBecomesAPictureAndOtherAddressesStayText() {
+        let pieces = AnswerDocument.pieces(in: "先看这张。\n\n![双缝](https://example.com/slit.png)\n\n后面继续。")
+        #expect(pieces.contains { if case .remoteImage(let alt, let url) = $0 { return alt == "双缝" && url == "https://example.com/slit.png" } else { return false } })
+        let http = AnswerDocument.pieces(in: "![本地](http://example.com/a.png)")
+        #expect(!http.contains { if case .remoteImage = $0 { return true } else { return false } })
+        #expect(http.contains { if case .paragraph(let text) = $0 { return text.contains("http://example.com/a.png") } else { return false } })
+        let fenced = AnswerDocument.pieces(in: "```\n![双缝](https://example.com/slit.png)\n```")
+        #expect(fenced.contains { if case .code(let code) = $0 { return code.contains("![双缝]") } else { return false } })
+        #expect(!fenced.contains { if case .remoteImage = $0 { return true } else { return false } })
+    }
+
+    @Test func oldChatsOpenWithoutImages() throws {
+        let id = UUID()
+        let json = """
+        {"id":"\(id.uuidString)","question":"问题","answer":"回答","modelName":"MiniMax","createdAt":0,"citations":[]}
+        """
+        let turn = try JSONDecoder().decode(ChatTurn.self, from: Data(json.utf8))
+        #expect(turn.images.isEmpty)
+        #expect(turn.question == "问题")
+    }
+
+    @Test func onlyRecentImagesAreSent() {
+        let older = ChatTurn(question: "旧", answer: "答", modelName: "m", images: [sampleImage("old")])
+        let recent = (0..<4).map { index in
+            ChatTurn(question: "问\(index)", answer: "答", modelName: "m", images: [sampleImage("\(index)")])
+        }
+        let plan = ChatContext.attachedImages(history: [older] + recent, currentCount: 6)
+        #expect(plan.history.count == 2)
+        #expect(plan.mentionsOlderImages)
+        #expect(plan.omittedTurnIDs.count == 2)
+        #expect(ChatImages.seesImages(mode: .local, modelID: "Qwen3.5 2B") == false)
+        #expect(ChatImages.seesImages(mode: .api, modelID: "MiniMax-M2.7") == false)
+        #expect(ChatImages.seesImages(mode: .api, modelID: "MiniMax-M3.1-Flash") == true)
+        #expect(ChatImages.seesImages(mode: .api, modelID: "gpt-5.6-sol") == true)
+        let content = RemoteLLMClient.openAIContent(prompt: "Question:", images: [ModelImage(mime: "image/png", base64: "YQ==")], miniMax: true) as? [[String: Any]]
+        #expect(content?.count == 2)
+        let image = content?[1]["image_url"] as? [String: Any]
+        #expect(image?["detail"] as? String == "default")
+        #expect((image?["url"] as? String)?.hasPrefix("data:image/png;base64,") == true)
+        let anthropic = RemoteLLMClient.anthropicContent(prompt: "Question:", images: [ModelImage(mime: "image/png", base64: "YQ==")]) as? [[String: Any]]
+        let source = (anthropic?[1]["source"] as? [String: Any])
+        #expect(source?["type"] as? String == "base64")
+        #expect(source?["media_type"] as? String == "image/png")
+    }
+
+    private func sampleImage(_ name: String) -> ChatImage {
+        ChatImage(id: UUID(), name: name, mime: "image/png", relativePath: "\(name).png")
+    }
 }
