@@ -57,7 +57,7 @@ fn main() -> Result<()> {
                 }
             }
             WorkerRequest::Generate { id, system, prompt, max_tokens } => {
-                let result = state.generate_streaming(&system, &prompt, max_tokens.clamp(1, 2048), &mut |text| {
+                let result = state.generate_streaming(&system, &prompt, max_tokens.clamp(1, 4096), &mut |text| {
                     write_frame(&mut stdout, &WorkerEvent::Token { id, text: text.to_string() }, &[])
                 });
                 match result {

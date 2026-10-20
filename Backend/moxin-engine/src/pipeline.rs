@@ -242,7 +242,7 @@ impl Pipeline {
         };
         write_frame(
             &mut worker.stdin,
-            &WorkerRequest::Generate { id, system, prompt, max_tokens: max_tokens.clamp(1, 2048) },
+            &WorkerRequest::Generate { id, system, prompt, max_tokens: max_tokens.clamp(1, 4096) },
             &[],
         )?;
         loop {

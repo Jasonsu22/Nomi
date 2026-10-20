@@ -262,6 +262,66 @@ struct AnswerDocumentTests {
         #expect(partial.visible == "先看结论。")
     }
 
+    @Test func textAfterASearchCallWaitsForTheResults() {
+        let raw = """
+        我先查一下。
+        <tool name="web_search">2026 诺贝尔物理学奖</tool>
+        <tool name="web_search">诺贝尔物理学奖 得主 研究</tool>
+        今年的得主是某某。
+        <tool name="create_demo">做一条时间线。</tool>
+        """
+        let cut = ChatTools.parse(raw, streaming: false, stopAtSearch: true)
+        #expect(cut.visible.trimmingCharacters(in: .whitespacesAndNewlines) == "我先查一下。")
+        #expect(cut.calls.map(\.name) == [ChatTools.webSearch, ChatTools.webSearch])
+        let kept = ChatTools.parse(raw, streaming: false)
+        #expect(kept.visible.contains("今年的得主"))
+        #expect(kept.calls.contains { $0.name == ChatTools.createDemo })
+        let streaming = ChatTools.parse("<tool name=\"web_search\">双缝</tool>结论是", streaming: true, stopAtSearch: true)
+        #expect(streaming.visible.isEmpty)
+    }
+
+    @Test func webPromptMakesSearchingTheDefault() {
+        let available = ChatContext.toolInstruction(language: "Simplified Chinese", webTool: .available)
+        #expect(available.contains("搜索是默认动作"))
+        let prefetched = ChatContext.toolInstruction(language: "Simplified Chinese", webTool: .prefetched)
+        #expect(prefetched.contains("已经用这个问题搜索过一次"))
+        #expect(prefetched.contains("web_search"))
+        let english = ChatContext.toolInstruction(language: "English", webTool: .available)
+        #expect(english.contains("searching is the default"))
+        #expect(ChatContext.toolInstruction(language: "English", webTool: .off).contains("Do not call web_search"))
+        #expect(available.contains("最多一个 create_demo"))
+    }
+
+    @Test func aShortFollowUpBorrowsThePreviousQuestion() {
+        let earlier = ChatTurn(question: "量子隧穿效应是什么", answer: "……", modelName: "m", citations: [], error: nil)
+        #expect(ChatContext.searchQuery(question: "那它的应用呢", history: [earlier]) == "量子隧穿效应是什么 那它的应用呢")
+        #expect(ChatContext.searchQuery(question: "解释一下扫描隧道显微镜的工作原理", history: [earlier]) == "解释一下扫描隧道显微镜的工作原理")
+        #expect(ChatContext.searchQuery(question: "  ", history: []) == nil)
+    }
+
+    @Test func theDemoTaskSeesTheAnswerAndTheSandboxRules() {
+        let prompt = ChatContext.visualUserPrompt(brief: "做一个缝距滑块", question: "什么是双缝干涉", answer: "条纹间距 Δy = λL/d。")
+        #expect(prompt.contains("什么是双缝干涉"))
+        #expect(prompt.contains("Δy = λL/d"))
+        #expect(prompt.contains("做一个缝距滑块"))
+        #expect(ChatContext.visualUserPrompt(brief: nil, answer: "答案").contains("NONE"))
+        let system = ChatContext.visualSystemPrompt(language: "Simplified Chinese")
+        #expect(system.contains("--nomi-accent"))
+        #expect(system.contains("img"))
+        #expect(ChatContext.wantsFallbackVisual(question: "讲讲傅里叶变换", answer: String(repeating: "字", count: 400)))
+        #expect(!ChatContext.wantsFallbackVisual(question: "讲讲傅里叶变换，不要演示", answer: String(repeating: "字", count: 400)))
+        #expect(!ChatContext.wantsFallbackVisual(question: "你好", answer: "你好！"))
+    }
+
+    @Test func aCutOffOrBlockedPageIsNotAppended() {
+        #expect(ChatContext.htmlFence(from: "```html\n<div><script>let a = 1") == nil)
+        #expect(ChatContext.htmlFence(from: "```html\n<html><body><p>完整</p></body></html>") != nil)
+        let titled = ChatContext.htmlFence(from: "```html 双缝\n<button>发射</button>\n```")
+        #expect(titled == "```html 双缝\n<button>发射</button>\n```")
+        #expect(ChatContext.rendersWidget(titled ?? ""))
+        #expect(!ChatContext.rendersWidget("```html\n<img src=\"https://example.com/a.png\">\n```"))
+    }
+
     @Test func aLongDisplayPageStillRuns() {
         let script = String(repeating: "const n = 1;\n", count: 2200)
         let page = "<!doctype html><html><head><title>双缝</title></head><body><canvas></canvas><script>\n\(script)</script></body></html>"

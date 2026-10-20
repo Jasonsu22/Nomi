@@ -45,6 +45,28 @@ struct ChatStreamTests {
         #expect(stream.answer == "你好。")
     }
 
+    @Test func anEmptyReplyReportsWhatTheServiceSent() {
+        var stream = ChatStream.Accumulator()
+        #expect(stream.apply(["choices": [["delta": ["role": "assistant"], "finish_reason": NSNull()]]]) == nil)
+        #expect(stream.apply(["choices": [["delta": [:], "finish_reason": "length"]]]) == nil)
+        stream.finished = true
+        #expect(stream.answer.isEmpty)
+        #expect(stream.events == 2)
+        #expect(stream.finishReason == "length")
+
+        var anthropic = ChatStream.Accumulator()
+        _ = anthropic.apply(["type": "message_delta", "delta": ["stop_reason": "max_tokens"]])
+        #expect(anthropic.finishReason == "max_tokens")
+
+        let first = RemoteLLMClient.EmptyReply(status: 200, events: 2, finishReason: "length")
+        #expect(first.errorDescription?.contains("200") == true)
+        #expect(first.errorDescription?.contains("length") == true)
+        var retried = first
+        retried.retried = true
+        #expect(retried.errorDescription != first.errorDescription)
+        #expect(RemoteLLMClient.EmptyReply(status: 200, events: 0, finishReason: nil).errorDescription?.contains("none") == true)
+    }
+
     @Test func doneLineEndsTheEvent() {
         #expect(ChatStream.line("data: [DONE]") == .done)
         if case .payload(let payload) = ChatStream.line("data: {\"text\":\"你\"}") {

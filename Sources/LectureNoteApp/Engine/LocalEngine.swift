@@ -281,7 +281,7 @@ final class LocalEngine: TranscriptionEngine {
         apply(try JSONDecoder().decode(LocalModelRuntimeStatus.self, from: data))
     }
 
-    func generate(system: String, prompt: String, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
+    func generate(system: String, prompt: String, maxTokens: Int = 2048, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
         guard session.phase == .idle, !isGenerating, !isChangingModel else { throw llmError(tr("请等待录制或本地模型操作结束。")) }
         guard let port, let token else { throw llmError(tr("引擎还没准备好")) }
         isGenerating = true
@@ -290,7 +290,7 @@ final class LocalEngine: TranscriptionEngine {
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["system": system, "prompt": prompt, "max_tokens": 2048])
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["system": system, "prompt": prompt, "max_tokens": maxTokens])
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 else {

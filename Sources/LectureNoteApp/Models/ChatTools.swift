@@ -15,32 +15,36 @@ enum ChatTools {
         var calls: [Call]
     }
 
-    static func parse(_ raw: String, streaming: Bool) -> Parsed {
+    /// With `stopAtSearch`, text and other calls after the first web_search are dropped, because the model has not seen the results yet.
+    /// Further web_search calls are still collected.
+    static func parse(_ raw: String, streaming: Bool, stopAtSearch: Bool = false) -> Parsed {
         var visible = ""
         var calls: [Call] = []
+        var searching = false
         var index = raw.startIndex
         while index < raw.endIndex {
             guard let start = raw.range(of: "<tool", options: .caseInsensitive, range: index..<raw.endIndex) else {
-                visible += raw[index...]
+                if !searching { visible += raw[index...] }
                 break
             }
-            visible += raw[index..<start.lowerBound]
+            if !searching { visible += raw[index..<start.lowerBound] }
             guard let openEnd = raw[start.upperBound...].firstIndex(of: ">") else {
-                if !streaming { visible += raw[start.lowerBound...] }
+                if !streaming, !searching { visible += raw[start.lowerBound...] }
                 break
             }
             let open = raw[start.lowerBound...openEnd]
             let name = attribute("name", in: String(open))?.lowercased() ?? ""
             let bodyStart = raw.index(after: openEnd)
             guard let close = raw.range(of: "</tool>", options: .caseInsensitive, range: bodyStart..<raw.endIndex) else {
-                if !streaming { visible += raw[start.lowerBound...] }
+                if !streaming, !searching { visible += raw[start.lowerBound...] }
                 break
             }
             let body = String(raw[bodyStart..<close.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !name.isEmpty, !body.isEmpty {
+            if !name.isEmpty, !body.isEmpty, !searching || name == webSearch {
                 calls.append(Call(name: name, body: body))
             }
             index = close.upperBound
+            if stopAtSearch, name == webSearch, !body.isEmpty { searching = true }
         }
         if streaming { visible = droppingOpenTag(visible) }
         return Parsed(visible: visible, calls: calls)

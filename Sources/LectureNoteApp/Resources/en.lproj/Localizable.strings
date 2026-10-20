@@ -278,6 +278,8 @@
 "模型 ID" = "Model ID";
 "模型未返回文字，请检查所选模型和接口格式。" = "The model returned no text. Check the selected model and API format.";
 "模型未返回文字，请重试。" = "The model returned no text. Please retry.";
+"HTTP %d · %d 个事件 · 结束原因：%@" = "HTTP %d · %d events · finish reason: %@";
+"已自动重试一次" = "retried once automatically";
 "模型正在下载，暂时无法删除。" = "This model is downloading and cannot be deleted yet.";
 "正在删除…" = "Deleting…";
 "正在生成…" = "Generating…";
@@ -322,6 +324,7 @@
 "本机模型不能联网，换成支持联网的 API 服务商后可用。" = "The local model cannot search the web. Switch to an API provider that supports it.";
 "正在回答…" = "Answering…";
 "正在准备图示…" = "Preparing the figure…";
+"这次没能生成图示。" = "The figure could not be created this time.";
 "互动图示" = "Interactive figure";
 "清空" = "Clear";
 "现在不能提问。" = "Questions are unavailable right now.";
