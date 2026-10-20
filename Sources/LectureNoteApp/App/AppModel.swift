@@ -42,6 +42,7 @@ final class AppModel {
     /// The quick tutorial's current tip, or nil when it is not running.
     var tutorialStep: TutorialStop?
     var revealSearchSettings = false
+    var revealMemorySettings = false
     let webSearch = SearchConfiguration()
     var meetings: [Meeting] {
         didSet { schedulePersistence() }
@@ -84,6 +85,12 @@ final class AppModel {
     let localModels = LocalModelLibrary()
     let llmConfiguration = LLMConfiguration()
     let prompts = PromptPreferences()
+    /// What Nomi has learned about the student. Kept on disk only for the real app, not previews and tests.
+    private(set) var memory = UserMemory(file: nil)
+    /// The background learning pass, if one is waiting or running.
+    @ObservationIgnored var memoryTask: Task<Void, Never>?
+    /// The pass has started generating, so a question waits for it instead of cancelling it.
+    @ObservationIgnored var memoryGenerating = false
     var assistantStates: [UUID: MeetingAssistantState] = [:]
     var chats: [ChatSession] = []
     var currentChatID: UUID?
@@ -167,6 +174,7 @@ final class AppModel {
             }
             meetingLinks = MeetingSourceLinkStore.load()
             meetingLinksReady = true
+            memory = UserMemory()
         }
         if case .category(let id) = self.filter, self.category(for: id) == nil {
             self.filter = .all
@@ -450,6 +458,7 @@ final class AppModel {
     func shutdown() {
         persistMeetings()
         ChatStore.flush()
+        memory.flush()
         ChatImages.removeTemporary()
         (engine as? LocalEngine)?.shutdown()
     }

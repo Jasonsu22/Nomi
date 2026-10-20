@@ -277,6 +277,7 @@ extension AppModel {
         let profile = llmConfiguration.activeProfile
         let name = assistantModelName
         let language = prompts.modelLanguageName
+        let remembered = memoryPrompt(for: question)
         let history = session.turns
         let pickedMeetings = meetings.filter { chosenMeetings.contains($0.id) }
         let pickedSources = sources.filter { chosenSources.contains($0.id) }
@@ -362,7 +363,8 @@ extension AppModel {
                         skills: self.prompts.skills,
                         tools: true,
                         webTool: webTool,
-                        library: library
+                        library: library,
+                        memory: remembered
                     )
                     let libraryOpen = library == .available || library == .prefetched
                     let mayStillSearch = (webReachable && !searched) || libraryOpen
@@ -430,6 +432,7 @@ extension AppModel {
                 self.pendingAnswer = ""
                 self.pendingCitations = []
                 if let webNotice { self.chatError = webNotice }
+                self.scheduleMemoryLearning()
                 // One demo per answer: the last brief has seen the search results. Without a brief, API models still get a demo when the answer is substantial.
                 // Local models skip that fallback because a demo there blocks the next question until it finishes.
                 let skipsDemo = ChatContext.skipsDemo(question, usedLibrary: library != .available && library != .off)
@@ -512,6 +515,7 @@ extension AppModel {
             return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
         }
         guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
+        await waitForMemory()
         return try await engine.generate(system: system, prompt: prompt, maxTokens: localMaxTokens, onUpdate: onUpdate)
     }
 

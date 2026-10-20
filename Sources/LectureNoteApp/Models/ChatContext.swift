@@ -347,9 +347,10 @@ enum ChatContext {
         skills: [PromptSkill],
         tools: Bool = false,
         webTool: WebTool = .off,
-        library: LibraryTool = .off
+        library: LibraryTool = .off,
+        memory: String = ""
     ) -> String {
-        let base = systemPrompt(
+        var base = systemPrompt(
             language: language,
             allowsWeb: allowsWeb,
             hasPassages: hasPassages,
@@ -357,6 +358,7 @@ enum ChatContext {
             webTool: webTool,
             library: library
         )
+        if !memory.isEmpty { base += "\n\n" + memory }
         let enabled = skills.filter { skill in
             skill.enabled && !skill.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }

@@ -243,6 +243,8 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
     var citations: [ChatCitation]
     var error: String?
     var images: [ChatImage]
+    /// What the memory pass learned right after this answer, shown under it.
+    var memoryNote: [String]? = nil
 
     init(
         id: UUID = UUID(),
@@ -274,6 +276,7 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
         citations = try container.decodeIfPresent([ChatCitation].self, forKey: .citations) ?? []
         error = try container.decodeIfPresent(String.self, forKey: .error)
         images = try container.decodeIfPresent([ChatImage].self, forKey: .images) ?? []
+        memoryNote = try container.decodeIfPresent([String].self, forKey: .memoryNote)
     }
 }
 

@@ -46,12 +46,18 @@ struct SettingsView: View {
                     SearchSettingsSection(model: model)
                         .id("search-settings")
                     PromptSettingsSection(model: model)
+                    MemorySettingsSection(model: model)
+                        .id("memory-settings")
                 }
                 .pageColumn(maxWidth: 760)
                 .padding(.bottom, Space.s7)
             }
-            .onAppear { revealSearch(proxy) }
+            .onAppear {
+                revealSearch(proxy)
+                revealMemory(proxy)
+            }
             .onChange(of: model.revealSearchSettings) { _, _ in revealSearch(proxy) }
+            .onChange(of: model.revealMemorySettings) { _, _ in revealMemory(proxy) }
             }
         }
     }
@@ -61,6 +67,14 @@ struct SettingsView: View {
         Task { @MainActor in
             proxy.scrollTo("search-settings", anchor: .top)
             model.revealSearchSettings = false
+        }
+    }
+
+    private func revealMemory(_ proxy: ScrollViewProxy) {
+        guard model.revealMemorySettings else { return }
+        Task { @MainActor in
+            withAnimation(.smooth(duration: 0.35)) { proxy.scrollTo("memory-settings", anchor: .top) }
+            model.revealMemorySettings = false
         }
     }
 

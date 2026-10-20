@@ -42,7 +42,8 @@ extension AppModel {
             language: language,
             allowsWeb: false,
             hasPassages: true,
-            skills: prompts.skills
+            skills: prompts.skills,
+            memory: memoryPrompt(for: question ?? meeting.title)
         )
         let history = state.answers.suffix(3).map { "Question: \($0.question)\nAnswer: \($0.answer)" }.joined(separator: "\n")
         let task = summary
@@ -69,6 +70,7 @@ extension AppModel {
                     text = try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, onUpdate: show)
                 } else {
                     guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
+                    await self.waitForMemory()
                     text = try await engine.generate(system: system, prompt: prompt, onUpdate: show)
                 }
                 if summary { state.summary = text; state.summaryModelName = name }

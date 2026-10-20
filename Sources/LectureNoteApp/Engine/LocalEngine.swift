@@ -18,6 +18,8 @@ final class LocalEngine: TranscriptionEngine {
     private(set) var modelStatus: LocalModelRuntimeStatus?
     private(set) var isChangingModel = false
     private(set) var isGenerating = false
+    /// A memory pass is running. It does not make the assistant look busy; chat waits for it instead.
+    @ObservationIgnored private var isGeneratingInBackground = false
     var sourceLanguage = "zh"
     var targetLanguage = "en"
     var inputDeviceUID: String?
@@ -282,11 +284,11 @@ final class LocalEngine: TranscriptionEngine {
         apply(try JSONDecoder().decode(LocalModelRuntimeStatus.self, from: data))
     }
 
-    func generate(system: String, prompt: String, maxTokens: Int = 2048, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
-        guard !isGenerating, !isChangingModel else { throw llmError(tr("请等待录制或本地模型操作结束。")) }
+    func generate(system: String, prompt: String, maxTokens: Int = 2048, background: Bool = false, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
+        guard !isGenerating, !isGeneratingInBackground, !isChangingModel else { throw llmError(tr("请等待录制或本地模型操作结束。")) }
         guard let port, let token else { throw llmError(tr("引擎还没准备好")) }
-        isGenerating = true
-        defer { isGenerating = false }
+        if background { isGeneratingInBackground = true } else { isGenerating = true }
+        defer { if background { isGeneratingInBackground = false } else { isGenerating = false } }
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/assistant/generate")!, timeoutInterval: 300)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
