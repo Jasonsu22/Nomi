@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>如何打开 Nomi · How to Open Nomi</title>
+<style>
+:root {
+  --canvas: #E9EDF6; --surface: #FFFFFF; --inset: #EBF0F6; --accent: #004A77; --on-accent: #FFFFFF;
+  --accent-soft: #E3F3FF; --leaf: #20B68A; --text: #111418; --text-2: #5B6470; --separator: #D5DCE6;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #0F1216; --surface: #181C21; --inset: #1F242B; --accent: #7CC4F2; --on-accent: #0F1216;
+    --accent-soft: #1A2C3A; --leaf: #34C99B; --text: #E6E8EB; --text-2: #A4ACB6; --separator: #2A3038;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--canvas); color: var(--text);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main { max-width: 640px; margin: 0 auto; padding: 40px 20px 56px; }
+header { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+header svg { width: 44px; height: 44px; flex: none; }
+h1 { font-size: 26px; line-height: 1.25; margin: 0; letter-spacing: -.01em; }
+h1 small { display: block; font-size: 15px; font-weight: 500; color: var(--text-2); letter-spacing: 0; }
+.why { color: var(--text-2); margin: 16px 0 24px; }
+.why span { display: block; }
+ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+li {
+  display: grid; grid-template-columns: 32px 1fr; gap: 14px; align-items: start;
+  background: var(--surface); border-radius: 18px; padding: 18px; box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 8px 24px rgba(16,24,40,.06);
+  opacity: 0; transform: translateY(10px); animation: rise .7s var(--ease) forwards;
+}
+li:nth-child(2) { animation-delay: .08s; } li:nth-child(3) { animation-delay: .16s; } li:nth-child(4) { animation-delay: .24s; }
+@keyframes rise { to { opacity: 1; transform: none; } }
+.num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: 700; font-size: 15px; }
+li b { display: block; font-size: 16px; }
+li .en { display: block; color: var(--text-2); font-size: 14.5px; }
+.key { font-weight: 650; padding: 1px 7px; border-radius: 6px; background: var(--inset); white-space: nowrap; }
+.open {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; padding: 0 20px; height: 46px; border-radius: 999px;
+  background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 650; text-decoration: none;
+  box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--accent) 70%, transparent); transition: transform .3s var(--ease);
+}
+.open:hover { transform: translateY(-2px); }
+.open svg { width: 18px; height: 18px; }
+.note { margin-top: 22px; padding: 14px 16px; border-radius: 14px; background: var(--accent-soft); font-size: 14.5px; }
+.note span { display: block; color: var(--text-2); }
+@media (prefers-reduced-motion: reduce) { li { animation: none; opacity: 1; transform: none; } .open { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <svg viewBox="180 166 900 900" aria-hidden="true">{{LOGO_PATHS}}</svg>
+    <h1>第一次打开 Nomi<small>Opening Nomi for the first time</small></h1>
+  </header>
+  <p class="why">
+    Nomi 是免费应用，还没有在 Apple 登记，所以 macOS 会请你确认一次。只需要做一次。
+    <span>Nomi is free and not yet registered with Apple, so macOS asks you to confirm it once. You only do this once.</span>
+  </p>
+  <ol>
+    <li><span class="num">1</span><div>
+      <b>把 Nomi 拖进「应用程序」文件夹。</b>
+      <span class="en">Drag Nomi into the Applications folder.</span>
+    </div></li>
+    <li><span class="num">2</span><div>
+      <b>在「应用程序」里打开 Nomi。看到「无法验证」的提示时，点 <span class="key">完成</span>。</b>
+      <span class="en">Open Nomi from Applications. When macOS says it could not verify Nomi, click <span class="key">Done</span>.</span>
+    </div></li>
+    <li><span class="num">3</span><div>
+      <b>点下面的按钮，打开「隐私与安全性」。</b>
+      <span class="en">Click the button below to open Privacy &amp; Security.</span>
+      <a class="open" href="x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></g></svg>
+        打开隐私与安全性 · Open Privacy &amp; Security
+      </a>
+    </div></li>
+    <li><span class="num">4</span><div>
+      <b>向下滚动，找到关于 Nomi 的提示，点 <span class="key">仍要打开</span>，再用密码或触控 ID 确认。</b>
+      <span class="en">Scroll down to the message about Nomi, click <span class="key">Open Anyway</span>, then confirm with your password or Touch ID.</span>
+    </div></li>
+  </ol>
+  <div class="note">
+    「仍要打开」只会在第 2 步之后出现大约一小时。没看到的话，再打开一次 Nomi，然后重新点上面的按钮。
+    <span>“Open Anyway” appears only after step 2, for about an hour. If you don't see it, open Nomi once more and click the button again.</span>
+  </div>
+</main>
+</body>
+</html>
