@@ -5,6 +5,7 @@ struct LLMSettingsSection: View {
     @State private var editingProfile: LLMAPIProfile?
     @State private var confirmation: Confirmation?
     @State private var error: String?
+    @State private var busySend = BusySendMode.current
 
     private enum Confirmation {
         case mode(LLMMode), activate(LLMAPIProfile), delete(LLMAPIProfile)
@@ -90,6 +91,25 @@ struct LLMSettingsSection: View {
             Text(tr("此切换只用于提问和摘要，语音识别和翻译模型保持独立。"))
                 .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
             if let error { Text(error).font(AppFont.caption).foregroundStyle(.red) }
+            HStack {
+                Text(tr("回答中发送新消息")).font(AppFont.body).foregroundStyle(AppColor.textPrimary)
+                Spacer()
+                Picker(tr("回答中发送新消息"), selection: $busySend) {
+                    ForEach(BusySendMode.allCases) { mode in Text(mode.title).tag(mode) }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .clickCursor()
+                .onChange(of: busySend) { _, mode in BusySendMode.current = mode }
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, 14)
+            .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+            .padding(.top, Space.s2)
+            Text(tr("排队：等这条回答结束后依次发送。打断并引导：立即停下当前回答，保留已写的部分，按新消息继续。⌘Enter 使用另一种方式。"))
+                .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .sheet(item: $editingProfile) { profile in APIProfileEditor(profile: profile, configuration: model.llmConfiguration) }
         .alert(confirmation?.title ?? "", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }), presenting: confirmation) { action in

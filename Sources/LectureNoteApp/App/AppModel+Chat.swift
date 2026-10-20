@@ -105,6 +105,7 @@ extension AppModel {
             }
             ChatImages.delete(session.turns.flatMap(\.images))
             discardComposerImages([id])
+            clearQueue(id)
         }
         let anchor = chats.first { $0.id == id }?.anchorMeetingID
         chats.removeAll { $0.id == id }
@@ -242,11 +243,14 @@ extension AppModel {
     }
 
     @discardableResult
-    func ask(_ question: String, images: [ChatImageDraft] = [], anchor: UUID? = nil) -> Bool {
+    /// `chatID` sends into that chat directly, such as a queued message for a chat that is not on screen.
+    func ask(_ question: String, images: [ChatImageDraft] = [], anchor: UUID? = nil, chatID: UUID? = nil) -> Bool {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty || !images.isEmpty else { return false }
-        if let anchor { ensureMeetingChat(anchor) } else { ensureChat() }
-        let resolvedID = anchor.flatMap { meetingChatID[$0] } ?? currentChatID
+        if chatID == nil {
+            if let anchor { ensureMeetingChat(anchor) } else { ensureChat() }
+        }
+        let resolvedID = chatID ?? anchor.flatMap { meetingChatID[$0] } ?? currentChatID
         guard chatGeneratingID == nil, canGenerateAssistant, let id = resolvedID,
               let session = chats.first(where: { $0.id == id }) else {
             chatError = tr("现在不能提问。")
@@ -451,7 +455,9 @@ extension AppModel {
                 let skipsDemo = ChatContext.skipsDemo(question, usedLibrary: library != .available && library != .off)
                 let brief = skipsDemo ? nil : briefs.last { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 let fallback = !skipsDemo && brief == nil && mode == .api && ChatContext.wantsFallbackVisual(question: question, answer: answer)
-                if let turnID, brief != nil || fallback {
+                // A local demo would hold the only worker while queued messages wait.
+                let queueWaiting = mode == .local && self.chatQueue.contains { !self.queuePaused.contains($0.chatID) }
+                if let turnID, brief != nil || fallback, !queueWaiting {
                     self.startVisual(
                         chatID: id,
                         turnID: turnID,
@@ -463,16 +469,20 @@ extension AppModel {
                         language: language
                     )
                 }
+                self.chatDidEnd(id, succeeded: true)
             } catch is CancellationError {
                 self.restoreDraft(id, question: question, images: images)
+                self.chatDidEnd(id, succeeded: false)
             } catch let error as URLError where error.code == .cancelled {
                 self.restoreDraft(id, question: question, images: images)
+                self.chatDidEnd(id, succeeded: false)
             } catch {
                 if Task.isCancelled {
                     self.restoreDraft(id, question: question, images: images)
                 } else {
                     self.finishChat(id, question: question, answer: "", modelName: name, citations: [], error: error.localizedDescription, images: self.storedImages(images))
                 }
+                self.chatDidEnd(id, succeeded: false)
             }
         }
         return true
