@@ -205,7 +205,19 @@ private struct HtmlAnswerCard: View {
 
 private final class HtmlAnswerWeb: WKWebView {
     var fileURL: URL?
+    /// The card has grown to the page's full height, so the page has nothing left to scroll.
+    var showsWholePage = false
     private var fileMenu: NSMenu?
+
+    /// Once the whole page is shown, vertical scrolling over it moves the chat instead of stopping at the card.
+    /// Mostly sideways gestures stay with the page, for wide tables and sliders.
+    override func scrollWheel(with event: NSEvent) {
+        if showsWholePage, abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX), let next = nextResponder {
+            next.scrollWheel(with: event)
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let fileURL else { return super.menu(for: event) }
@@ -289,14 +301,17 @@ private struct HtmlAnswerWebView: NSViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         var onHeight: (CGFloat) -> Void
         private var loaded: String?
+        private weak var webView: HtmlAnswerWeb?
 
         init(onHeight: @escaping (CGFloat) -> Void) {
             self.onHeight = onHeight
         }
 
         func load(_ html: String, into webView: WKWebView) {
+            self.webView = webView as? HtmlAnswerWeb
             guard loaded != html else { return }
             loaded = html
+            self.webView?.showsWholePage = false
             webView.loadHTMLString(html, baseURL: nil)
         }
 
@@ -306,6 +321,7 @@ private struct HtmlAnswerWebView: NSViewRepresentable {
                   let height = (body["height"] as? NSNumber)?.doubleValue,
                   height.isFinite, height > 0 else { return }
             onHeight(CGFloat(height))
+            webView?.showsWholePage = true
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
