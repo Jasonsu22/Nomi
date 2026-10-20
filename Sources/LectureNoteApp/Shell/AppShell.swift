@@ -4,6 +4,7 @@ import SwiftUI
 struct AppShell: View {
     @Bindable var model: AppModel
     @Environment(\.appReduceMotion) private var reduceMotion
+    @State private var visitedPages: Set<AppPage> = []
 
     private var compact: Bool { model.meetingCompact && model.openMeetingID != nil }
 
@@ -77,9 +78,7 @@ struct AppShell: View {
             TopBar(model: model, reduceMotion: reduce)
             HStack(spacing: 0) {
                 Rail(model: model, reduceMotion: reduce)
-                page
-                    .id(model.page)
-                    .transition(.pageEnter(reduceMotion: reduce))
+                pages
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
             }
@@ -87,9 +86,35 @@ struct AppShell: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// The primary pages stay built after their first visit, so returning to one
+    /// only fades it in instead of rebuilding every meeting row and chat answer.
+    /// Help and Settings are cheap and keep the original rebuild on each visit.
+    private var pages: some View {
+        ZStack {
+            ForEach(AppPage.keptAlive) { page in
+                if visitedPages.contains(page) || model.page == page {
+                    self.page(page)
+                        .keptPage(active: model.page == page, reduceMotion: reduce)
+                        .transition(.pageEnter(reduceMotion: reduce))
+                }
+            }
+            if !AppPage.keptAlive.contains(model.page) {
+                page(model.page)
+                    .id(model.page)
+                    .transition(.pageEnter(reduceMotion: reduce))
+                    .zIndex(2)
+            }
+        }
+        .onChange(of: model.page, initial: true) { _, page in
+            // A hidden page must not keep keyboard focus, as the rebuilt page used to drop it.
+            NSApp.keyWindow?.makeFirstResponder(nil)
+            if AppPage.keptAlive.contains(page) { visitedPages.insert(page) }
+        }
+    }
+
     @ViewBuilder
-    private var page: some View {
-        switch model.page {
+    private func page(_ page: AppPage) -> some View {
+        switch page {
         case .meetings:
             MeetingsPage(model: model, reduceMotion: reduce)
         case .ask:

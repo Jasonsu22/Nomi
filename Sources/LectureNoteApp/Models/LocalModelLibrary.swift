@@ -14,8 +14,27 @@ final class LocalModelLibrary {
 
     init() { refresh() }
 
+    @ObservationIgnored private var scanTask: Task<Void, Never>?
+
     func refresh() {
-        installed = Set(LocalModelDefinition.catalog.filter { LocalModelFiles.isComplete($0) }.map(\.id))
+        scanTask?.cancel()
+        scanTask = nil
+        installed = Self.scanInstalled()
+    }
+
+    /// Reads the model folders off the main thread, so opening a page never waits on disk.
+    func refreshInBackground() {
+        scanTask?.cancel()
+        scanTask = Task { [weak self] in
+            let found = await Task.detached(priority: .utility) { Self.scanInstalled() }.value
+            guard !Task.isCancelled, let self else { return }
+            self.scanTask = nil
+            if self.installed != found { self.installed = found }
+        }
+    }
+
+    nonisolated private static func scanInstalled() -> Set<String> {
+        Set(LocalModelDefinition.catalog.filter { LocalModelFiles.isComplete($0) }.map(\.id))
     }
 
     func download(_ model: LocalModelDefinition) {

@@ -11,6 +11,9 @@ enum AppPage: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Pages that stay built after their first visit so switching back is immediate.
+    static let keptAlive: [AppPage] = [.meetings, .sources, .ask]
+
     var title: String {
         switch self {
         case .meetings: tr("会议")
@@ -428,6 +431,7 @@ final class AppModel {
 
     func shutdown() {
         persistMeetings()
+        ChatStore.flush()
         ChatImages.removeTemporary()
         (engine as? LocalEngine)?.shutdown()
     }

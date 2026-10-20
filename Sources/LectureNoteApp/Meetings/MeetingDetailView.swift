@@ -7,6 +7,7 @@ struct MeetingDetailView: View {
     @Bindable var model: AppModel
     var meetingID: UUID
     var reduceMotion: Bool
+    @Environment(\.pageActive) private var pageActive
     @State private var titleDraft = ""
     @State private var sidePreference: Bool?
     @State private var sideWidth: CGFloat = {
@@ -76,6 +77,9 @@ struct MeetingDetailView: View {
         .onAppear {
             titleDraft = meeting.title
             model.audioInputs.refresh()
+        }
+        .onChange(of: pageActive) { _, active in
+            if active { model.audioInputs.refresh() }
         }
     }
 

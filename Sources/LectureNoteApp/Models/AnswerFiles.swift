@@ -10,8 +10,26 @@ enum ChatFiles {
         var widgets: [URL] = []
     }
 
-    static func export(_ source: String, directory: URL = defaultDirectory) -> Export {
-        let pieces = AnswerDocument.pieces(in: source)
+    static func export(_ source: String) -> Export {
+        // Most answers have no fenced content, so skip a second full Markdown pass
+        // while the answer is streaming.
+        guard source.contains("```") else { return Export() }
+        return export(AnswerDocument.pieces(in: source), directory: nil)
+    }
+
+    static func export(_ source: String, directory: URL) -> Export {
+        export(AnswerDocument.pieces(in: source), directory: directory)
+    }
+
+    static func export(_ pieces: [AnswerDocument.Piece]) -> Export {
+        export(pieces, directory: nil)
+    }
+
+    static func export(_ pieces: [AnswerDocument.Piece], directory: URL) -> Export {
+        export(pieces, directory: Optional(directory))
+    }
+
+    private static func export(_ pieces: [AnswerDocument.Piece], directory: URL?) -> Export {
         var html: [(title: String, fragment: String)] = []
         for piece in pieces {
             if case .widget(let title, let fragment) = piece {
@@ -19,6 +37,7 @@ enum ChatFiles {
             }
         }
         guard !html.isEmpty else { return Export() }
+        let directory = directory ?? defaultDirectory
         let names = inlineHTMLNames(in: pieces)
         var export = Export()
         for (index, widget) in html.enumerated() {

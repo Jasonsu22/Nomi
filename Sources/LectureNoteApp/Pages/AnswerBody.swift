@@ -10,23 +10,36 @@ struct AnswerBody: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let pieces = AnswerDocument.pieces(in: source, streaming: streaming)
-        let export = ChatFiles.export(source)
-        let rows = Self.rows(pieces, widgets: export.widgets)
+        let prepared = streaming
+            ? Self.prepare(source, streaming: true, citations: citations)
+            : AnswerPreparedCache.prepared(source, citations: citations) {
+                Self.prepare(source, streaming: false, citations: citations)
+            }
+        let export = prepared.export
+        let linkedCitations = prepared.citations
         return VStack(alignment: .leading, spacing: Space.s3) {
-            if pieces.isEmpty {
+            if prepared.rows.isEmpty {
                 answerText(AnswerInline.render(source, citations: linkedCitations, streaming: streaming, files: export.named))
             } else {
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    pieceView(row.piece, file: row.file, files: export.named)
+                ForEach(Array(prepared.rows.enumerated()), id: \.offset) { _, row in
+                    pieceView(row.piece, file: row.file, files: export.named, citations: linkedCitations)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var linkedCitations: [Int: ChatCitation] {
-        ChatContext.linkedCitations(in: source, citations: citations)
+    /// Parses the answer once and derives its files and citation numbers from that one pass.
+    static func prepare(_ source: String, streaming: Bool, citations: [ChatCitation]) -> AnswerPrepared {
+        let pieces = AnswerDocument.pieces(in: source, streaming: streaming)
+        // Streaming keeps the existing parser mode for partially completed fences.
+        // Finished answers reuse the pieces above instead of parsing the whole answer twice.
+        let export = streaming ? ChatFiles.export(source) : ChatFiles.export(pieces)
+        return AnswerPrepared(
+            rows: rows(pieces, widgets: export.widgets),
+            export: export,
+            citations: ChatContext.linkedCitations(in: source, citations: citations)
+        )
     }
 
     private func open(_ url: URL) {
@@ -47,23 +60,23 @@ struct AnswerBody: View {
         }
     }
 
-    private struct Row {
-        var piece: AnswerDocument.Piece
-        var file: URL?
-    }
-
-    private static func rows(_ pieces: [AnswerDocument.Piece], widgets: [URL]) -> [Row] {
+    private static func rows(_ pieces: [AnswerDocument.Piece], widgets: [URL]) -> [AnswerPrepared.Row] {
         var index = 0
         return pieces.map { piece in
-            guard case .widget = piece, index < widgets.count else { return Row(piece: piece, file: nil) }
+            guard case .widget = piece, index < widgets.count else { return AnswerPrepared.Row(piece: piece, file: nil) }
             let file = widgets[index]
             index += 1
-            return Row(piece: piece, file: file)
+            return AnswerPrepared.Row(piece: piece, file: file)
         }
     }
 
     /// The marker and the sentence share one text view, so their baselines match.
-    private func listText(ordered: Bool, items: [String], files: [String: URL]) -> AttributedString {
+    private func listText(
+        ordered: Bool,
+        items: [String],
+        files: [String: URL],
+        citations: [Int: ChatCitation]
+    ) -> AttributedString {
         let font = NSFont.systemFont(ofSize: 15)
         let widest = ordered ? "\(max(items.count, 1))." : "•"
         let indent = ceil((widest as NSString).size(withAttributes: [.font: font]).width) + 8
@@ -79,7 +92,7 @@ struct AnswerBody: View {
                 attributes: [.font: font, .foregroundColor: AppColor.nsTextSecondary]
             )
             text.append(marker)
-            text.append(NSAttributedString(AnswerInline.render(item, citations: linkedCitations, streaming: streaming, files: files)))
+            text.append(NSAttributedString(AnswerInline.render(item, citations: citations, streaming: streaming, files: files)))
             if index + 1 < items.count {
                 text.append(NSAttributedString(string: "\n"))
             }
@@ -104,14 +117,19 @@ struct AnswerBody: View {
     }
 
     @ViewBuilder
-    private func pieceView(_ piece: AnswerDocument.Piece, file: URL?, files: [String: URL]) -> some View {
+    private func pieceView(
+        _ piece: AnswerDocument.Piece,
+        file: URL?,
+        files: [String: URL],
+        citations: [Int: ChatCitation]
+    ) -> some View {
         switch piece {
         case .heading(let level, let text):
-            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: linkedCitations, streaming: streaming, files: files))
+            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: citations, streaming: streaming, files: files))
         case .paragraph(let text):
-            answerText(AnswerInline.render(text, citations: linkedCitations, streaming: streaming, files: files))
+            answerText(AnswerInline.render(text, citations: citations, streaming: streaming, files: files))
         case .list(let ordered, let items):
-            answerText(listText(ordered: ordered, items: items, files: files))
+            answerText(listText(ordered: ordered, items: items, files: files, citations: citations))
         case .code(let code):
             answerText(codeText(code))
                 .padding(Space.s2)
@@ -129,13 +147,13 @@ struct AnswerBody: View {
             Grid(alignment: .leading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: linkedCitations, streaming: streaming, files: files))
+                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: citations, streaming: streaming, files: files))
                     }
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            answerText(AnswerInline.render(cell, size: 13, citations: linkedCitations, streaming: streaming, files: files))
+                            answerText(AnswerInline.render(cell, size: 13, citations: citations, streaming: streaming, files: files))
                         }
                     }
                 }
@@ -386,6 +404,61 @@ private struct CitePreviewCard: View {
     }
 }
 
+/// One answer after parsing: the blocks to show, the files they open, and the citation numbers.
+struct AnswerPrepared: Equatable {
+    struct Row: Equatable {
+        var piece: AnswerDocument.Piece
+        var file: URL?
+    }
+
+    var rows: [Row]
+    var export: ChatFiles.Export
+    var citations: [Int: ChatCitation]
+}
+
+/// Finished answers do not change, so a chat shown again reuses its parsed form instead of
+/// parsing the Markdown and checking its exported files on every view update.
+@MainActor
+enum AnswerPreparedCache {
+    private struct Entry {
+        var citations: [ChatCitation]
+        var prepared: AnswerPrepared
+    }
+
+    /// Bounded by the characters of the cached answers, oldest first out.
+    static let characterLimit = 4_000_000
+    private static var entries: [String: Entry] = [:]
+    private static var order: [String] = []
+    private static var characters = 0
+
+    static func prepared(_ source: String, citations: [ChatCitation], make: () -> AnswerPrepared) -> AnswerPrepared {
+        // Exported interactive files can be removed outside the app; export again if one is gone.
+        if let entry = entries[source], entry.citations == citations,
+           entry.prepared.export.widgets.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) {
+            return entry.prepared
+        }
+        let prepared = make()
+        if entries.updateValue(Entry(citations: citations, prepared: prepared), forKey: source) == nil {
+            order.append(source)
+            characters += source.utf16.count
+        }
+        while characters > characterLimit, order.count > 1 {
+            let oldest = order.removeFirst()
+            entries[oldest] = nil
+            characters -= oldest.utf16.count
+        }
+        return prepared
+    }
+
+    static var count: Int { entries.count }
+
+    static func removeAll() {
+        entries.removeAll()
+        order.removeAll()
+        characters = 0
+    }
+}
+
 /// Selectable answer text. A link uses the pointing hand, and shows its card while the pointer is over it.
 private struct CiteText: NSViewRepresentable {
     var attributed: AttributedString
@@ -459,23 +532,24 @@ private struct CiteText: NSViewRepresentable {
         private var closeTicket = 0
         private var pointerInsideCard = false
         private var contextMenuOpen = false
-        private let popover = NSPopover()
-        private let host = NSHostingController(rootView: AnyView(EmptyView()))
+        // An answer has many text blocks, so the hover card is only built when it is first shown.
+        private var card: (popover: NSPopover, host: NSHostingController<AnyView>)?
+        private var cardShown: Bool { card?.popover.isShown == true }
+        /// Math images are sized to the column, so only those blocks redraw when the width changes.
+        private var widthSensitive = false
 
         init(onOpen: @escaping (URL) -> Void) {
             self.onOpen = onOpen
             super.init()
-            popover.behavior = .applicationDefined
-            popover.animates = false
-            host.sizingOptions = .preferredContentSize
-            popover.contentViewController = host
         }
 
         func apply(_ attributed: AttributedString, citations: [ChatCitation], colorScheme: ColorScheme, streaming: Bool, to view: CiteTextView) {
             self.citations = citations
             textView = view
             let width = view.bounds.width
-            let changed = source != attributed || self.colorScheme != colorScheme || self.streaming != streaming || abs(layoutWidth - width) > 8
+            let resized = abs(layoutWidth - width) > 8
+            let changed = source != attributed || self.colorScheme != colorScheme || self.streaming != streaming
+                || (resized && widthSensitive)
             self.colorScheme = colorScheme
             self.streaming = streaming
             source = attributed
@@ -485,7 +559,10 @@ private struct CiteText: NSViewRepresentable {
                 .underlineStyle: 0,
                 .cursor: NSCursor.pointingHand,
             ]
-            guard changed else { return }
+            guard changed else {
+                if !widthSensitive { layoutWidth = width }
+                return
+            }
             underlined = nil
             view.clearUnderline()
             let next = decorated(attributed, color: color, maxWidth: width > 40 ? width : 640)
@@ -494,7 +571,7 @@ private struct CiteText: NSViewRepresentable {
                 view.textStorage?.setAttributedString(next)
             } else {
                 let previous = view.textStorage?.string ?? ""
-                if abs(layoutWidth - width) > 8 { baseImages.removeAll() }
+                if resized { baseImages.removeAll() }
                 syncBirths(from: previous, to: next.string)
                 view.textStorage?.setAttributedString(next)
                 rememberBases(next)
@@ -528,9 +605,9 @@ private struct CiteText: NSViewRepresentable {
             cancelClose()
             view.underline(link.range)
             underlined = link.range
-            if shownURL == link.url, popover.isShown { return }
+            if shownURL == link.url, cardShown { return }
             if pendingURL == link.url { return }
-            if popover.isShown { closeCard() }
+            if cardShown { closeCard() }
             pendingURL = link.url
             showTicket += 1
             let ticket = showTicket
@@ -572,7 +649,8 @@ private struct CiteText: NSViewRepresentable {
         private func present(_ preview: CitePreview, url: URL, rect: CGRect, in view: CiteTextView) {
             pendingURL = nil
             shownURL = url
-            host.rootView = AnyView(CitePreviewCard(preview: preview, onOpen: { [weak self, weak view] in
+            let card = self.card ?? makeCard()
+            card.host.rootView = AnyView(CitePreviewCard(preview: preview, onOpen: { [weak self, weak view] in
                 self?.onOpen(url)
                 self?.close(view)
             }, onInside: { [weak self, weak view] inside in
@@ -580,12 +658,23 @@ private struct CiteText: NSViewRepresentable {
                 self.pointerInsideCard = inside
                 if inside { self.cancelClose() } else { self.scheduleClose(view) }
             }))
-            popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
+            card.popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
+        }
+
+        private func makeCard() -> (popover: NSPopover, host: NSHostingController<AnyView>) {
+            let popover = NSPopover()
+            let host = NSHostingController(rootView: AnyView(EmptyView()))
+            popover.behavior = .applicationDefined
+            popover.animates = false
+            host.sizingOptions = .preferredContentSize
+            popover.contentViewController = host
+            card = (popover, host)
+            return (popover, host)
         }
 
         private func closeCard() {
             shownURL = nil
-            if popover.isShown { popover.performClose(nil) }
+            if let popover = card?.popover, popover.isShown { popover.performClose(nil) }
         }
 
         private func close(_ view: NSTextView?) {
@@ -665,7 +754,7 @@ private struct CiteText: NSViewRepresentable {
         }
 
         private func rememberBases(_ text: NSAttributedString) {
-            for index in 0..<text.length where born[index] != nil {
+            for index in born.keys where index < text.length {
                 if baseColors[index] == nil {
                     baseColors[index] = text.attribute(.foregroundColor, at: index, effectiveRange: nil) as? NSColor
                 }
@@ -690,11 +779,15 @@ private struct CiteText: NSViewRepresentable {
             guard let storage = view.textStorage else { return false }
             let now = Date().timeIntervalSinceReferenceDate
             var pending = false
+            var firstAffected = storage.length
+            var lastAffected = 0
             storage.beginEditing()
             var finished: [Int] = []
             for index in born.keys where index < storage.length {
                 let alpha = opacity(at: index, now: now)
                 let range = NSRange(location: index, length: 1)
+                firstAffected = min(firstAffected, index)
+                lastAffected = max(lastAffected, index + 1)
                 if alpha >= 0.999 {
                     if let color = baseColors[index] {
                         storage.addAttribute(.foregroundColor, value: color, range: range)
@@ -716,10 +809,9 @@ private struct CiteText: NSViewRepresentable {
                 }
             }
             storage.endEditing()
-            if let layout = view.layoutManager, storage.length > 0 {
-                layout.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: storage.length))
+            if let layout = view.layoutManager, firstAffected < lastAffected {
+                layout.invalidateDisplay(forCharacterRange: NSRange(location: firstAffected, length: lastAffected - firstAffected))
             }
-            view.needsDisplay = true
             for index in finished {
                 born[index] = nil
                 baseColors[index] = nil
@@ -758,7 +850,7 @@ private struct CiteText: NSViewRepresentable {
 
         private func decorated(_ source: AttributedString, color: NSColor, maxWidth: CGFloat) -> NSAttributedString {
             let text = NSMutableAttributedString(attributedString: NSAttributedString(source))
-            replaceMath(in: text, maxWidth: maxWidth)
+            widthSensitive = replaceMath(in: text, maxWidth: maxWidth)
             var ranges: [NSRange] = []
             text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
                 if value != nil { ranges.append(range) }
@@ -780,7 +872,8 @@ private struct CiteText: NSViewRepresentable {
             return text
         }
 
-        private func replaceMath(in text: NSMutableAttributedString, maxWidth: CGFloat) {
+        @discardableResult
+        private func replaceMath(in text: NSMutableAttributedString, maxWidth: CGFloat) -> Bool {
             let ink = colorScheme == .dark ? NSColor(hex: 0xE6E8EB) : NSColor(hex: 0x111418)
             var found: [(NSRange, URL)] = []
             text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
@@ -810,6 +903,7 @@ private struct CiteText: NSViewRepresentable {
                 style.alignment = .center
                 text.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: text.length))
             }
+            return !found.isEmpty
         }
 
         /// One ordinary space before a link that sits against the previous word. The space stays outside the link.

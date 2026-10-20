@@ -13,14 +13,26 @@ case "$config" in
         ;;
 esac
 
+# Development key mode keeps API keys in a private file after the first keychain
+# approval, so rebuilds stop asking. It is on for debug builds and off for release
+# builds unless NOMI_DEV_KEYS=1. Never give anyone a build made with it on.
+dev_keys="${NOMI_DEV_KEYS:-}"
+if [[ -z "$dev_keys" ]]; then
+    [[ "$config" == debug ]] && dev_keys=1 || dev_keys=0
+fi
+swift_args=(-c "$config")
+if [[ "$dev_keys" == 1 ]]; then
+    swift_args+=(-Xswiftc -DNOMI_DEV_KEYS)
+fi
+
 # Build the backend from this repository; a missing worker must fail packaging.
 cargo_args=(build --locked --manifest-path "$root/Backend/Cargo.toml" --target-dir "$root/Backend/target" -p moxin-engine -p asr-worker -p llm-worker)
 if [[ "$config" == release ]]; then
     cargo_args+=(--release)
 fi
 cargo "${cargo_args[@]}"
-swift build -c "$config"
-bin_dir="$(swift build -c "$config" --show-bin-path)"
+swift build "${swift_args[@]}"
+bin_dir="$(swift build "${swift_args[@]}" --show-bin-path)"
 binary="$bin_dir/LectureNoteApp"
 app_bundle="$bin_dir/LectureNoteApp_LectureNoteApp.bundle"
 engine_dir="$root/Backend/target/$config"
@@ -85,4 +97,7 @@ EOF
 
 touch "$app"
 "$root/scripts/sign-app.sh" "$app"
+if [[ "$dev_keys" == 1 ]]; then
+    echo "开发密钥模式：API 密钥会存到本机文件，不要把这个版本发给别人。" >&2
+fi
 echo "$app"

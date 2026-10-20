@@ -5,6 +5,7 @@ struct AskView: View {
     var model: AppModel
     var anchorMeetingID: UUID? = nil
     @Environment(\.appReduceMotion) private var reduceMotion
+    @Environment(\.pageActive) private var pageActive
     @State private var draft = ""
     @State private var composerFocused = false
     @State private var scopePresented = false
@@ -49,15 +50,9 @@ struct AskView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear {
-            if let anchorMeetingID {
-                model.ensureMeetingChat(anchorMeetingID)
-            } else {
-                model.ensureChat()
-            }
-            model.localModels.refresh()
-            composerFocused = true
-            restoreDraft()
+        .onAppear(perform: activate)
+        .onChange(of: pageActive) { _, active in
+            if active { activate() }
         }
         .onChange(of: model.llmConfiguration.mode) { _, _ in
             Task { await model.refreshActiveAPIModels() }
@@ -131,7 +126,8 @@ struct AskView: View {
                                     if index > 0, modelDidChange(session.turns[index - 1].modelName, turn.modelName) {
                                         ModelChangeNote(from: session.turns[index - 1].modelName, to: turn.modelName)
                                     }
-                                    turnView(turn)
+                                    AskTurnRow(turn: turn) { model.openCitation($0) }
+                                        .equatable()
                                     if model.preparingVisualTurnIDs.contains(turn.id) {
                                         HStack(spacing: Space.s2) {
                                             ProgressView().controlSize(.small)
@@ -260,7 +256,7 @@ struct AskView: View {
                     AskComposerField(
                         text: $draft,
                         placeholder: tr("问点什么…"),
-                        focused: composerFocused,
+                        focused: composerFocused && pageActive,
                         onSubmit: send,
                         onPasteImages: addPastedImages,
                         onRemoveLastImage: removeLastImage
@@ -438,7 +434,9 @@ struct AskView: View {
     }
 
     private var composerHeight: CGFloat {
-        let lines = max(1, draft.components(separatedBy: "\n").count)
+        let lines = draft.utf8.reduce(into: 1) { count, byte in
+            if byte == 0x0A { count += 1 }
+        }
         return min(96, max(36, CGFloat(lines) * 22 + 8))
     }
 
@@ -479,39 +477,6 @@ struct AskView: View {
         model.webSearch.isActiveReady
             ? tr("允许模型上网查资料。")
             : tr("先在设置里配置一个搜索服务")
-    }
-
-    private func turnView(_ turn: ChatTurn) -> some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            HStack {
-                Spacer(minLength: 80)
-                VStack(alignment: .trailing, spacing: Space.s2) {
-                    if !turn.images.isEmpty {
-                        StoredImageStrip(images: turn.images)
-                    }
-                    if !turn.question.isEmpty {
-                        Text(turn.question)
-                            .font(AppFont.body)
-                            .foregroundStyle(AppColor.textPrimary)
-                            .textSelection(.enabled)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(AppColor.accentSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    }
-                }
-            }
-            if let error = turn.error {
-                Text(error)
-                    .font(AppFont.secondary)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            } else if !turn.answer.isEmpty {
-                AnswerBody(source: turn.answer, citations: turn.citations) { citation in
-                    model.openCitation(citation)
-                }
-                .frame(maxWidth: 680, alignment: .leading)
-            }
-        }
     }
 
     private func pendingView(_ question: String) -> some View {
@@ -686,6 +651,18 @@ struct AskView: View {
         return true
     }
 
+    /// Runs when the page is first shown and again each time a kept page returns.
+    private func activate() {
+        if let anchorMeetingID {
+            model.ensureMeetingChat(anchorMeetingID)
+        } else {
+            model.ensureChat()
+        }
+        model.localModels.refreshInBackground()
+        composerFocused = true
+        restoreDraft()
+    }
+
     private func restoreDraft() {
         guard let text = model.chatDraftRestore else { return }
         draft = text
@@ -768,3 +745,46 @@ private struct AskIconButton: View {
     }
 }
 
+/// A finished turn. It only depends on its own turn, so streaming text, typing and other
+/// model updates elsewhere on the page do not rebuild finished answers.
+private struct AskTurnRow: View, Equatable {
+    var turn: ChatTurn
+    var onOpenCitation: (ChatCitation) -> Void
+
+    nonisolated static func == (lhs: AskTurnRow, rhs: AskTurnRow) -> Bool {
+        lhs.turn == rhs.turn
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                Spacer(minLength: 80)
+                VStack(alignment: .trailing, spacing: Space.s2) {
+                    if !turn.images.isEmpty {
+                        StoredImageStrip(images: turn.images)
+                    }
+                    if !turn.question.isEmpty {
+                        Text(turn.question)
+                            .font(AppFont.body)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .textSelection(.enabled)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(AppColor.accentSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
+                }
+            }
+            if let error = turn.error {
+                Text(error)
+                    .font(AppFont.secondary)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+            } else if !turn.answer.isEmpty {
+                AnswerBody(source: turn.answer, citations: turn.citations) { citation in
+                    onOpenCitation(citation)
+                }
+                .frame(maxWidth: 680, alignment: .leading)
+            }
+        }
+    }
+}

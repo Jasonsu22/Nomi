@@ -23,14 +23,23 @@ enum ChatStore {
         }
     }
 
-    static func save(_ session: ChatSession) throws {
-        try queue.sync {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try JSONEncoder().encode(session).write(to: file(session.id), options: .atomic)
+    static func saveInBackground(_ session: ChatSession, onFailure: @escaping @Sendable () -> Void) {
+        queue.async {
+            do { try write(session) } catch { onFailure() }
         }
     }
 
-    static func delete(_ id: UUID) {
-        queue.sync { try? FileManager.default.removeItem(at: file(id)) }
+    static func deleteInBackground(_ id: UUID) {
+        queue.async { try? FileManager.default.removeItem(at: file(id)) }
+    }
+
+    /// Waits for the queued writes only while the application is terminating.
+    static func flush() {
+        queue.sync {}
+    }
+
+    private static func write(_ session: ChatSession) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(session).write(to: file(session.id), options: .atomic)
     }
 }
