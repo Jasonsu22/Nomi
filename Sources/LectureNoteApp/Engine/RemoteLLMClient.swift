@@ -24,12 +24,49 @@ enum RemoteLLMClient {
         return result.sorted()
     }
 
+    /// A reply that ended without any text. The details say what the service actually sent.
+    struct EmptyReply: LocalizedError, Equatable {
+        var status: Int
+        var events: Int
+        var finishReason: String?
+        var retried = false
+
+        var errorDescription: String? {
+            var detail = trf("HTTP %d · %d 个事件 · 结束原因：%@", status, events, finishReason ?? "none")
+            if retried { detail += " · " + tr("已自动重试一次") }
+            return tr("模型未返回文字，请检查所选模型和接口格式。") + " (\(detail))"
+        }
+    }
+
+    /// Sends the chat request. An empty reply is sometimes a passing service hiccup,
+    /// so it is sent once more before the error reaches the user.
     static func generate(
         profile: LLMAPIProfile,
         key: String,
         system: String,
         prompt: String,
         images: [ModelImage] = [],
+        onUpdate: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
+        do {
+            return try await send(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
+        } catch is EmptyReply {
+            try Task.checkCancellation()
+            do {
+                return try await send(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
+            } catch var empty as EmptyReply {
+                empty.retried = true
+                throw empty
+            }
+        }
+    }
+
+    private static func send(
+        profile: LLMAPIProfile,
+        key: String,
+        system: String,
+        prompt: String,
+        images: [ModelImage],
         onUpdate: @escaping @MainActor (String) -> Void
     ) async throws -> String {
         let profile = try profile.validated()
@@ -78,12 +115,12 @@ enum RemoteLLMClient {
         if !(200..<300).contains(code) || (type.contains("json") && !type.contains("event-stream")) {
             let data = try await data(from: bytes)
             if !(200..<300).contains(code) { throw failure(data, code: code, key: key) }
-            return try await complete(data, key: key, onUpdate: onUpdate)
+            return try await complete(data, status: code, key: key, onUpdate: onUpdate)
         }
-        return try await events(bytes, key: key, onUpdate: onUpdate)
+        return try await events(bytes, status: code, key: key, onUpdate: onUpdate)
     }
 
-    private static func events(_ bytes: URLSession.AsyncBytes, key: String, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
+    private static func events(_ bytes: URLSession.AsyncBytes, status: Int, key: String, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
         var iterator = bytes.lines.makeAsyncIterator()
         var pending: String?
         while let line = try await iterator.next() {
@@ -92,7 +129,7 @@ enum RemoteLLMClient {
             if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
                 var raw = line
                 while let more = try await iterator.next() { raw += "\n" + more }
-                return try await complete(Data(raw.utf8), key: key, onUpdate: onUpdate)
+                return try await complete(Data(raw.utf8), status: status, key: key, onUpdate: onUpdate)
             }
             pending = line
             break
@@ -133,12 +170,14 @@ enum RemoteLLMClient {
         }
         accumulator.finished = true
         let answer = accumulator.answer
-        guard !answer.isEmpty else { throw llmError(tr("模型未返回文字，请检查所选模型和接口格式。")) }
+        guard !answer.isEmpty else {
+            throw EmptyReply(status: status, events: accumulator.events, finishReason: accumulator.finishReason)
+        }
         if answer != shown { await MainActor.run { onUpdate(answer) } }
         return answer
     }
 
-    private static func complete(_ data: Data, key: String, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
+    private static func complete(_ data: Data, status: Int, key: String, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw failure(data, code: 200, key: key)
         }
@@ -151,7 +190,9 @@ enum RemoteLLMClient {
         }
         accumulator.finished = true
         let answer = accumulator.answer
-        guard !answer.isEmpty else { throw llmError(tr("模型未返回文字，请检查所选模型和接口格式。")) }
+        guard !answer.isEmpty else {
+            throw EmptyReply(status: status, events: accumulator.events, finishReason: accumulator.finishReason)
+        }
         await MainActor.run { onUpdate(answer) }
         return answer
     }

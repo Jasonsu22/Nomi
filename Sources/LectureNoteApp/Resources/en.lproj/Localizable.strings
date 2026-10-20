@@ -278,6 +278,8 @@
 "模型 ID" = "Model ID";
 "模型未返回文字，请检查所选模型和接口格式。" = "The model returned no text. Check the selected model and API format.";
 "模型未返回文字，请重试。" = "The model returned no text. Please retry.";
+"HTTP %d · %d 个事件 · 结束原因：%@" = "HTTP %d · %d events · finish reason: %@";
+"已自动重试一次" = "retried once automatically";
 "模型正在下载，暂时无法删除。" = "This model is downloading and cannot be deleted yet.";
 "正在删除…" = "Deleting…";
 "正在生成…" = "Generating…";

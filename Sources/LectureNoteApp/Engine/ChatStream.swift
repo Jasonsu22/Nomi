@@ -40,6 +40,9 @@ enum ChatStream {
         var reasoning = ""
         var links: [String] = []
         var finished = false
+        /// Parsed events and the last stop reason, reported when a reply comes back empty.
+        var events = 0
+        var finishReason: String?
 
         var display: String {
             let body = ChatStream.visible(content)
@@ -60,6 +63,8 @@ enum ChatStream {
         }
 
         mutating func apply(_ object: [String: Any]) -> String? {
+            events += 1
+            noteFinishReason(object)
             if let message = Self.failure(in: object) { return message }
             if let kind = object["type"] as? String, apply(kind: kind, object: object) { return nil }
             if applyLocal(object) { return nil }
@@ -158,6 +163,22 @@ enum ChatStream {
             content = parts.joined(separator: "\n")
             finished = true
             return true
+        }
+
+        /// Chat Completions `finish_reason`, Anthropic `stop_reason`, or a Responses `status`.
+        private mutating func noteFinishReason(_ object: [String: Any]) {
+            if let choice = (object["choices"] as? [[String: Any]])?.first,
+               let reason = choice["finish_reason"] as? String, !reason.isEmpty {
+                finishReason = reason
+            } else if let reason = (object["delta"] as? [String: Any])?["stop_reason"] as? String {
+                finishReason = reason
+            } else if let reason = object["stop_reason"] as? String {
+                finishReason = reason
+            } else if let response = object["response"] as? [String: Any], let status = response["status"] as? String {
+                finishReason = status
+            } else if object["output"] != nil, let status = object["status"] as? String {
+                finishReason = status
+            }
         }
 
         private mutating func addLink(_ note: [String: Any]?) {
