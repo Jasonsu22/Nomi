@@ -851,6 +851,11 @@ private struct AskTurnRow: View, Equatable {
                 }
                 .frame(maxWidth: 680, alignment: .leading)
             }
+            if turn.interrupted == true {
+                Label(tr("已打断"), systemImage: "arrow.uturn.right")
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+            }
             if let note = turn.memoryNote, !note.isEmpty {
                 memoryNote(note)
             }

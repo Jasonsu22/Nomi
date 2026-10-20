@@ -494,3 +494,4 @@
 "另一段对话正在回答，新消息会排队。" = "Another chat is answering; new messages are queued.";
 "Enter 排队 · ⌘Enter 立即打断" = "Enter queues · ⌘Enter steers now";
 "Enter 立即打断 · ⌘Enter 排队" = "Enter steers now · ⌘Enter queues";
+"已打断" = "Interrupted";

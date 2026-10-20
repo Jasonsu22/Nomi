@@ -245,6 +245,8 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
     var images: [ChatImage]
     /// What the memory pass learned right after this answer, shown under it.
     var memoryNote: [String]? = nil
+    /// The student steered away while this answer was being written; it holds what was shown.
+    var interrupted: Bool? = nil
 
     init(
         id: UUID = UUID(),
@@ -277,6 +279,7 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
         error = try container.decodeIfPresent(String.self, forKey: .error)
         images = try container.decodeIfPresent([ChatImage].self, forKey: .images) ?? []
         memoryNote = try container.decodeIfPresent([String].self, forKey: .memoryNote)
+        interrupted = try container.decodeIfPresent(Bool.self, forKey: .interrupted)
     }
 }
 

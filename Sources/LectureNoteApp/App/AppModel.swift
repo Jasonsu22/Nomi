@@ -124,6 +124,8 @@ final class AppModel {
     var chatQueue: [QueuedPrompt] = []
     /// Chats whose queue waits for the student after a Stop or an error.
     var queuePaused: Set<UUID> = []
+    /// A message waiting for the answer it interrupts to stop.
+    @ObservationIgnored var pendingSteer: QueuedPrompt?
     var enlargedImage: NSImage?
     var enlargedImageName = "image.png"
     var enlargedImageURL: URL?

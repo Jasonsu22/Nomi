@@ -419,7 +419,10 @@ enum ChatContext {
     }
 
     /// `mentionsLibrary` tells the model that turns older than the window can still be looked up.
-    static func userPrompt(question: String, history: HistoryWindow, blocks: [ContextBlock], mentionsOlderImages: Bool = false, mentionsLibrary: Bool = false) -> String {
+    /// Added before a message that interrupted the previous answer.
+    static let steerNote = "The student interrupted your previous answer to say the message below. Take it into account; continue or change course as it asks, without repeating what was already said."
+
+    static func userPrompt(question: String, history: HistoryWindow, blocks: [ContextBlock], mentionsOlderImages: Bool = false, mentionsLibrary: Bool = false, steered: Bool = false) -> String {
         var parts: [String] = []
         if mentionsOlderImages {
             parts.append("用户发过一张图片")
@@ -445,6 +448,7 @@ enum ChatContext {
             }
             parts.append("\(intro)\n<passages>\n\(passages)\n</passages>")
         }
+        if steered { parts.append(steerNote) }
         parts.append(question.isEmpty ? "Question:" : "Question: \(question)")
         return parts.joined(separator: "\n\n")
     }

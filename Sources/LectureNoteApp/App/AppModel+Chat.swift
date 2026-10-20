@@ -244,7 +244,8 @@ extension AppModel {
 
     @discardableResult
     /// `chatID` sends into that chat directly, such as a queued message for a chat that is not on screen.
-    func ask(_ question: String, images: [ChatImageDraft] = [], anchor: UUID? = nil, chatID: UUID? = nil) -> Bool {
+    /// `steered` marks a message that interrupted the previous answer, so the model is told.
+    func ask(_ question: String, images: [ChatImageDraft] = [], anchor: UUID? = nil, chatID: UUID? = nil, steered: Bool = false) -> Bool {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty || !images.isEmpty else { return false }
         if chatID == nil {
@@ -390,7 +391,8 @@ extension AppModel {
                         history: historyWindow,
                         blocks: blocks,
                         mentionsOlderImages: seesImages && imagePlan.mentionsOlderImages,
-                        mentionsLibrary: libraryOpen
+                        mentionsLibrary: libraryOpen,
+                        steered: steered
                     )
                     if round > 0 {
                         let draft = answer.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -471,18 +473,16 @@ extension AppModel {
                 }
                 self.chatDidEnd(id, succeeded: true)
             } catch is CancellationError {
-                self.restoreDraft(id, question: question, images: images)
-                self.chatDidEnd(id, succeeded: false)
+                self.chatWasStopped(id, question: question, images: images, modelName: name)
             } catch let error as URLError where error.code == .cancelled {
-                self.restoreDraft(id, question: question, images: images)
-                self.chatDidEnd(id, succeeded: false)
+                self.chatWasStopped(id, question: question, images: images, modelName: name)
             } catch {
                 if Task.isCancelled {
-                    self.restoreDraft(id, question: question, images: images)
+                    self.chatWasStopped(id, question: question, images: images, modelName: name)
                 } else {
-                    self.finishChat(id, question: question, answer: "", modelName: name, citations: [], error: error.localizedDescription, images: self.storedImages(images))
+                    _ = self.finishChat(id, question: question, answer: "", modelName: name, citations: [], error: error.localizedDescription, images: self.storedImages(images))
+                    self.chatDidEnd(id, succeeded: false)
                 }
-                self.chatDidEnd(id, succeeded: false)
             }
         }
         return true
@@ -652,6 +652,42 @@ extension AppModel {
     }
 
     @discardableResult
+    /// A stopped answer. Stop puts the question back in the composer and pauses the queue; a steer
+    /// keeps what was shown as an interrupted turn and sends the new message once this task ends.
+    private func chatWasStopped(_ id: UUID, question: String, images: [ChatImageDraft], modelName: String) {
+        guard let steer = pendingSteer, steer.chatID == id else {
+            restoreDraft(id, question: question, images: images)
+            chatDidEnd(id, succeeded: false)
+            return
+        }
+        pendingSteer = nil
+        let shown = pendingAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Nothing shown yet: the question is simply replaced, unless it carried images worth keeping.
+        if !shown.isEmpty || !images.isEmpty {
+            let turnID = finishChat(id, question: question, answer: shown, modelName: modelName, citations: pendingCitations, error: nil, images: storedImages(images))
+            if let turnID, let chatIndex = chats.firstIndex(where: { $0.id == id }),
+               let turnIndex = chats[chatIndex].turns.firstIndex(where: { $0.id == turnID }) {
+                chats[chatIndex].turns[turnIndex].interrupted = true
+                if chatsReady {
+                    let message = tr("无法保存对话。")
+                    ChatStore.saveInBackground(chats[chatIndex]) { [weak self] in
+                        Task { @MainActor in self?.chatError = message }
+                    }
+                }
+            }
+        } else {
+            images.forEach(ChatImages.discard)
+        }
+        // Runs after this answer's task has cleared `chatGeneratingID`.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if !self.ask(steer.text, images: steer.images, chatID: id, steered: true) {
+                self.chatQueue.insert(steer, at: 0)
+                self.queuePaused.insert(id)
+            }
+        }
+    }
+
     private func finishChat(_ id: UUID, question: String, answer: String, modelName: String, citations: [ChatCitation], error: String?, images: [ChatImage] = []) -> UUID? {
         guard chats.contains(where: { $0.id == id }) else { return nil }
         let turn = ChatTurn(

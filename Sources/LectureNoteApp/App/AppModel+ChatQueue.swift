@@ -50,6 +50,12 @@ extension AppModel {
     /// Called when an answer ends. A finished answer moves the queue on; a stop or an error pauses
     /// that chat's queue, so nothing is sent behind the student's back.
     func chatDidEnd(_ chatID: UUID, succeeded: Bool) {
+        // The answer finished just before a steer could stop it; send the steer message next.
+        if let steer = pendingSteer, steer.chatID == chatID {
+            pendingSteer = nil
+            chatQueue.insert(steer, at: 0)
+            queuePaused.remove(chatID)
+        }
         if !succeeded, chatQueue.contains(where: { $0.chatID == chatID }) {
             queuePaused.insert(chatID)
         }
@@ -100,9 +106,16 @@ extension AppModel {
         }
     }
 
-    /// Stops the current answer and sends `text` at once. Filled in by the steer step.
+    /// Stops the current answer of `chatID` and sends `text` at once, keeping what the answer had
+    /// shown. If that chat is not answering, the message is sent or queued as usual.
     func steer(_ text: String, images: [ChatImageDraft], chatID: UUID) -> Bool {
-        enqueue(text, images: images, chatID: chatID)
+        guard chatGeneratingID == chatID, pendingSteer == nil else {
+            if chatGeneratingID == nil { return ask(text, images: images, chatID: chatID) }
+            enqueue(text, images: images, chatID: chatID)
+            return true
+        }
+        pendingSteer = QueuedPrompt(chatID: chatID, text: text, images: images)
+        stopChat()
         return true
     }
 }

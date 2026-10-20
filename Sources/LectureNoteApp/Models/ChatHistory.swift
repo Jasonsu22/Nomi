@@ -74,7 +74,8 @@ enum ChatHistory {
 
     private static func render(_ turn: ChatTurn, answerLimit: Int, image: Bool, dated: Bool) -> String {
         let stamp = dated ? "[\(timeStamp(turn.createdAt))] " : ""
-        var text = "\(stamp)Question: \(trimmed(turn.question, limit: questionLimit))\nAnswer: \(cleanedAnswer(turn.answer, limit: answerLimit))"
+        let label = turn.interrupted == true ? "Answer (interrupted by the student)" : "Answer"
+        var text = "\(stamp)Question: \(trimmed(turn.question, limit: questionLimit))\n\(label): \(cleanedAnswer(turn.answer, limit: answerLimit))"
         if image { text += "\n用户发过一张图片" }
         return text
     }
