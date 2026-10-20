@@ -313,6 +313,11 @@ extension AppModel {
                 let seesImages = ChatImages.seesImages(mode: mode, modelID: profile?.modelID ?? "")
                 let imagePlan = ChatContext.attachedImages(history: history, currentCount: images.count)
                 let promptImages = seesImages ? self.promptImages(current: images, history: imagePlan.history) : []
+                let historyWindow = ChatHistory.window(
+                    history,
+                    budget: contextBudget,
+                    omittedImageTurns: seesImages ? imagePlan.omittedTurnIDs : []
+                )
                 var blocks = packed
                 var answer = ""
                 var briefs: [String] = []
@@ -324,7 +329,7 @@ extension AppModel {
                 var library: ChatContext.LibraryTool = self.hasLibrary ? .available : .off
                 var libraryDocuments: [LibraryDocument]?
                 let excluded = LibraryExclusions(
-                    turns: Set(history.suffix(4).map(\.id)),
+                    turns: historyWindow.includedTurns,
                     meetings: chosenMeetings,
                     sources: chosenSources
                 )
@@ -376,10 +381,10 @@ extension AppModel {
                     let mayStillSearch = (webReachable && !searched) || libraryOpen
                     var prompt = ChatContext.userPrompt(
                         question: question,
-                        history: history,
+                        history: historyWindow,
                         blocks: blocks,
-                        omittedImageTurns: seesImages ? imagePlan.omittedTurnIDs : [],
-                        mentionsOlderImages: seesImages && imagePlan.mentionsOlderImages
+                        mentionsOlderImages: seesImages && imagePlan.mentionsOlderImages,
+                        mentionsLibrary: libraryOpen
                     )
                     if round > 0 {
                         let draft = answer.trimmingCharacters(in: .whitespacesAndNewlines)

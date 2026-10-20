@@ -45,13 +45,14 @@ extension AppModel {
             skills: prompts.skills,
             memory: question.map { memoryPrompt(for: $0) } ?? memoryPrompt(for: meeting.title, kinds: [.style, .preference])
         )
-        let history = state.answers.suffix(3).map { "Question: \($0.question)\nAnswer: \($0.answer)" }.joined(separator: "\n")
-        let task = summary
-            ? "Summarize the main ideas, key terms, conclusions and any stated action items. Organize with short headings and cite timestamps."
-            : "Answer this question: \(question ?? "")\n\nPrevious conversation (reference only):\n\(history)"
-        let prompt = "\(task)\n\nMeeting title: \(meeting.title)\n<transcript>\n\(context)\n</transcript>"
         let mode = llmConfiguration.mode
         let profile = llmConfiguration.activeProfile
+        let earlier = state.answers.map { ChatTurn(question: $0.question, answer: $0.answer, modelName: $0.modelName) }
+        let history = ChatHistory.window(earlier, budget: ContextBudget.current(mode: mode, profile: profile), dated: false)
+        let task = summary
+            ? "Summarize the main ideas, key terms, conclusions and any stated action items. Organize with short headings and cite timestamps."
+            : "Answer this question: \(question ?? "")" + (history.text.isEmpty ? "" : "\n\n" + history.text)
+        let prompt = "\(task)\n\nMeeting title: \(meeting.title)\n<transcript>\n\(context)\n</transcript>"
         let name = assistantModelName
         state.isGenerating = true
         state.generatingSummary = summary

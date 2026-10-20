@@ -71,7 +71,7 @@ enum MemoryLearning {
             ? "(empty)"
             : items.map { "[\($0.id.uuidString)] (\($0.kind.rawValue)) \($0.text)" }.joined(separator: "\n")
         let conversation = turns.map { turn in
-            "[\(LibraryDates.dayStamp(turn.createdAt))]\nStudent: \(turn.question.prefix(500))\nNomi: \(turn.answer.prefix(400))"
+            "[\(LibraryDates.dayStamp(turn.createdAt))]\nStudent: \(turn.question.prefix(500))\nNomi: \(ChatHistory.cleanedAnswer(turn.answer, limit: 600))"
         }.joined(separator: "\n\n")
         return "Current memory:\n\(memory)\n\nRecent conversation:\n\(conversation)"
     }
