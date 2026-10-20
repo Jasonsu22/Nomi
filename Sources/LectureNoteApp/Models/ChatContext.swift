@@ -33,35 +33,48 @@ enum ChatContext {
         guard !usable.isEmpty else { return [] }
         if usable.reduce(0, { $0 + $1.body.count }) <= budget { return usable }
 
-        let query = Set(tokens(in: question))
+        // BM25 over character pairs: single shared characters such as 的 or 是 match almost
+        // everything in Chinese and used to decide which part of a long lecture survived.
+        let scores = LibrarySearch.relevance(of: usable.map { $0.title + "\n" + $0.body }, to: question)
         let ranked: [Int]
-        let scores = usable.enumerated().map { index, block in
-            (Set(tokens(in: block.title + "\n" + block.body)).intersection(query).count, index)
-        }
-        if scores.allSatisfy({ $0.0 == 0 }) {
-            ranked = usable.indices.map { $0 }
+        if scores.allSatisfy({ $0 == 0 }) {
+            ranked = Array(usable.indices)
         } else {
-            ranked = scores.sorted { lhs, rhs in
-                if lhs.0 != rhs.0 { return lhs.0 > rhs.0 }
-                return lhs.1 < rhs.1
-            }.map(\.1)
+            ranked = usable.indices.sorted { scores[$0] != scores[$1] ? scores[$0] > scores[$1] : $0 < $1 }
         }
 
-        var chosen: [(Int, String)] = []
+        var chosen: [Int: String] = [:]
         var used = 0
-        for index in ranked {
+        var clipped = false
+        /// Adds a whole block when it fits and returns whether it did. Only the first block may be
+        /// clipped, so a single huge passage still sends something; nothing is added after that.
+        func take(_ index: Int, clipping: Bool) -> Bool {
+            guard usable.indices.contains(index), chosen[index] == nil else { return false }
             let room = budget - used
-            if room <= 0 { break }
             let body = usable[index].body
-            if !chosen.isEmpty && body.count > room { continue }
-            let clipped = body.count <= room ? body : String(body.prefix(room))
-            chosen.append((index, clipped))
-            used += clipped.count
-            if clipped.count < body.count { break }
+            guard room > 0, body.count <= room || (clipping && chosen.isEmpty) else { return false }
+            let kept = body.count <= room ? body : String(body.prefix(room))
+            chosen[index] = kept
+            used += kept.count
+            clipped = kept.count < body.count
+            return true
         }
-        return chosen.sorted { $0.0 < $1.0 }.map { index, body in
+        /// A paragraph's neighbours from the same meeting or file, because a point often runs across them.
+        func sameItem(_ lhs: Int, _ rhs: Int) -> Bool {
+            usable.indices.contains(rhs) && usable[lhs].meetingID == usable[rhs].meetingID
+                && usable[lhs].sourceID == usable[rhs].sourceID && usable[lhs].title == usable[rhs].title
+        }
+        for index in ranked {
+            if used >= budget || clipped { break }
+            guard take(index, clipping: true), !clipped else { continue }
+            if scores[index] > 0 {
+                if sameItem(index, index - 1) { _ = take(index - 1, clipping: false) }
+                if sameItem(index, index + 1) { _ = take(index + 1, clipping: false) }
+            }
+        }
+        return chosen.keys.sorted().map { index in
             var block = usable[index]
-            block.body = body
+            block.body = chosen[index] ?? block.body
             return block
         }
     }
@@ -464,26 +477,4 @@ enum ChatContext {
         return Dictionary(uniqueKeysWithValues: zip(numbers, citations).map { ($0.0, $0.1) })
     }
 
-    static func tokens(in text: String) -> [String] {
-        var words: [String] = []
-        var latin = ""
-        for scalar in text.lowercased() {
-            if scalar.isLetter || scalar.isNumber {
-                if scalar.isASCII {
-                    latin.append(scalar)
-                } else {
-                    if latin.count >= 2 { words.append(latin) }
-                    latin = ""
-                    words.append(String(scalar))
-                }
-            } else if latin.count >= 2 {
-                words.append(latin)
-                latin = ""
-            } else {
-                latin = ""
-            }
-        }
-        if latin.count >= 2 { words.append(latin) }
-        return words
-    }
 }
