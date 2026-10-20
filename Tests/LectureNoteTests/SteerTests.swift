@@ -57,4 +57,11 @@ struct SteerTests {
         let again = try JSONDecoder().decode(ChatTurn.self, from: JSONEncoder().encode(turn))
         #expect(again.interrupted == true)
     }
+
+    @MainActor @Test func aStoppedBackgroundReplyIsNotAFailure() {
+        #expect(AppModel.isCancellation(CancellationError()))
+        #expect(AppModel.isCancellation(URLError(.cancelled)))
+        #expect(!AppModel.isCancellation(URLError(.timedOut)))
+        #expect(!AppModel.isCancellation(llmError("失败")))
+    }
 }

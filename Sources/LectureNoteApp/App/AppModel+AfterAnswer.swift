@@ -47,14 +47,20 @@ extension AppModel {
         }
     }
 
-    /// A local reply waits for a job that is generating, and cancels work that is only waiting.
+    /// A local question goes first: background work that is waiting is dropped, and a job that is
+    /// generating is stopped within about a token. Either way it runs again after a later answer.
     func waitForAfterAnswerWork() async {
         guard let task = afterAnswerTask else { return }
+        task.cancel()
         if afterAnswerGenerating {
+            await (engine as? LocalEngine)?.cancelGeneration()
             await task.value
-        } else {
-            task.cancel()
         }
+    }
+
+    /// True for the errors a stopped background reply ends with, which are not failures.
+    static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 
     private func mayStartBackgroundJob(local: Bool) -> Bool {
@@ -86,9 +92,15 @@ extension AppModel {
 
     func runSummary(_ job: SummaryJob) async {
         afterAnswerGenerating = true
-        guard let last = job.turns.last,
-              let reply = try? await backgroundReply(mode: job.mode, profile: job.profile, system: job.system, prompt: job.prompt, maxTokens: 500),
-              let text = ChatSummaries.cleaned(reply, limit: job.limit) else {
+        guard let last = job.turns.last else { return }
+        let reply: String
+        do {
+            reply = try await backgroundReply(mode: job.mode, profile: job.profile, system: job.system, prompt: job.prompt, maxTokens: 500)
+        } catch {
+            if !Self.isCancellation(error) { summaryFailures[job.chatID, default: 0] += 1 }
+            return
+        }
+        guard let text = ChatSummaries.cleaned(reply, limit: job.limit) else {
             summaryFailures[job.chatID, default: 0] += 1
             return
         }

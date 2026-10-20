@@ -46,7 +46,12 @@ extension AppModel {
 
     func runMemory(_ job: MemoryJob) async {
         afterAnswerGenerating = true
-        guard let reply = try? await backgroundReply(mode: job.mode, profile: job.profile, system: job.system, prompt: job.prompt, maxTokens: 300) else {
+        let reply: String
+        do {
+            reply = try await backgroundReply(mode: job.mode, profile: job.profile, system: job.system, prompt: job.prompt, maxTokens: 300)
+        } catch {
+            // A pass stopped for a question is not a failure; the same turns are read again later.
+            guard !Self.isCancellation(error) else { return }
             memoryFailures += 1
             if memoryFailures >= 3 {
                 memory.skip(through: job.last.createdAt)
