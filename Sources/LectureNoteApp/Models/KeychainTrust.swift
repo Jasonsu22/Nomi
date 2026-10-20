@@ -1,10 +1,12 @@
 import Foundation
 import Security
 
-/// Login-keychain entries record each binary hash they have seen. A rebuild
-/// changes that hash, so a normal read shows the Allow dialog even though the
-/// signing certificate stays the same. The certificate is already trusted, and
-/// a silent read returns the secret without asking.
+/// Reads try a silent keychain lookup first and only show the dialog when it fails.
+///
+/// Without a Team ID the login keychain keeps "Always Allow" per binary hash, so
+/// each new build asks once per key. Release builds accept that one approval per
+/// version. Development builds (NOMI_DEV_KEYS) copy each key into `LocalSecrets`
+/// after that first read, so rebuilding does not ask again.
 enum KeychainTrust {
     private enum Outcome {
         case value(String)
@@ -14,6 +16,17 @@ enum KeychainTrust {
     }
 
     static func read(service: String, account: String) throws -> String {
+        #if NOMI_DEV_KEYS
+        if let stored = LocalSecrets.get(service: service, account: account) { return stored }
+        let secret = try readKeychain(service: service, account: account)
+        if !secret.isEmpty { try? LocalSecrets.set(secret, service: service, account: account) }
+        return secret
+        #else
+        return try readKeychain(service: service, account: account)
+        #endif
+    }
+
+    private static func readKeychain(service: String, account: String) throws -> String {
         let first = attempt(service: service, account: account, allowPrompt: false)
         let outcome: Outcome
         if case .needsPrompt = first {
@@ -32,6 +45,16 @@ enum KeychainTrust {
     }
 
     static func save(service: String, account: String, secret: String) throws {
+        #if NOMI_DEV_KEYS
+        try LocalSecrets.set(secret, service: service, account: account)
+        // Keep the keychain copy current for release builds; a rebuilt binary may not be allowed to.
+        try? saveKeychain(service: service, account: account, secret: secret)
+        #else
+        try saveKeychain(service: service, account: account, secret: secret)
+        #endif
+    }
+
+    private static func saveKeychain(service: String, account: String, secret: String) throws {
         let query = operation(attributes(service: service, account: account), allowPrompt: false)
         let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: Data(secret.utf8)] as CFDictionary)
         if status == errSecSuccess { return }
@@ -48,7 +71,13 @@ enum KeychainTrust {
     }
 
     static func delete(service: String, account: String) throws {
+        #if NOMI_DEV_KEYS
+        try LocalSecrets.remove(service: service, account: account)
+        // The keychain copy must go too, or the next read would bring the key back.
+        let query = operation(attributes(service: service, account: account), allowPrompt: true)
+        #else
         let query = operation(attributes(service: service, account: account), allowPrompt: false)
+        #endif
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw llmError(tr("无法删除钥匙串中的 API 密钥。"))

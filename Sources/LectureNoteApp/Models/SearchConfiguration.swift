@@ -69,6 +69,9 @@ enum SearchKeychain {
 
     /// Whether a key is stored. Does not read the secret, so it does not raise the keychain password dialog.
     static func contains(_ vendor: SearchVendor) -> Bool {
+        #if NOMI_DEV_KEYS
+        if LocalSecrets.get(service: service, account: vendor.rawValue) != nil { return true }
+        #endif
         var request = query(vendor)
         request[kSecReturnAttributes as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne
