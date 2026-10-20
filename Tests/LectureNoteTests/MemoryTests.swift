@@ -51,6 +51,41 @@ struct MemoryTests {
         #expect(!MemoryLearning.isSafe("token ghp_abcdefghijklmnopqrstuvwxyz0123"))
     }
 
+    @Test func studyTopicsAboutTokensAreKeptButCredentialsAndLinksAreNot() {
+        #expect(MemoryLearning.isSafe("Finds tokenization in NLP hard"))
+        #expect(MemoryLearning.isSafe("Studies the token economy in ECON 210"))
+        #expect(!MemoryLearning.isSafe("access token is abc123"))
+        #expect(!MemoryLearning.isSafe("token: 9f8e7d"))
+        #expect(!MemoryLearning.isSafe("Prefers sources from https://example.com"))
+        #expect(!MemoryLearning.isSafe("Reads www.example.com daily"))
+    }
+
+    @MainActor @Test func memoryIsOnForLocalModelsAndWaitsForTheStudentWithAPIModels() {
+        let key = "nomi.memory.enabled"
+        let saved = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(saved, forKey: key) }
+        UserDefaults.standard.removeObject(forKey: key)
+
+        let memory = UserMemory(file: nil)
+        #expect(memory.isEnabled(for: .local))
+        #expect(!memory.isEnabled(for: .api))
+        memory.setEnabled(true)
+        #expect(memory.isEnabled(for: .api))
+        #expect(UserMemory(file: nil).isEnabled(for: .api))
+        memory.setEnabled(false)
+        #expect(!memory.isEnabled(for: .local))
+    }
+
+    @MainActor @Test func skippedTurnsAreNotLearnedAgain() {
+        let memory = UserMemory(file: nil)
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        memory.skip(through: date)
+        #expect(memory.learnedThrough == date)
+        memory.skip(through: date.addingTimeInterval(-60))
+        #expect(memory.learnedThrough == date)
+        #expect(memory.items.isEmpty)
+    }
+
     @Test func thePromptGetsPinnedAndRelevantFactsWithinBudget() {
         let pinned = item("Answer in Chinese", pinned: true, age: 900)
         let biology = item("Struggles with cell respiration in BIOL 101", kind: .course, age: 500)
@@ -82,6 +117,9 @@ struct MemoryTests {
         memory.togglePin(id)
         memory.update(id, text: "Takes ECON 201 and ECON 210")
         memory.flush()
+
+        let mode = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int
+        #expect(mode == 0o600)
 
         let reloaded = UserMemory(file: file)
         #expect(reloaded.items.map(\.text) == ["Takes ECON 201 and ECON 210"])

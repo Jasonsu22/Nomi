@@ -43,7 +43,7 @@ extension AppModel {
             allowsWeb: false,
             hasPassages: true,
             skills: prompts.skills,
-            memory: memoryPrompt(for: question ?? meeting.title)
+            memory: question.map { memoryPrompt(for: $0) } ?? memoryPrompt(for: meeting.title, kinds: [.style, .preference])
         )
         let history = state.answers.suffix(3).map { "Question: \($0.question)\nAnswer: \($0.answer)" }.joined(separator: "\n")
         let task = summary

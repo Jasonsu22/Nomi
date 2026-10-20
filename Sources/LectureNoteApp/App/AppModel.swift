@@ -91,6 +91,8 @@ final class AppModel {
     @ObservationIgnored var memoryTask: Task<Void, Never>?
     /// The pass has started generating, so a question waits for it instead of cancelling it.
     @ObservationIgnored var memoryGenerating = false
+    /// Learning passes that failed in a row. Each failure waits for more turns before trying again.
+    @ObservationIgnored var memoryFailures = 0
     var assistantStates: [UUID: MeetingAssistantState] = [:]
     var chats: [ChatSession] = []
     var currentChatID: UUID?

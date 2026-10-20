@@ -18,7 +18,7 @@ struct MemorySettingsSection: View {
                         .font(AppFont.body)
                         .foregroundStyle(AppColor.textPrimary)
                     Spacer()
-                    Toggle(tr("自动记忆"), isOn: Binding(get: { memory.enabled }, set: { memory.enabled = $0 }))
+                    Toggle(tr("自动记忆"), isOn: Binding(get: { model.memoryEnabled }, set: { memory.setEnabled($0) }))
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .clickCursor()
@@ -31,7 +31,7 @@ struct MemorySettingsSection: View {
 
             VStack(spacing: 0) {
                 if memory.items.isEmpty {
-                    Text(memory.enabled ? tr("还没有记忆。多聊几次，Nomi 会慢慢了解你的习惯。") : tr("自动记忆已关闭。"))
+                    Text(model.memoryEnabled ? tr("还没有记忆。多聊几次，Nomi 会慢慢了解你的习惯。") : tr("自动记忆已关闭。"))
                         .font(AppFont.secondary)
                         .foregroundStyle(AppColor.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -50,7 +50,7 @@ struct MemorySettingsSection: View {
             .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
 
             HStack(alignment: .top) {
-                Text(tr("Nomi 会从对话里自动记下你的偏好、课程和目标，让回答更合你的习惯。记忆只存在这台 Mac 上；使用 API 模型时，和问题相关的几条会随问题一起发送。"))
+                Text(tr("Nomi 会从对话里自动记下你的偏好、课程和目标，让回答更合你的习惯。记忆只存在这台 Mac 上。整理记忆用的是当前选中的模型：本地模型不会发出任何内容；使用 API 模型时，最近几轮对话会发给它，和问题相关的记忆也会随问题发送，所以默认关闭。"))
                     .font(AppFont.caption)
                     .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
