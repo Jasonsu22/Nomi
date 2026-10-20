@@ -2,6 +2,7 @@ import AVFoundation
 import AudioToolbox
 import CoreAudio
 import Foundation
+import NomiObjCSupport
 import OSLog
 import SwiftUI
 
@@ -588,12 +589,28 @@ private final class SendGate: @unchecked Sendable {
 
 /// Installed outside the main actor. `AVAudioNodeTapBlock` is non-Sendable, and a
 /// closure created on the main actor crashes when Core Audio calls it.
-private func installMicrophoneTap(on input: AVAudioInputNode, format: AVAudioFormat, processor: MicrophonePCMProcessor) {
+/// A format that does not match the hardware raises NSException; that is stopped
+/// here and thrown as a Swift error instead of unwinding through Swift frames.
+private func installMicrophoneTap(on input: AVAudioInputNode, format: AVAudioFormat, processor: MicrophonePCMProcessor) throws {
     // format: nil keeps the node's previous graph rate. After setDeviceID that
     // rate no longer matches the hardware, and engine.start() fails with -10868.
-    input.installTap(onBus: 0, bufferSize: 1600, format: format) { buffer, _ in
-        processor.convert(buffer)
+    var reason: NSString?
+    let installed = NomiCatchException({
+        input.installTap(onBus: 0, bufferSize: 1600, format: format) { buffer, _ in
+            processor.convert(buffer)
+        }
+    }, &reason)
+    if !installed { throw MicrophoneError.tapRejected(reason as String? ?? "") }
+}
+
+/// The tap must use the rate the hardware runs at. `inputFormat(forBus:)` can still
+/// report the old rate right after a Bluetooth headset switches to its microphone mode.
+func microphoneTapFormat(reported: AVAudioFormat, hardwareRate: Double?) -> AVAudioFormat {
+    guard let hardwareRate, hardwareRate > 0, abs(hardwareRate - reported.sampleRate) > 1,
+          let format = AVAudioFormat(standardFormatWithSampleRate: hardwareRate, channels: reported.channelCount) else {
+        return reported
     }
+    return format
 }
 
 @MainActor
@@ -625,12 +642,20 @@ private final class MicrophoneCapture {
         if input.auAudioUnit.deviceID != deviceID {
             try input.auAudioUnit.setDeviceID(deviceID)
         }
-        let format = input.inputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else { throw MicrophoneError.unavailable }
+        let reported = input.inputFormat(forBus: 0)
+        guard reported.sampleRate > 0, reported.channelCount > 0 else { throw MicrophoneError.unavailable }
+        var format = microphoneTapFormat(reported: reported, hardwareRate: AudioHardware.inputSampleRate(deviceID))
         let processor = MicrophonePCMProcessor(onSamples: onSamples, onFailure: onFailure, recorder: recorder)
         // The tap block is non-Sendable, so a closure formed on the main actor is
         // isolated there. The audio thread then traps in swift_task_checkIsolated.
-        installMicrophoneTap(on: input, format: format, processor: processor)
+        do {
+            try installMicrophoneTap(on: input, format: format, processor: processor)
+        } catch MicrophoneError.tapRejected(let reason) {
+            // The device may have finished switching rates since the first read.
+            Self.logger.error("Microphone tap rejected \(format.sampleRate) Hz: \(reason, privacy: .public)")
+            format = microphoneTapFormat(reported: input.inputFormat(forBus: 0), hardwareRate: AudioHardware.inputSampleRate(deviceID))
+            try installMicrophoneTap(on: input, format: format, processor: processor)
+        }
         do {
             engine.prepare()
             try engine.start()
@@ -745,6 +770,7 @@ private final class MicrophonePCMProcessor: @unchecked Sendable {
 
 private enum MicrophoneError: Error {
     case unavailable
+    case tapRejected(String)
 }
 
 /// Encodes the 16 kHz mono stream to AAC on the tap thread. Writes are skipped

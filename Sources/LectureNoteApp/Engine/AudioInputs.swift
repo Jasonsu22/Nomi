@@ -35,6 +35,16 @@ enum AudioHardware {
         return id
     }
 
+    /// The rate the device itself runs its input at. Bluetooth headsets such as AirPods
+    /// drop to 24 kHz or 16 kHz once their microphone opens, before AVAudioEngine notices.
+    static func inputSampleRate(_ id: AudioDeviceID) -> Double? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioDevicePropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+        var rate: Float64 = 0
+        var size = UInt32(MemoryLayout<Float64>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &rate) == noErr, rate > 0 else { return nil }
+        return rate
+    }
+
     static func selected(uid: String, devices: [AudioInputDevice], defaultID: AudioDeviceID) -> AudioInputDevice? {
         uid == AudioInputs.systemDefault ? devices.first { $0.deviceID == defaultID } : devices.first { $0.id == uid }
     }

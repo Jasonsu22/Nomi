@@ -12,9 +12,11 @@ let package = Package(
         .package(url: "https://github.com/mgriebling/SwiftMath.git", from: "1.7.3"),
     ],
     targets: [
+        // Objective-C boundary for AVFoundation calls that raise NSException.
+        .target(name: "NomiObjCSupport"),
         .executableTarget(
             name: "LectureNoteApp",
-            dependencies: ["SwiftMath"],
+            dependencies: ["SwiftMath", "NomiObjCSupport"],
             resources: [
                 .copy("Fixtures"),
                 .process("Resources"),
@@ -22,7 +24,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LectureNoteTests",
-            dependencies: ["LectureNoteApp"]
+            dependencies: ["LectureNoteApp", "NomiObjCSupport"]
         ),
     ]
 )
