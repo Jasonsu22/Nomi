@@ -97,12 +97,16 @@ fn cancel_reply(pid: u32) {
 
 /// Live transcription comes first. During a recording the chat worker runs in the
 /// background priority band, which lowers its CPU and disk priority.
+#[cfg(target_os = "macos")]
 fn set_background(pid: u32, background: bool) {
     let value = if background { libc::PRIO_DARWIN_BG } else { 0 };
     unsafe {
         libc::setpriority(libc::PRIO_DARWIN_PROCESS, pid as libc::id_t, value);
     }
 }
+
+#[cfg(not(target_os = "macos"))]
+fn set_background(_pid: u32, _background: bool) {}
 
 #[tokio::main]
 async fn main() -> Result<()> {
