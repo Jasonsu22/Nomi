@@ -173,7 +173,8 @@ final class AppModel {
         }
     }
 
-    var canStart: Bool { engine.canStart && localModels.deletingID == nil && !assistantIsBusy }
+    /// A chat that is still answering does not hold up a recording.
+    var canStart: Bool { engine.canStart && localModels.deletingID == nil }
 
     var canSwitchModels: Bool {
         engine.session.phase == .idle && localModels.switchingID == nil

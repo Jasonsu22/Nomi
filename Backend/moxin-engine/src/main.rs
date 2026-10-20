@@ -7,11 +7,10 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::Router;
-use pipeline::{read_wav, OutEvent, Pipeline};
+use pipeline::{read_wav, OutEvent, Pipeline, Worker};
 use serde::Deserialize;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::net::TcpListener;
@@ -21,7 +20,71 @@ use tracing_subscriber::EnvFilter;
 struct App {
     token: String,
     pipeline: Arc<Mutex<Pipeline>>,
-    session_open: Arc<AtomicBool>,
+    busy: Arc<Mutex<Busy>>,
+}
+
+/// What the engine is doing. A recording and a chat reply may run together;
+/// switching or unloading a model waits until both are idle.
+#[derive(Default)]
+struct Busy {
+    recording: bool,
+    assistant: bool,
+    model: bool,
+    /// The chat worker answering right now, so a recording can lower its priority.
+    assistant_pid: Option<u32>,
+}
+
+#[derive(Clone, Copy)]
+enum Job {
+    Recording,
+    Assistant,
+    Model,
+}
+
+impl Busy {
+    fn claim(&mut self, job: Job) -> bool {
+        let free = match job {
+            Job::Recording => !self.recording && !self.model,
+            Job::Assistant => !self.assistant && !self.model,
+            Job::Model => !self.recording && !self.assistant && !self.model,
+        };
+        if free {
+            *self.flag(job) = true;
+        }
+        free
+    }
+
+    fn release(&mut self, job: Job) {
+        *self.flag(job) = false;
+    }
+
+    fn flag(&mut self, job: Job) -> &mut bool {
+        match job {
+            Job::Recording => &mut self.recording,
+            Job::Assistant => &mut self.assistant,
+            Job::Model => &mut self.model,
+        }
+    }
+}
+
+/// Releases a job when its request ends, including when the work panics.
+struct Release(Arc<Mutex<Busy>>, Job);
+
+impl Drop for Release {
+    fn drop(&mut self) {
+        if let Ok(mut busy) = self.0.lock() {
+            busy.release(self.1);
+        }
+    }
+}
+
+/// Live transcription comes first. During a recording the chat worker runs in the
+/// background priority band, which lowers its CPU and disk priority.
+fn set_background(pid: u32, background: bool) {
+    let value = if background { libc::PRIO_DARWIN_BG } else { 0 };
+    unsafe {
+        libc::setpriority(libc::PRIO_DARWIN_PROCESS, pid as libc::id_t, value);
+    }
 }
 
 #[tokio::main]
@@ -151,7 +214,7 @@ async fn serve() -> Result<()> {
     let app = App {
         token: token.clone(),
         pipeline: Arc::new(Mutex::new(pipeline)),
-        session_open: Arc::new(AtomicBool::new(false)),
+        busy: Arc::new(Mutex::new(Busy::default())),
     };
     let listener = TcpListener::bind(("127.0.0.1", port)).await?;
     let bound = listener.local_addr()?.port();
@@ -242,34 +305,47 @@ async fn generate_assistant(State(app): State<App>, headers: HeaderMap, axum::Js
     if !authorized(&headers, &app.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    if app.session_open.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
-        return (StatusCode::CONFLICT, "录制或其他本地模型操作正在进行，请稍后再试").into_response();
+    if !app.busy.lock().expect("busy").claim(Job::Assistant) {
+        return (StatusCode::CONFLICT, "上一条回答还没结束，或本地模型正在切换，请稍后再试").into_response();
     }
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let busy = app.session_open.clone();
+    let busy = app.busy.clone();
     let pipeline = app.pipeline.clone();
-    let joined = app.session_open.clone();
-    let task = tokio::task::spawn_blocking(move || {
-        let _clear = ClearBusy(busy);
+    tokio::task::spawn_blocking(move || {
+        let _release = Release(busy.clone(), Job::Assistant);
         let send = |value: serde_json::Value| {
             let _ = tx.send(format!("data: {value}\n\n"));
         };
         let outcome = (|| -> Result<String> {
-            let mut pipeline = pipeline.lock().expect("pipeline");
-            pipeline.generate_assistant(request.system, request.prompt, request.max_tokens, &mut |text| {
+            // The pipeline lock is only held to hand the worker over and back,
+            // so audio from a recording keeps being transcribed during the reply.
+            let (worker, path, id) = pipeline.lock().expect("pipeline").checkout_assistant()?;
+            let mut worker = match worker {
+                Some(worker) => worker,
+                None => Worker::spawn_assistant(&path)?,
+            };
+            let pid = worker.pid();
+            {
+                let mut state = busy.lock().expect("busy");
+                state.assistant_pid = Some(pid);
+                set_background(pid, state.recording);
+            }
+            let result = worker.generate(id, request.system, request.prompt, request.max_tokens, &mut |text| {
                 if !text.is_empty() {
                     send(serde_json::json!({ "text": text }));
                 }
-            })
+            });
+            busy.lock().expect("busy").assistant_pid = None;
+            set_background(pid, false);
+            // A worker that failed mid-reply may be out of step; start a fresh one next time.
+            if result.is_ok() {
+                pipeline.lock().expect("pipeline").checkin_assistant(worker, &path);
+            }
+            result
         })();
         match outcome {
             Ok(text) => send(serde_json::json!({ "done": true, "text": text })),
             Err(error) => send(serde_json::json!({ "error": error.to_string() })),
-        }
-    });
-    tokio::spawn(async move {
-        if task.await.is_err() {
-            joined.store(false, Ordering::SeqCst);
         }
     });
     let stream = futures::stream::unfold(rx, |mut rx| async move {
@@ -283,35 +359,23 @@ async fn generate_assistant(State(app): State<App>, headers: HeaderMap, axum::Js
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-struct ClearBusy(Arc<AtomicBool>);
-
-impl Drop for ClearBusy {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
-    }
-}
-
 async fn exclusive_model_action(app: App, headers: HeaderMap, action: impl FnOnce(&mut Pipeline) -> Result<serde_json::Value> + Send + 'static) -> axum::response::Response {
     if !authorized(&headers, &app.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    if app.session_open.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+    if !app.busy.lock().expect("busy").claim(Job::Model) {
         return (StatusCode::CONFLICT, "录制或其他本地模型操作正在进行，请稍后再试").into_response();
     }
-    let busy = app.session_open.clone();
+    let busy = app.busy.clone();
     let result = tokio::task::spawn_blocking(move || {
+        let _release = Release(busy, Job::Model);
         let mut pipeline = app.pipeline.lock().expect("pipeline");
-        let result = action(&mut pipeline);
-        busy.store(false, Ordering::SeqCst);
-        result
+        action(&mut pipeline)
     }).await;
     match result {
         Ok(Ok(status)) => axum::Json(status).into_response(),
         Ok(Err(error)) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
-        Err(error) => {
-            app.session_open.store(false, Ordering::SeqCst);
-            (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response()
-        }
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
     }
 }
 
@@ -335,13 +399,17 @@ async fn session(State(app): State<App>, headers: HeaderMap, upgrade: WebSocketU
     if !authorized(&headers, &app.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    if app.session_open.swap(true, Ordering::SeqCst) {
+    if !app.busy.lock().expect("busy").claim(Job::Recording) {
         return StatusCode::CONFLICT.into_response();
     }
     upgrade.on_upgrade(move |socket| handle_session(socket, app)).into_response()
 }
 
 async fn handle_session(mut socket: WebSocket, app: App) {
+    let _release = Release(app.busy.clone(), Job::Recording);
+    if let Some(pid) = app.busy.lock().expect("busy").assistant_pid {
+        set_background(pid, true);
+    }
     let mut started = false;
     loop {
         let incoming = if started {
@@ -436,7 +504,9 @@ async fn handle_session(mut socket: WebSocket, app: App) {
             _ => {}
         }
     }
-    app.session_open.store(false, Ordering::SeqCst);
+    if let Some(pid) = app.busy.lock().expect("busy").assistant_pid {
+        set_background(pid, false);
+    }
 }
 
 async fn send_json(socket: &mut WebSocket, event: &OutEvent) {
@@ -477,4 +547,25 @@ fn random_token() -> String {
         let _ = file.read_exact(&mut bytes);
     }
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Busy, Job};
+
+    #[test]
+    fn a_chat_reply_and_a_recording_run_together() {
+        let mut busy = Busy::default();
+        assert!(busy.claim(Job::Recording));
+        assert!(busy.claim(Job::Assistant));
+        assert!(!busy.claim(Job::Recording), "only one recording at a time");
+        assert!(!busy.claim(Job::Assistant), "only one chat reply at a time");
+        assert!(!busy.claim(Job::Model), "models stay put while either runs");
+        busy.release(Job::Recording);
+        assert!(!busy.claim(Job::Model));
+        busy.release(Job::Assistant);
+        assert!(busy.claim(Job::Model));
+        assert!(!busy.claim(Job::Recording), "a model change blocks a new recording");
+        assert!(!busy.claim(Job::Assistant), "a model change blocks a new reply");
+    }
 }

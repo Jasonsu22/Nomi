@@ -5,8 +5,10 @@ extension AppModel {
         chatGeneratingID != nil || assistantStates.values.contains { $0.isGenerating } || (engine as? LocalEngine)?.isGenerating == true
     }
 
+    /// Chat runs during a recording too: API models are remote, and the local engine
+    /// gives the chat its own worker at a lower priority than live transcription.
     var canGenerateAssistant: Bool {
-        guard engine.session.phase == .idle, !assistantIsBusy,
+        guard !assistantIsBusy,
               localModels.switchingID == nil, localModels.deletingID == nil else { return false }
         if llmConfiguration.mode == .api { return llmConfiguration.activeProfile != nil }
         return engine is LocalEngine && engine.readiness != .preparing

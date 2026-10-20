@@ -212,50 +212,40 @@ impl Pipeline {
     }
 
     fn assistant_status(&self) -> ModelStatus {
-        if self.assistant_status.path == self.llm_status.path {
-            self.llm_status.clone()
-        } else {
-            ModelStatus { loaded: self.assistant.is_some(), ..self.assistant_status.clone() }
-        }
+        ModelStatus { loaded: self.assistant.is_some() || self.assistant_status.loaded, ..self.assistant_status.clone() }
     }
 
+    /// Starts the chat model's own worker. Selecting a model runs this so a model
+    /// that fails to load is rejected right away.
     fn load_assistant(&mut self) -> Result<()> {
-        if self.assistant_status.path == self.llm_status.path {
-            return self.load_llm();
-        }
         if self.assistant.is_none() {
-            self.assistant = Some(Worker::spawn("llm-worker", &self.assistant_status.path)?);
+            self.assistant = Some(Worker::spawn_assistant(&self.assistant_status.path)?);
         }
         self.assistant_status.loaded = true;
         self.assistant_status.error = None;
         Ok(())
     }
 
-    pub fn generate_assistant(&mut self, system: String, prompt: String, max_tokens: usize, on_text: &mut dyn FnMut(&str)) -> Result<String> {
-        self.load_assistant()?;
+    /// Hands the chat worker to the caller, who generates without holding the
+    /// pipeline lock so live audio keeps flowing. Chat always has its own worker,
+    /// even for the translation model, because translation must never wait on it.
+    /// `Ok(None)` means none is running yet and the caller spawns one outside the lock.
+    pub fn checkout_assistant(&mut self) -> Result<(Option<Worker>, PathBuf, u64)> {
+        if !self.assistant_status.files_ready {
+            return Err(anyhow!("聊天模型文件不完整：{}", self.assistant_status.path.display()));
+        }
         let id = self.next_request;
         self.next_request += 1;
-        let worker = if self.assistant_status.path == self.llm_status.path {
-            self.llm.as_mut().unwrap()
-        } else {
-            self.assistant.as_mut().unwrap()
-        };
-        write_frame(
-            &mut worker.stdin,
-            &WorkerRequest::Generate { id, system, prompt, max_tokens: max_tokens.clamp(1, 4096) },
-            &[],
-        )?;
-        loop {
-            let (header, _) = read_frame(&mut worker.stdout)?;
-            match serde_json::from_slice::<WorkerEvent>(&header)? {
-                WorkerEvent::Token { text, .. } => on_text(&text),
-                WorkerEvent::Result { text, .. } => {
-                    on_text(&text);
-                    return Ok(text);
-                }
-                WorkerEvent::Failed { message, .. } => return Err(anyhow!(message)),
-                other => return Err(anyhow!("大模型返回了无效结果：{other:?}")),
-            }
+        Ok((self.assistant.take(), self.assistant_status.path.clone(), id))
+    }
+
+    /// Takes the worker back after a reply. A worker for a model that was switched
+    /// or unloaded meanwhile is shut down instead.
+    pub fn checkin_assistant(&mut self, worker: Worker, path: &Path) {
+        if self.assistant.is_none() && self.assistant_status.path == path && self.assistant_status.files_ready {
+            self.assistant = Some(worker);
+            self.assistant_status.loaded = true;
+            self.assistant_status.error = None;
         }
     }
 
@@ -526,7 +516,7 @@ fn rms(samples: &[f32]) -> f32 {
     (samples.iter().map(|sample| sample * sample).sum::<f32>() / samples.len() as f32).sqrt()
 }
 
-struct Worker {
+pub struct Worker {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<std::process::ChildStdout>,
@@ -552,6 +542,35 @@ impl Worker {
                 other => Err(anyhow!("{name} 的第一帧不是就绪：{other:?}")),
             },
             Err(error) => Err(anyhow!("{name} 在就绪前退出：{error}")),
+        }
+    }
+
+    pub fn spawn_assistant(model: &Path) -> Result<Self> {
+        Self::spawn("llm-worker", model)
+    }
+
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
+    /// Streams one chat reply from this worker.
+    pub fn generate(&mut self, id: u64, system: String, prompt: String, max_tokens: usize, on_text: &mut dyn FnMut(&str)) -> Result<String> {
+        write_frame(
+            &mut self.stdin,
+            &WorkerRequest::Generate { id, system, prompt, max_tokens: max_tokens.clamp(1, 4096) },
+            &[],
+        )?;
+        loop {
+            let (header, _) = read_frame(&mut self.stdout)?;
+            match serde_json::from_slice::<WorkerEvent>(&header)? {
+                WorkerEvent::Token { text, .. } => on_text(&text),
+                WorkerEvent::Result { text, .. } => {
+                    on_text(&text);
+                    return Ok(text);
+                }
+                WorkerEvent::Failed { message, .. } => return Err(anyhow!(message)),
+                other => return Err(anyhow!("大模型返回了无效结果：{other:?}")),
+            }
         }
     }
 
