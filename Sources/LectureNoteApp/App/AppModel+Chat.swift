@@ -302,7 +302,12 @@ extension AppModel {
                 }
             }
             do {
-                let packed = ChatContext.pack(await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources), question: question)
+                let contextBudget = ContextBudget.current(mode: mode, profile: profile)
+                let packed = ChatContext.pack(
+                    await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources),
+                    question: question,
+                    budget: contextBudget.scope
+                )
                 if hasScope && packed.isEmpty { throw llmError(tr("所选范围里还没有可以阅读的文字。")) }
                 try Task.checkCancellation()
                 let seesImages = ChatImages.seesImages(mode: mode, modelID: profile?.modelID ?? "")
@@ -326,7 +331,8 @@ extension AppModel {
                 func searchLibrary(_ request: LibraryRequest) async -> [ContextBlock] {
                     if libraryDocuments == nil { libraryDocuments = await self.libraryDocuments(excluding: excluded) }
                     let documents = libraryDocuments ?? []
-                    return await Task.detached(priority: .userInitiated) { LibrarySearch.run(request, in: documents) }.value
+                    let budget = contextBudget.library
+                    return await Task.detached(priority: .userInitiated) { LibrarySearch.run(request, in: documents, budget: budget) }.value
                 }
                 // A question about last week, an earlier chat, or what the teacher said gets searched before the first answer.
                 if library == .available, LibraryRequest.referencesPast(question) {

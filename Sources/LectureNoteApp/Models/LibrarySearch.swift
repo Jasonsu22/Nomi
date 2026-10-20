@@ -147,7 +147,7 @@ enum LibraryDates {
 
 /// Ranks the library for a request and returns passages that fit the answer's budget.
 enum LibrarySearch {
-    static let budget = 9_000
+    static let budget = ContextBudget.local.library
     static let limit = 14
 
     static func run(_ request: LibraryRequest, in documents: [LibraryDocument], now: Date = .now, budget: Int = budget, limit: Int = limit) -> [ContextBlock] {

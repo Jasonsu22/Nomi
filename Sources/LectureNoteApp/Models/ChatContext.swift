@@ -12,7 +12,7 @@ struct ContextBlock: Equatable, Sendable {
 }
 
 enum ChatContext {
-    static let budget = 16_000
+    static let budget = ContextBudget.local.scope
 
     static func pack(_ blocks: [ContextBlock], question: String, budget: Int = ChatContext.budget) -> [ContextBlock] {
         let usable = blocks.compactMap { block -> ContextBlock? in

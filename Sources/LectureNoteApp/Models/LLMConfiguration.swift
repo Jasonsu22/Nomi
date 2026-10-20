@@ -21,6 +21,9 @@ struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
     var modelID = ""
     var format = LLMAPIFormat.openAI
     var savedModelIDs: [String] = []
+    /// How many characters one request may carry, for a model with a small window. Nil uses
+    /// `ContextBudget.api`. Not shown in Settings; edit it for a model that rejects long prompts.
+    var contextCharacters: Int?
 
     init(
         id: UUID = UUID(),
@@ -41,7 +44,7 @@ struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, providerID, name, baseURL, modelID, format, savedModelIDs
+        case id, providerID, name, baseURL, modelID, format, savedModelIDs, contextCharacters
     }
 
     init(from decoder: Decoder) throws {
@@ -53,6 +56,7 @@ struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
         modelID = try container.decodeIfPresent(String.self, forKey: .modelID) ?? ""
         format = try container.decodeIfPresent(LLMAPIFormat.self, forKey: .format) ?? .openAI
         savedModelIDs = try container.decodeIfPresent([String].self, forKey: .savedModelIDs) ?? []
+        contextCharacters = try container.decodeIfPresent(Int.self, forKey: .contextCharacters)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -64,6 +68,7 @@ struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
         try container.encode(modelID, forKey: .modelID)
         try container.encode(format, forKey: .format)
         try container.encode(savedModelIDs, forKey: .savedModelIDs)
+        try container.encodeIfPresent(contextCharacters, forKey: .contextCharacters)
     }
 
     var isLoopback: Bool {
