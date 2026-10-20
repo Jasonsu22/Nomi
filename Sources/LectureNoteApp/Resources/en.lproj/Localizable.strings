@@ -483,3 +483,14 @@
 "打断并引导" = "Steer";
 "回答中发送新消息" = "Sending while Nomi is answering";
 "排队：等这条回答结束后依次发送。打断并引导：立即停下当前回答，保留已写的部分，按新消息继续。⌘Enter 使用另一种方式。" = "Queue: send in order after the current answer finishes. Steer: stop the current answer, keep what it wrote, and continue from your new message. ⌘Enter does the other one.";
+"已暂停 · %d 条" = "Paused · %d";
+"排队中 %d 条" = "%d queued";
+"全部清除" = "Clear All";
+"图片" = "Image";
+"立即发送" = "Send Now";
+"移除" = "Remove";
+"加入队列" = "Add to Queue";
+"打断并发送" = "Stop and Send";
+"另一段对话正在回答，新消息会排队。" = "Another chat is answering; new messages are queued.";
+"Enter 排队 · ⌘Enter 立即打断" = "Enter queues · ⌘Enter steers now";
+"Enter 立即打断 · ⌘Enter 排队" = "Enter steers now · ⌘Enter queues";
