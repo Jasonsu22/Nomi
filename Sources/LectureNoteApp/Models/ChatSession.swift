@@ -192,6 +192,8 @@ struct ChatCitation: Codable, Equatable, Identifiable, Sendable {
     var url: String?
     /// Passage number written as [1] in the answer. Empty for a bare link.
     var passage: Int?
+    /// An earlier chat this passage came from.
+    var chatID: UUID?
 
     var inlineLabel: String {
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -206,14 +208,15 @@ struct ChatCitation: Codable, Equatable, Identifiable, Sendable {
            let scheme = parsed.scheme?.lowercased(), scheme == "http" || scheme == "https" {
             return parsed
         }
-        if meetingID != nil || sourceID != nil {
+        if meetingID != nil || sourceID != nil || chatID != nil {
             return URL(string: "nomi-cite://\(id.uuidString)")
         }
         return nil
     }
 
     var symbolName: String {
-        Self.symbolName(title: title, detail: detail, url: url, meetingID: meetingID, sourceID: sourceID)
+        if chatID != nil { return "bubble.left.and.bubble.right" }
+        return Self.symbolName(title: title, detail: detail, url: url, meetingID: meetingID, sourceID: sourceID)
     }
 
     static func symbolName(title: String, detail: String, url: String?, meetingID: UUID? = nil, sourceID: UUID? = nil) -> String {
@@ -240,6 +243,8 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
     var citations: [ChatCitation]
     var error: String?
     var images: [ChatImage]
+    /// What the memory pass learned right after this answer, shown under it.
+    var memoryNote: [String]? = nil
 
     init(
         id: UUID = UUID(),
@@ -271,6 +276,7 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
         citations = try container.decodeIfPresent([ChatCitation].self, forKey: .citations) ?? []
         error = try container.decodeIfPresent(String.self, forKey: .error)
         images = try container.decodeIfPresent([ChatImage].self, forKey: .images) ?? []
+        memoryNote = try container.decodeIfPresent([String].self, forKey: .memoryNote)
     }
 }
 

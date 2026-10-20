@@ -221,8 +221,23 @@ extension AppModel {
             NSWorkspace.shared.open(SourceStore.fileURL(for: source))
             return
         }
+        if let id = citation.chatID, let chat = chats.first(where: { $0.id == id }) {
+            showCitedChat(chat)
+            return
+        }
         if let raw = citation.url, let url = URL(string: raw) {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// Shows an earlier chat: a meeting's chat inside that meeting, any other chat on the Ask page.
+    private func showCitedChat(_ chat: ChatSession) {
+        if let meetingID = chat.anchorMeetingID, meetings.contains(where: { $0.id == meetingID }) {
+            openChat(chat.id, forAnchor: meetingID)
+            openMeeting(meetingID)
+        } else {
+            openChat(chat.id)
+            page = .ask
         }
     }
 
@@ -262,6 +277,7 @@ extension AppModel {
         let profile = llmConfiguration.activeProfile
         let name = assistantModelName
         let language = prompts.modelLanguageName
+        let remembered = memoryPrompt(for: question)
         let history = session.turns
         let pickedMeetings = meetings.filter { chosenMeetings.contains($0.id) }
         let pickedSources = sources.filter { chosenSources.contains($0.id) }
@@ -299,6 +315,28 @@ extension AppModel {
                 var searched = false
                 var prefetched = false
                 var webReachable = allowsWeb
+                // The rest of the student's material, searched when the question needs it.
+                var library: ChatContext.LibraryTool = self.hasLibrary ? .available : .off
+                var libraryDocuments: [LibraryDocument]?
+                let excluded = LibraryExclusions(
+                    turns: Set(history.suffix(4).map(\.id)),
+                    meetings: chosenMeetings,
+                    sources: chosenSources
+                )
+                func searchLibrary(_ request: LibraryRequest) async -> [ContextBlock] {
+                    if libraryDocuments == nil { libraryDocuments = await self.libraryDocuments(excluding: excluded) }
+                    let documents = libraryDocuments ?? []
+                    return await Task.detached(priority: .userInitiated) { LibrarySearch.run(request, in: documents) }.value
+                }
+                // A question about last week, an earlier chat, or what the teacher said gets searched before the first answer.
+                if library == .available, LibraryRequest.referencesPast(question) {
+                    let found = await searchLibrary(LibraryRequest(query: question, range: LibraryDates.range(in: question)))
+                    try Task.checkCancellation()
+                    if !found.isEmpty {
+                        blocks.append(contentsOf: found)
+                        library = .prefetched
+                    }
+                }
                 // With Web on, search the question itself first so a search happens even when the model would skip it.
                 if allowsWeb, let query = ChatContext.searchQuery(question: question, history: history) {
                     let found = try await self.searchPasses([query][...])
@@ -312,7 +350,7 @@ extension AppModel {
                         prefetched = true
                     }
                 }
-                for round in 0..<2 {
+                for round in 0..<3 {
                     let webTool: ChatContext.WebTool
                     if !webReachable { webTool = .off }
                     else if searched { webTool = .used }
@@ -324,9 +362,12 @@ extension AppModel {
                         hasPassages: !blocks.isEmpty,
                         skills: self.prompts.skills,
                         tools: true,
-                        webTool: webTool
+                        webTool: webTool,
+                        library: library,
+                        memory: remembered
                     )
-                    let mayStillSearch = webReachable && !searched
+                    let libraryOpen = library == .available || library == .prefetched
+                    let mayStillSearch = (webReachable && !searched) || libraryOpen
                     var prompt = ChatContext.userPrompt(
                         question: question,
                         history: history,
@@ -337,9 +378,9 @@ extension AppModel {
                     if round > 0 {
                         let draft = answer.trimmingCharacters(in: .whitespacesAndNewlines)
                         if draft.isEmpty {
-                            prompt += "\n\nThe web search tool finished. Answer the question in Markdown. Do not call web_search again."
+                            prompt += "\n\nThe lookup finished and its results are in the numbered passages. Answer the question in Markdown."
                         } else {
-                            prompt += "\n\nDraft already shown to the user:\n\(draft)\n\nContinue from here. Do not repeat the draft or call web_search again."
+                            prompt += "\n\nDraft already shown to the user:\n\(draft)\n\nContinue from here. Do not repeat the draft."
                         }
                         if webNotice != nil, blocks.count == packed.count {
                             prompt += "\n\nThe search returned nothing. Answer from the material you already have."
@@ -364,26 +405,39 @@ extension AppModel {
                     answer = joinedAnswer(answer, parsed.visible)
                     briefs.append(contentsOf: parsed.calls.filter { $0.name == ChatTools.createDemo }.map(\.body))
                     let queries = parsed.calls.filter { $0.name == ChatTools.webSearch }.map(\.body)
-                    guard mayStillSearch, !queries.isEmpty else { break }
-                    searched = true
-                    let found = try await self.searchPasses(queries.prefix(2))
-                    if found.blocks.isEmpty {
-                        if !prefetched {
-                            webNotice = found.notice ?? tr("联网搜索没有返回结果，这次只根据会议和资料回答。")
-                        }
-                    } else {
-                        blocks.append(contentsOf: found.blocks)
+                    let libraryCalls = parsed.calls.filter { $0.name == ChatTools.searchLibrary }.map(\.body)
+                    var looked = false
+                    if libraryOpen, let call = libraryCalls.first {
+                        looked = true
+                        library = .used
+                        blocks.append(contentsOf: await searchLibrary(LibraryRequest.parse(call)))
+                        try Task.checkCancellation()
                     }
+                    if webReachable, !searched, !queries.isEmpty {
+                        looked = true
+                        searched = true
+                        let found = try await self.searchPasses(queries.prefix(2))
+                        if found.blocks.isEmpty {
+                            if !prefetched {
+                                webNotice = found.notice ?? tr("联网搜索没有返回结果，这次只根据会议和资料回答。")
+                            }
+                        } else {
+                            blocks.append(contentsOf: found.blocks)
+                        }
+                    }
+                    guard looked else { break }
                 }
                 let stored = self.storedImages(images)
                 let turnID = self.finishChat(id, question: question, answer: answer, modelName: name, citations: ChatContext.citations(in: answer, blocks: blocks), error: nil, images: stored)
                 self.pendingAnswer = ""
                 self.pendingCitations = []
                 if let webNotice { self.chatError = webNotice }
+                self.scheduleMemoryLearning()
                 // One demo per answer: the last brief has seen the search results. Without a brief, API models still get a demo when the answer is substantial.
                 // Local models skip that fallback because a demo there blocks the next question until it finishes.
-                let brief = briefs.last { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                let fallback = brief == nil && mode == .api && ChatContext.wantsFallbackVisual(question: question, answer: answer)
+                let skipsDemo = ChatContext.skipsDemo(question, usedLibrary: library != .available && library != .off)
+                let brief = skipsDemo ? nil : briefs.last { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                let fallback = !skipsDemo && brief == nil && mode == .api && ChatContext.wantsFallbackVisual(question: question, answer: answer)
                 if let turnID, brief != nil || fallback {
                     self.startVisual(
                         chatID: id,
@@ -461,6 +515,7 @@ extension AppModel {
             return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
         }
         guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
+        await waitForMemory()
         return try await engine.generate(system: system, prompt: prompt, maxTokens: localMaxTokens, onUpdate: onUpdate)
     }
 
@@ -620,6 +675,37 @@ extension AppModel {
             }
             composerImages[id] = nil
         }
+    }
+
+    /// Whether there is anything besides the current chat that a library search could find.
+    var hasLibrary: Bool {
+        !sources.isEmpty || meetings.contains { !$0.paragraphs.isEmpty } || chats.contains { $0.turns.count > 0 && $0.id != chatGeneratingID }
+    }
+
+    /// The student's recorded lectures, earlier chats and imported files, minus what this question already includes.
+    private func libraryDocuments(excluding excluded: LibraryExclusions) async -> [LibraryDocument] {
+        var documents: [LibraryDocument] = []
+        for meeting in meetings where !excluded.meetings.contains(meeting.id) {
+            let language = meeting.sourceLanguage
+            documents += LibrarySearch.meetingDocuments(
+                id: meeting.id,
+                title: meeting.title,
+                startedAt: meeting.startedAt,
+                paragraphs: meeting.paragraphs.map {
+                    ($0.openedAt, $0.renderedSource(language: language), $0.renderedTranslation(language: meeting.targetLanguage))
+                }
+            )
+        }
+        for chat in chats {
+            let turns = chat.turns.filter { !excluded.turns.contains($0.id) }
+            documents += LibrarySearch.chatDocuments(id: chat.id, title: chat.displayTitle, turns: turns)
+        }
+        let files = sources.filter { !excluded.sources.contains($0.id) }
+        await SourceTextCache.shared.keep(only: Set(sources.map(\.id)))
+        for source in files {
+            documents += LibrarySearch.sourceDocuments(source, blocks: await SourceTextCache.shared.blocks(for: source))
+        }
+        return documents
     }
 
     private func passageBlocks(meetings: [Meeting], sources: [KnowledgeSource]) async -> [ContextBlock] {

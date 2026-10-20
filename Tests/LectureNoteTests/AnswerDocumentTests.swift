@@ -232,11 +232,12 @@ struct AnswerDocumentTests {
         #expect(chat.contains("create_demo"))
         #expect(chat.contains("web_search"))
         #expect(chat.contains("明确说不要演示"))
-        #expect(chat.contains("主动意愿要非常高"))
+        #expect(chat.contains("寒暄、关于学生自己的对话记录"))
         #expect(!chat.contains("另行生成"))
         let chatEnglish = ChatContext.systemPrompt(language: "English", allowsWeb: false, tools: true, webTool: .available)
         #expect(chatEnglish.contains("create_demo"))
         #expect(chatEnglish.contains("hidden subtask"))
+        #expect(chatEnglish.contains("Do not call create_demo for small talk"))
         #expect(!chatEnglish.contains("语言为 html"))
     }
 

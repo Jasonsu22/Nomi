@@ -126,7 +126,7 @@ struct AskView: View {
                                     if index > 0, modelDidChange(session.turns[index - 1].modelName, turn.modelName) {
                                         ModelChangeNote(from: session.turns[index - 1].modelName, to: turn.modelName)
                                     }
-                                    AskTurnRow(turn: turn) { model.openCitation($0) }
+                                    AskTurnRow(turn: turn, onOpenCitation: { model.openCitation($0) }, onOpenMemory: { model.showMemorySettings() })
                                         .equatable()
                                     if model.preparingVisualTurnIDs.contains(turn.id) {
                                         HStack(spacing: Space.s2) {
@@ -750,6 +750,7 @@ private struct AskIconButton: View {
 private struct AskTurnRow: View, Equatable {
     var turn: ChatTurn
     var onOpenCitation: (ChatCitation) -> Void
+    var onOpenMemory: () -> Void
 
     nonisolated static func == (lhs: AskTurnRow, rhs: AskTurnRow) -> Bool {
         lhs.turn == rhs.turn
@@ -785,6 +786,25 @@ private struct AskTurnRow: View, Equatable {
                 }
                 .frame(maxWidth: 680, alignment: .leading)
             }
+            if let note = turn.memoryNote, !note.isEmpty {
+                memoryNote(note)
+            }
         }
+    }
+
+    /// What Nomi learned after this answer, with a way to review it.
+    private func memoryNote(_ note: [String]) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+            Image(systemName: "brain")
+                .foregroundStyle(AppColor.accent)
+            Text(trf("已记住：%@", note.joined(separator: tr("；"))))
+                .foregroundStyle(AppColor.textSecondary)
+                .lineLimit(2)
+            Button(tr("管理"), action: onOpenMemory)
+                .buttonStyle(.plain.clicking())
+                .foregroundStyle(AppColor.accent)
+        }
+        .font(AppFont.caption)
+        .frame(maxWidth: 680, alignment: .leading)
     }
 }
