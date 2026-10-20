@@ -425,7 +425,6 @@
 "导入课件和文档，提问时可以让 Nomi 参考它们。" = "Import slides and documents so Nomi can use them when you ask questions.";
 "针对会议和资料提问。打开「联网」后，Nomi 也会上网查资料。" = "Ask about your meetings and files. Turn on Web and Nomi also searches the internet.";
 "在这里选择模型、填写 API 和搜索密钥。" = "Choose models and enter API and search keys here.";
-"写邮件" = "Write Email";
 "Nomi 反馈" = "Nomi Feedback";
 "你好，" = "Hi,";
 "主题：" = "Topic:";
