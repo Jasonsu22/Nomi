@@ -58,29 +58,8 @@ struct HelpView: View {
     }
 
     private var contactRow: some View {
-        HStack(spacing: Space.s3) {
-            Button(action: openMail) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(tr("联系我们"))
-                        .font(AppFont.body)
-                        .foregroundStyle(AppColor.textPrimary)
-                    Text(Self.contactEmail)
-                        .font(AppFont.secondary)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .textSelection(.enabled)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain.clicking())
+        row(title: tr("联系我们"), detail: Self.contactEmail, action: openMail)
             .help(tr("用邮件联系我们"))
-            Button(action: openMail) {
-                Label(tr("写邮件"), systemImage: "envelope")
-            }
-            .clickCursor()
-        }
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, 14)
     }
 
     private func row(title: String, detail: String, action: @escaping () -> Void) -> some View {
