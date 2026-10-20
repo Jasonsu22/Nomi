@@ -1,0 +1,1114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nomi — Lecture Notes in Your Language</title>
+<meta name="description" content="Nomi transcribes your lectures as the teacher speaks, translates each passage on your Mac, and lets you ask questions about the class afterwards. Made for international students.">
+<meta name="theme-color" content="#E9EDF6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1216" media="(prefers-color-scheme: dark)">
+<style>
+:root {
+  --canvas: #E9EDF6;
+  --surface: #FFFFFF;
+  --inset: #EBF0F6;
+  --selection: #C2E8FF;
+  --on-selection: #17587E;
+  --accent: #004A77;
+  --on-accent: #FFFFFF;
+  --accent-soft: #E3F3FF;
+  --leaf: #20B68A;
+  --leaf-soft: #DDF5EC;
+  --text: #111418;
+  --text-2: #5B6470;
+  --text-3: #8A929D;
+  --separator: #D5DCE6;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 12px 32px rgba(16, 24, 40, .08);
+  --shadow-lg: 0 2px 4px rgba(16, 24, 40, .04), 0 30px 60px -12px rgba(16, 24, 40, .18);
+  --radius: 20px;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --ease-soft: cubic-bezier(.4, 0, .2, 1);
+  --max: 1120px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #0F1216; --surface: #181C21; --inset: #1F242B; --selection: #1D3A50; --on-selection: #CDEBFF;
+    --accent: #7CC4F2; --on-accent: #0F1216; --accent-soft: #1A2C3A; --leaf: #34C99B; --leaf-soft: #133328;
+    --text: #E6E8EB; --text-2: #A4ACB6; --text-3: #737C87; --separator: #2A3038;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px rgba(0,0,0,.35);
+    --shadow-lg: 0 2px 4px rgba(0,0,0,.3), 0 30px 60px -12px rgba(0,0,0,.6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --canvas: #0F1216; --surface: #181C21; --inset: #1F242B; --selection: #1D3A50; --on-selection: #CDEBFF;
+  --accent: #7CC4F2; --on-accent: #0F1216; --accent-soft: #1A2C3A; --leaf: #34C99B; --leaf-soft: #133328;
+  --text: #E6E8EB; --text-2: #A4ACB6; --text-3: #737C87; --separator: #2A3038;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px rgba(0,0,0,.35);
+  --shadow-lg: 0 2px 4px rgba(0,0,0,.3), 0 30px 60px -12px rgba(0,0,0,.6);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--text);
+  font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans", "Noto Sans", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+img, svg { display: block; }
+a { color: inherit; }
+::selection { background: var(--selection); color: var(--on-selection); }
+
+.wrap { width: 100%; max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+@media (max-width: 640px) { .wrap { padding: 0 16px; } }
+
+/* ---------- Navigation ---------- */
+.nav {
+  position: sticky; top: 0; z-index: 50;
+  transition: background .4s var(--ease-soft), box-shadow .4s var(--ease-soft), backdrop-filter .4s;
+}
+.nav.scrolled {
+  background: color-mix(in srgb, var(--canvas) 78%, transparent);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  box-shadow: 0 1px 0 var(--separator);
+}
+.nav-inner { display: flex; align-items: center; gap: 28px; height: 68px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 650; font-size: 20px; letter-spacing: -.01em; }
+.brand svg { width: 30px; height: 30px; }
+.nav-links { display: flex; gap: 26px; margin-left: auto; }
+.nav-links a { text-decoration: none; color: var(--text-2); font-size: 15px; font-weight: 500; transition: color .2s; }
+.nav-links a:hover { color: var(--text); }
+@media (max-width: 860px) { .nav-links { display: none; } .lang-toggle { margin-left: auto; } }
+@media (max-width: 420px) { .nav .btn-primary svg { display: none; } .nav .btn-primary { padding: 0 16px; } }
+
+.lang-toggle {
+  position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 999px;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--separator); flex: none;
+}
+.lang-toggle::before {
+  content: ""; position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px;
+  background: var(--accent-soft); transition: transform .45s var(--ease);
+}
+.lang-toggle[data-active="zh"]::before { transform: translateX(100%); }
+.lang-toggle button {
+  position: relative; border: 0; background: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 650;
+  min-width: 44px; height: 30px; padding: 0 10px; border-radius: 999px; color: var(--text-2); transition: color .3s;
+}
+.lang-toggle button[aria-pressed="true"] { color: var(--accent); }
+
+/* Text cross-fades while the language changes. */
+[data-i18n] { transition: opacity .22s var(--ease-soft); }
+body.swapping [data-i18n] { opacity: 0; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 44px; padding: 0 20px; border-radius: 999px; border: 0;
+  font: inherit; font-size: 15px; font-weight: 600; text-decoration: none; cursor: pointer;
+  transition: transform .35s var(--ease), box-shadow .35s var(--ease), background .25s;
+}
+.btn-primary { background: var(--accent); color: var(--on-accent); box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--accent) 60%, transparent); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 26px -8px color-mix(in srgb, var(--accent) 65%, transparent); }
+.btn-ghost { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--separator); }
+.btn-ghost:hover { transform: translateY(-2px); }
+.btn-lg { height: 52px; padding: 0 26px; font-size: 16px; }
+.btn svg { width: 18px; height: 18px; }
+
+/* ---------- Hero ---------- */
+.hero { position: relative; padding: 64px 0 96px; }
+.hero::before {
+  content: ""; position: absolute; inset: -120px 0 auto; height: 720px; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(600px 340px at 18% 30%, color-mix(in srgb, var(--leaf) 18%, transparent), transparent 70%),
+    radial-gradient(700px 380px at 82% 20%, color-mix(in srgb, var(--selection) 85%, transparent), transparent 70%);
+  filter: blur(8px);
+}
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr); gap: 56px; align-items: center; }
+.hero-grid > * { min-width: 0; }
+@media (max-width: 960px) { .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 44px; } .hero { padding-top: 32px; } }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; border-radius: 999px;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--separator);
+  font-size: 13px; font-weight: 600; color: var(--text-2);
+}
+.eyebrow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--leaf); box-shadow: 0 0 0 4px var(--leaf-soft); }
+h1 {
+  font-size: clamp(34px, 6.2vw, 68px); line-height: 1.04; letter-spacing: -.035em; font-weight: 750;
+  margin: 22px 0 20px;
+}
+h1 .soft { color: var(--accent); }
+.lede { font-size: clamp(18px, 2vw, 20px); color: var(--text-2); max-width: 34em; margin: 0 0 30px; }
+.cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.fineprint { margin-top: 18px; font-size: 14px; color: var(--text-3); display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.fineprint span { display: inline-flex; align-items: center; gap: 6px; }
+.fineprint svg { width: 15px; height: 15px; color: var(--leaf); }
+
+/* App window mock */
+.window {
+  background: var(--surface); border-radius: 22px; box-shadow: var(--shadow-lg);
+  overflow: hidden; transform: perspective(1400px) rotateX(2deg); transform-origin: 50% 0;
+}
+.window-bar { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--separator); }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 11px; height: 11px; border-radius: 50%; background: #FF5F57; }
+.lights i:nth-child(2) { background: #FEBC2E; }
+.lights i:nth-child(3) { background: #28C840; }
+.window-title { font-size: 13px; font-weight: 600; color: var(--text-2); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec {
+  flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 8px; padding: 5px 6px 5px 12px; border-radius: 999px;
+  background: var(--selection); color: var(--on-selection); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums;
+}
+.wave { display: flex; gap: 2px; align-items: center; height: 14px; }
+.wave b { width: 2px; border-radius: 2px; background: currentColor; height: 4px; animation: wave 1.1s var(--ease-soft) infinite; }
+.wave b:nth-child(2) { animation-delay: .1s } .wave b:nth-child(3) { animation-delay: .25s } .wave b:nth-child(4) { animation-delay: .05s }
+.wave b:nth-child(5) { animation-delay: .3s } .wave b:nth-child(6) { animation-delay: .15s } .wave b:nth-child(7) { animation-delay: .35s }
+@keyframes wave { 0%, 100% { height: 4px } 50% { height: 13px } }
+.rec .stop { width: 18px; height: 18px; border-radius: 50%; background: #E5484D; position: relative; }
+.rec .stop::after { content: ""; position: absolute; inset: 6px; background: #fff; border-radius: 1.5px; }
+
+.window-body { padding: 20px 22px 24px; height: 380px; overflow: hidden; position: relative; }
+.window-body::after { content: ""; position: absolute; inset: 0 0 auto; height: 36px; background: linear-gradient(var(--surface), transparent); pointer-events: none; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 14px; font-size: 13px; color: var(--text-3); }
+.lang-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 3px 10px; border-radius: 999px; background: var(--inset); font-size: 12px; font-weight: 600; color: var(--text-2); transition: background .5s var(--ease-soft), color .5s; }
+.chip.on { background: var(--accent-soft); color: var(--accent); }
+.transcript { display: flex; flex-direction: column; justify-content: flex-end; gap: 16px; height: calc(100% - 34px); }
+.para { transition: opacity .8s var(--ease-soft), transform .8s var(--ease), max-height .8s var(--ease); }
+.para.leaving { opacity: 0; transform: translateY(-14px); }
+.para .src { font-size: 16px; line-height: 1.55; }
+.para .src .w { transition: color .7s var(--ease-soft), opacity .5s var(--ease-soft); }
+.para .src .w.draft { color: var(--text-3); }
+.para .src .w.new { opacity: 0; }
+.para .tr {
+  margin-top: 6px; font-size: 15px; color: var(--accent); line-height: 1.6;
+  opacity: 0; transform: translateY(6px); transition: opacity .7s var(--ease-soft), transform .7s var(--ease);
+}
+.para .tr.show { opacity: 1; transform: none; }
+.para .stamp { font-size: 11px; font-weight: 600; color: var(--text-3); margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+
+.float-card {
+  position: absolute; right: -18px; bottom: -26px; width: min(270px, 70%);
+  background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-lg); padding: 14px 16px;
+  font-size: 14px; animation: float 6s ease-in-out infinite;
+}
+.float-card .q { font-weight: 600; margin-bottom: 6px; display: flex; gap: 8px; align-items: flex-start; }
+.float-card .q svg { width: 16px; height: 16px; flex: none; margin-top: 3px; color: var(--accent); }
+.float-card .a { color: var(--text-2); font-size: 13.5px; line-height: 1.5; }
+.cite { display: inline-flex; align-items: center; padding: 0 6px; margin-left: 2px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700; }
+@keyframes float { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-8px) } }
+.hero-visual { position: relative; }
+@media (max-width: 960px) { .float-card { position: relative; right: auto; bottom: auto; margin: -22px 16px 0 auto; } }
+@media (max-width: 640px) { .window-body { height: 340px; } }
+
+/* ---------- Sections ---------- */
+section { padding: 96px 0; }
+@media (max-width: 640px) { section { padding: 72px 0; } }
+.kicker { font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--leaf); margin-bottom: 12px; }
+h2 { font-size: clamp(30px, 4.2vw, 46px); line-height: 1.1; letter-spacing: -.028em; font-weight: 720; margin: 0 0 16px; }
+.section-head { max-width: 680px; margin-bottom: 48px; }
+.section-head p { color: var(--text-2); font-size: 18px; margin: 0; }
+.center { text-align: center; margin-left: auto; margin-right: auto; }
+
+/* Problems */
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+@media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+.card {
+  background: var(--surface); border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow);
+  transition: transform .5s var(--ease), box-shadow .5s var(--ease);
+}
+.card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+.card .icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); margin-bottom: 18px; }
+.card .icon svg { width: 22px; height: 22px; }
+.card h3 { font-size: 19px; margin: 0 0 8px; letter-spacing: -.01em; }
+.card p { margin: 0; color: var(--text-2); font-size: 16px; }
+.card .fix { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--separator); font-size: 15px; color: var(--text); display: flex; gap: 8px; }
+.card .fix svg { width: 18px; height: 18px; flex: none; color: var(--leaf); margin-top: 3px; }
+
+/* Feature slider */
+.slider { position: relative; }
+.slides {
+  display: flex; gap: 20px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth;
+  padding: 8px 4px 28px; margin: 0 -4px; scrollbar-width: none; overscroll-behavior-x: contain;
+}
+.slides::-webkit-scrollbar { display: none; }
+.slide {
+  flex: 0 0 min(860px, 88%); scroll-snap-align: center; display: grid; grid-template-columns: 1fr 1.05fr; gap: 32px; align-items: center;
+  background: var(--surface); border-radius: 26px; padding: 36px; box-shadow: var(--shadow);
+  transition: transform .7s var(--ease), opacity .7s var(--ease-soft);
+  opacity: .45; transform: scale(.96);
+}
+.slide.active { opacity: 1; transform: none; }
+@media (max-width: 800px) { .slide { grid-template-columns: 1fr; padding: 26px; flex-basis: 90%; } }
+.slide .tag { display: inline-block; padding: 4px 10px; border-radius: 999px; background: var(--leaf-soft); color: var(--leaf); font-size: 12px; font-weight: 700; margin-bottom: 14px; }
+.slide h3 { font-size: 26px; line-height: 1.2; letter-spacing: -.02em; margin: 0 0 12px; }
+.slide p { color: var(--text-2); margin: 0 0 14px; }
+.slide ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 15px; }
+.slide li { display: flex; gap: 10px; }
+.slide li svg { width: 18px; height: 18px; flex: none; color: var(--leaf); margin-top: 3px; }
+.mock { background: var(--inset); border-radius: 18px; padding: 18px; min-height: 260px; font-size: 14px; position: relative; overflow: hidden; }
+.mock .bubble-q { margin-left: auto; max-width: 80%; background: var(--accent-soft); color: var(--text); padding: 10px 14px; border-radius: 16px 16px 4px 16px; width: fit-content; }
+.mock .bubble-a { margin-top: 12px; background: var(--surface); padding: 12px 14px; border-radius: 16px 16px 16px 4px; line-height: 1.55; box-shadow: var(--shadow); }
+.mock .row { display: flex; align-items: center; gap: 10px; background: var(--surface); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; box-shadow: 0 1px 0 var(--separator); }
+.mock .file { width: 30px; height: 36px; border-radius: 6px; background: #E5484D; color: #fff; font-size: 9px; font-weight: 800; display: grid; place-items: end center; padding-bottom: 4px; flex: none; }
+.mock .file.doc { background: #2F6FEB; }
+.mock .file.ppt { background: #E8763A; }
+.mock .row small { display: block; color: var(--text-3); font-size: 12px; }
+.mock .pill { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--leaf); background: var(--leaf-soft); padding: 3px 8px; border-radius: 999px; }
+.mock h4 { margin: 0 0 8px; font-size: 15px; }
+.mock .sum li { font-size: 13.5px; }
+.mock .qa { background: var(--surface); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 0 var(--separator); }
+.mock .qa-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mock .qa-time { font-size: 11.5px; font-weight: 700; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+.mock .qa-state { font-size: 11.5px; color: var(--text-3); }
+.mock .qa b { display: block; font-size: 14px; margin-bottom: 4px; }
+.mock .qa p { margin: 0; font-size: 13px; color: var(--text-2); line-height: 1.5; }
+.mock .mem { display: flex; align-items: flex-start; gap: 10px; background: var(--surface); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; box-shadow: 0 1px 0 var(--separator); font-size: 13.5px; }
+.mock .mem .kind { flex: none; font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; }
+.mock .web { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.mock .web span { font-size: 11.5px; padding: 3px 8px; border-radius: 999px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--separator); color: var(--text-2); }
+
+/* Interactive demo inside a slide */
+.demo-stage { height: 150px; border-radius: 12px; background: linear-gradient(var(--surface), var(--inset)); position: relative; overflow: hidden; margin-top: 10px; }
+.wave-line { position: absolute; inset: 0; }
+.demo-controls { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 13px; color: var(--text-2); }
+.demo-controls input { flex: 1; accent-color: var(--accent); }
+
+.slider-ui { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.arrow {
+  width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--surface); color: var(--text); cursor: pointer;
+  display: grid; place-items: center; box-shadow: var(--shadow); transition: transform .35s var(--ease), opacity .3s;
+}
+.arrow:hover { transform: scale(1.06); }
+.arrow:disabled { opacity: .35; cursor: default; transform: none; }
+.arrow svg { width: 18px; height: 18px; }
+.dots { display: flex; gap: 8px; }
+.dots button { width: 8px; height: 8px; border-radius: 999px; border: 0; padding: 0; background: var(--separator); cursor: pointer; transition: width .5s var(--ease), background .4s; }
+.dots button.on { width: 26px; background: var(--accent); }
+
+/* Steps */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; counter-reset: step; position: relative; }
+@media (max-width: 900px) { .steps { grid-template-columns: 1fr; } }
+.step { background: var(--surface); border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow); position: relative; }
+.step .num {
+  width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--on-accent);
+  display: grid; place-items: center; font-weight: 750; font-size: 15px; margin-bottom: 18px;
+}
+.step h3 { margin: 0 0 8px; font-size: 19px; }
+.step p { margin: 0; color: var(--text-2); font-size: 16px; }
+.step kbd { font: 600 13px/1 inherit; padding: 3px 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent); white-space: nowrap; }
+
+/* Privacy band */
+.band {
+  background: var(--surface); border-radius: 32px; padding: 56px; box-shadow: var(--shadow);
+  display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; position: relative; overflow: hidden;
+}
+.band::before { content: ""; position: absolute; width: 420px; height: 420px; right: -120px; top: -160px; border-radius: 50%; background: radial-gradient(var(--leaf-soft), transparent 70%); }
+@media (max-width: 860px) { .band { grid-template-columns: 1fr; padding: 32px 24px; } }
+.checks { display: grid; gap: 14px; position: relative; }
+.check { display: flex; gap: 14px; align-items: flex-start; padding: 16px; border-radius: 16px; background: var(--inset); }
+.check svg { width: 22px; height: 22px; flex: none; color: var(--leaf); }
+.check b { display: block; font-size: 16px; }
+.check span { color: var(--text-2); font-size: 15px; }
+
+/* Languages marquee */
+.langs { overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); margin-top: 8px; }
+.langs-track { display: flex; gap: 12px; width: max-content; animation: marquee 38s linear infinite; }
+.langs-track span { padding: 10px 18px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); font-weight: 600; font-size: 15px; white-space: nowrap; }
+.langs-track span em { font-style: normal; color: var(--text-3); font-weight: 500; margin-left: 6px; }
+@keyframes marquee { to { transform: translateX(-50%); } }
+.langs:hover .langs-track { animation-play-state: paused; }
+
+/* FAQ */
+.faq { max-width: 780px; margin: 0 auto; display: grid; gap: 12px; }
+.faq details { background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
+.faq summary {
+  list-style: none; cursor: pointer; padding: 20px 24px; font-weight: 620; font-size: 17px;
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary svg { width: 18px; height: 18px; flex: none; color: var(--text-3); transition: transform .45s var(--ease); }
+.faq details[open] summary svg { transform: rotate(45deg); }
+.faq .answer { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s var(--ease); }
+.faq details[open] .answer { grid-template-rows: 1fr; }
+.faq .answer > div { overflow: hidden; }
+.faq .answer p { margin: 0; padding: 0 24px 22px; color: var(--text-2); font-size: 16px; }
+
+/* Final CTA */
+.final { text-align: center; padding: 72px 24px; border-radius: 32px; background: var(--accent); color: var(--on-accent); position: relative; overflow: hidden; }
+.final::before, .final::after { content: ""; position: absolute; border-radius: 50%; filter: blur(2px); opacity: .25; }
+.final::before { width: 380px; height: 380px; left: -120px; bottom: -200px; background: var(--leaf); }
+.final::after { width: 300px; height: 300px; right: -80px; top: -140px; background: var(--selection); }
+.final > * { position: relative; }
+.final h2 { color: inherit; }
+.final p { opacity: .85; font-size: 18px; margin: 0 auto 28px; max-width: 34em; }
+.final .btn-primary { background: var(--on-accent); color: var(--accent); box-shadow: none; }
+.final svg.leaf { width: 64px; height: 64px; margin: 0 auto 18px; }
+
+footer { padding: 48px 0 56px; color: var(--text-3); font-size: 14px; }
+.foot { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; justify-content: space-between; }
+.foot a { color: var(--text-2); text-decoration: none; }
+.foot a:hover { color: var(--text); }
+.foot nav { display: flex; gap: 22px; flex-wrap: wrap; }
+
+/* ---------- Scroll reveal ---------- */
+:lang(zh-Hans) h1, :lang(zh-Hans) h2 { letter-spacing: -.01em; }
+:lang(zh-Hans) body { line-height: 1.7; }
+
+.reveal { opacity: 0; transform: translateY(26px); transition: opacity 1s var(--ease-soft), transform 1s var(--ease); transition-delay: var(--d, 0s); }
+.reveal.in { opacity: 1; transform: none; }
+.hero .reveal { transition-duration: 1.1s; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; transition-delay: 0s !important; }
+  .reveal { opacity: 1; transform: none; }
+  .slides { scroll-behavior: auto; }
+  .window { transform: none; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="leaf" viewBox="180 166 900 900"><path fill="#20B68A" d="M 1036 184 C 1033.33 186.67 1025.5 194.67 1020 200 C 1014.5 205.33 1008.97 210.67 1003 216 C 997.03 221.33 990.9 226.67 984.2 232 C 977.5 237.33 970.5 242.67 962.8 248 C 955.1 253.33 946.87 258.67 938 264 C 929.13 269.33 919.97 274.67 909.6 280 C 899.23 285.33 888.17 290.67 875.8 296 C 863.43 301.33 850.5 306.67 835.4 312 C 820.3 317.33 803.3 322.67 785.2 328 C 767.1 333.33 745.93 338.67 726.8 344 C 707.67 349.33 687.9 354.67 670.4 360 C 652.9 365.33 636.57 370.67 621.8 376 C 607.03 381.33 594.2 386.67 581.8 392 C 569.4 397.33 558.13 402.67 547.4 408 C 536.67 413.33 526.9 418.67 517.4 424 C 507.9 429.33 498.93 434.67 490.4 440 C 481.87 445.33 473.9 450.67 466.2 456 C 458.5 461.33 451.23 466.67 444.2 472 C 437.17 477.33 430.53 482.67 424 488 C 417.47 493.33 411 498.67 405 504 C 399 509.33 393.33 514.67 388 520 C 382.67 525.33 378 530.67 373 536 C 368 541.33 362.7 546.67 358 552 C 353.3 557.33 349.07 562.67 344.8 568 C 340.53 573.33 336.43 578.67 332.4 584 C 328.37 589.33 324.33 594.67 320.6 600 C 316.87 605.33 313.43 610.67 310 616 C 306.57 621.33 303.2 626.67 300 632 C 296.8 637.33 293.77 642.67 290.8 648 C 287.83 653.33 284.97 658.67 282.2 664 C 279.43 669.33 276.7 674.67 274.2 680 C 271.7 685.33 269.5 690.67 267.2 696 C 264.9 701.33 262.53 706.67 260.4 712 C 258.27 717.33 256.3 722.67 254.4 728 C 252.5 733.33 250.73 738.67 249 744 C 247.27 749.33 245.57 754.67 244 760 C 242.43 765.33 240.97 770.67 239.6 776 C 238.23 781.33 236.97 786.67 235.8 792 C 234.63 797.33 233.6 802.67 232.6 808 C 231.6 813.33 230.63 818.67 229.8 824 C 228.97 829.33 228.23 834.67 227.6 840 C 226.97 845.33 226.43 850.67 226 856 C 225.57 861.33 225.33 866.67 225 872 C 224.67 877.33 224.17 882.67 224 888 C 223.83 893.33 223.83 898.67 224 904 C 224.17 909.33 224.53 914.67 225 920 C 225.47 925.33 226.17 930.67 226.8 936 C 227.43 941.33 228 946.67 228.8 952 C 229.6 957.33 230.5 962.67 231.6 968 C 232.7 973.33 234 978.67 235.4 984 C 236.8 989.33 238.3 994.67 240 1000 C 241.7 1005.33 243.47 1010.67 245.6 1016 C 252.79 1033.99 258 1049 276 1049 C 294 1049 334.8 1030.72 363.6 1016 C 374.03 1010.67 384.93 1005.33 398 1000 C 411.07 994.67 424.4 989.33 442 984 C 459.6 978.67 480.33 973.33 503.6 968 C 526.87 962.67 558.67 957.33 581.6 952 C 604.53 946.67 624.23 941.33 641.2 936 C 658.17 930.67 671.07 925.33 683.4 920 C 695.73 914.67 705.47 909.33 715.2 904 C 724.93 898.67 733.6 893.33 741.8 888 C 750 882.67 757.37 877.33 764.4 872 C 771.43 866.67 777.73 861.33 784 856 C 790.27 850.67 796.33 845.33 802 840 C 807.67 834.67 812.97 829.33 818 824 C 823.03 818.67 827.6 813.33 832.2 808 C 836.8 802.67 841.33 797.33 845.6 792 C 849.87 786.67 853.83 781.33 857.8 776 C 861.77 770.67 865.7 765.33 869.4 760 C 873.1 754.67 876.57 749.33 880 744 C 883.43 738.67 886.73 733.33 890 728 C 893.27 722.67 896.53 717.33 899.6 712 C 902.67 706.67 905.53 701.33 908.4 696 C 911.27 690.67 914.07 685.33 916.8 680 C 919.53 674.67 922.23 669.33 924.8 664 C 927.37 658.67 929.8 653.33 932.2 648 C 934.6 642.67 936.9 637.33 939.2 632 C 941.5 626.67 943.8 621.33 946 616 C 948.2 610.67 950.33 605.33 952.4 600 C 954.47 594.67 956.47 589.33 958.4 584 C 960.33 578.67 962.17 573.33 964 568 C 965.83 562.67 967.63 557.33 969.4 552 C 971.17 546.67 972.93 541.33 974.6 536 C 976.27 530.67 977.9 525.33 979.4 520 C 980.9 514.67 982.2 509.33 983.6 504 C 985 498.67 986.47 493.33 987.8 488 C 989.13 482.67 990.37 477.33 991.6 472 C 992.83 466.67 994.03 461.33 995.2 456 C 996.37 450.67 997.47 445.33 998.6 440 C 999.73 434.67 1000.93 429.33 1002 424 C 1003.07 418.67 1004.03 413.33 1005 408 C 1005.97 402.67 1006.9 397.33 1007.8 392 C 1008.7 386.67 1009.53 381.33 1010.4 376 C 1011.27 370.67 1012.17 365.33 1013 360 C 1013.83 354.67 1014.57 349.33 1015.4 344 C 1016.23 338.67 1017.23 333.33 1018 328 C 1018.77 322.67 1019.3 317.33 1020 312 C 1020.7 306.67 1021.47 301.33 1022.2 296 C 1022.93 290.67 1023.73 285.33 1024.4 280 C 1025.07 274.67 1025.53 269.33 1026.2 264 C 1026.87 258.67 1027.7 253.33 1028.4 248 C 1029.1 242.67 1029.73 237.33 1030.4 232 C 1031.07 226.67 1031.77 221.33 1032.4 216 C 1033.03 210.67 1033.6 205.33 1034.2 200 C 1034.8 194.67 1035.7 186.67 1036 184 C 1036.3 181.33 1038.67 181.33 1036 184 Z"/>
+  <path fill="#8EDDBA" d="M 674 395 C 666.3 396.67 648.57 401.67 637.8 405 C 627.03 408.33 618.13 411.67 609.4 415 C 600.67 418.33 593 421.67 585.4 425 C 577.8 428.33 570.73 431.67 563.8 435 C 556.87 438.33 550.2 441.67 543.8 445 C 537.4 448.33 531.23 451.67 525.4 455 C 519.57 458.33 514.17 461.67 508.8 465 C 503.43 468.33 498.2 471.67 493.2 475 C 488.2 478.33 483.43 481.67 478.8 485 C 474.17 488.33 469.73 491.67 465.4 495 C 461.07 498.33 456.87 501.67 452.8 505 C 448.73 508.33 444.8 511.67 441 515 C 437.2 518.33 433.5 521.67 430 525 C 426.5 528.33 423.17 531.67 420 535 C 416.83 538.33 413.9 541.67 411 545 C 408.1 548.33 405.23 551.67 402.6 555 C 399.97 558.33 397.57 561.67 395.2 565 C 392.83 568.33 390.57 571.67 388.4 575 C 386.23 578.33 384.13 581.67 382.2 585 C 380.27 588.33 378.53 591.67 376.8 595 C 375.07 598.33 373.37 601.67 371.8 605 C 370.23 608.33 368.77 611.67 367.4 615 C 366.03 618.33 364.77 621.67 363.6 625 C 362.43 628.33 361.37 631.67 360.4 635 C 359.43 638.33 358.53 641.67 357.8 645 C 357.07 648.33 356.47 652.33 356 655 C 355.53 657.67 355 660 355 661 C 355 662 354.97 662 356 661 C 357.03 660 358.7 657.67 361.2 655 C 363.7 652.33 367.7 648.33 371 645 C 374.3 641.67 377.83 638.33 381 635 C 384.17 631.67 386.8 628.33 390 625 C 393.2 621.67 396.77 618.33 400.2 615 C 403.63 611.67 407.13 608.33 410.6 605 C 414.07 601.67 417.6 598.33 421 595 C 424.4 591.67 427.5 588.33 431 585 C 434.5 581.67 438.37 578.33 442 575 C 445.63 571.67 449.2 568.33 452.8 565 C 456.4 561.67 459.97 558.33 463.6 555 C 467.23 551.67 470.87 548.33 474.6 545 C 478.33 541.67 482.2 538.33 486 535 C 489.8 531.67 493.57 528.33 497.4 525 C 501.23 521.67 505.03 518.33 509 515 C 512.97 511.67 517.13 508.33 521.2 505 C 525.27 501.67 529.23 498.33 533.4 495 C 537.57 491.67 541.87 488.33 546.2 485 C 550.53 481.67 554.93 478.33 559.4 475 C 563.87 471.67 568.37 468.33 573 465 C 577.63 461.67 582.37 458.33 587.2 455 C 592.03 451.67 596.97 448.33 602 445 C 607.03 441.67 612.13 438.33 617.4 435 C 622.67 431.67 628.1 428.33 633.6 425 C 639.1 421.67 644.7 418.33 650.4 415 C 656.1 411.67 662.2 408.33 667.8 405 C 673.4 401.67 682.97 396.67 684 395 C 685.03 393.33 681.7 393.33 674 395 Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.2 4.2L19 7"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-apple" viewBox="0 0 24 24"><path fill="currentColor" d="M16.4 12.6c0-2.4 2-3.6 2.1-3.7-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-1.9-.9-3.2-.8-1.6 0-3.1 1-4 2.4-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.2.8 1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.5-1-2.5-3.9zM14 5.5c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1 .1 2.1-.6 2.8-1.4z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></g></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></g></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></g></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></g></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/><path stroke-linecap="round" d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></g></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></g></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 6.5L12 13l8.5-6.5"/></g></symbol>
+</svg>
+
+<header class="nav" id="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="Nomi home"><svg><use href="#leaf"/></svg>Nomi</a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#why"><span data-i18n="t0">Why Nomi</span></a>
+      <a href="#features"><span data-i18n="t1">Features</span></a>
+      <a href="#how"><span data-i18n="t2">How it works</span></a>
+      <a href="#privacy"><span data-i18n="t3">Privacy</span></a>
+      <a href="#faq"><span data-i18n="t4">FAQ</span></a>
+    </nav>
+    <div class="lang-toggle" role="group" aria-label="Language / 语言">
+      <button type="button" data-lang="en" lang="en">EN</button>
+      <button type="button" data-lang="zh" lang="zh-Hans">中文</button>
+    </div>
+    <a class="btn btn-primary" href="#download"><svg><use href="#i-apple"/></svg><span data-i18n="t5">Download</span></a>
+  </div>
+</header>
+
+<main id="top">
+  <!-- Hero -->
+  <div class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <span class="eyebrow reveal"><span class="dot"></span><span data-i18n="t6">For international students</span></span>
+        <h1 class="reveal" style="--d:.08s"><span data-i18n="t7">Understand every lecture, <span class="soft">in your own language.</span></span></h1>
+        <p class="lede reveal" style="--d:.16s"><span data-i18n="t8">Nomi writes down your class as the teacher speaks and translates each passage right below it. After class, ask it anything about what you heard. All on your Mac.</span></p>
+        <div class="cta-row reveal" style="--d:.24s">
+          <a class="btn btn-primary btn-lg" href="#download"><svg><use href="#i-apple"/></svg><span data-i18n="t9">Download for Mac</span></a>
+          <a class="btn btn-ghost btn-lg" href="#how"><span data-i18n="t10">See how it works</span></a>
+        </div>
+        <div class="fineprint reveal" style="--d:.32s">
+          <span><svg><use href="#i-check"/></svg><span data-i18n="t11">Works offline</span></span>
+          <span><svg><use href="#i-check"/></svg><span data-i18n="t12">9 languages</span></span>
+          <span><svg><use href="#i-check"/></svg><span data-i18n="t13">Open source</span></span>
+        </div>
+      </div>
+
+      <div class="hero-visual reveal" style="--d:.2s">
+        <div class="window" role="img" aria-label="Nomi showing a live English lecture transcript with a translation under each passage">
+          <div class="window-bar">
+            <div class="lights"><i></i><i></i><i></i></div>
+            <div class="window-title"><span data-i18n="t14">Biology 101 · Neurons</span></div>
+            <div class="rec" aria-hidden="true">
+              <span class="wave"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></span>
+              <span id="clock">12:04</span>
+              <span class="stop"></span>
+            </div>
+          </div>
+          <div class="window-body">
+            <div class="meta">
+              <span>English → <span id="target-name">中文</span></span>
+              <span class="lang-chips" id="chips"></span>
+            </div>
+            <div class="transcript" id="transcript" aria-live="off"></div>
+          </div>
+        </div>
+        <div class="float-card" aria-hidden="true">
+          <div class="q"><svg><use href="#i-chat"/></svg><span data-i18n="t15">What is an action potential?</span></div>
+          <div class="a"><span data-i18n="t16">A quick electrical signal that travels down the axon when a neuron fires.</span><span class="cite">12:04</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Why -->
+  <section id="why">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <div class="kicker"><span data-i18n="t0">Why Nomi</span></div>
+        <h2><span data-i18n="t17">Lectures move fast. Nomi helps you keep up.</span></h2>
+        <p><span data-i18n="t18">Studying in a second language is hard enough. Nomi takes care of the listening and note-taking, so you can focus on understanding.</span></p>
+      </div>
+      <div class="cards">
+        <article class="card reveal">
+          <div class="icon"><svg><use href="#i-mic"/></svg></div>
+          <h3><span data-i18n="t19">The teacher talks fast</span></h3>
+          <p><span data-i18n="t20">Accents, speed and long sentences make it easy to miss a point and lose the thread.</span></p>
+          <div class="fix"><svg><use href="#i-check"/></svg><span data-i18n="t21">Live text appears as they speak. Missed something? Scroll back and read it.</span></div>
+        </article>
+        <article class="card reveal" style="--d:.1s">
+          <div class="icon"><svg><use href="#i-book"/></svg></div>
+          <h3><span data-i18n="t22">New words everywhere</span></h3>
+          <p><span data-i18n="t23">Technical terms and idioms slow you down when you are still thinking in your first language.</span></p>
+          <div class="fix"><svg><use href="#i-check"/></svg><span data-i18n="t24">Each passage is translated right under the original, so you learn both.</span></div>
+        </article>
+        <article class="card reveal" style="--d:.2s">
+          <div class="icon"><svg><use href="#i-pen"/></svg></div>
+          <h3><span data-i18n="t25">Listening or writing?</span></h3>
+          <p><span data-i18n="t26">Taking notes while you listen means you do both badly. Rewatching recordings takes hours.</span></p>
+          <div class="fix"><svg><use href="#i-check"/></svg><span data-i18n="t27">Get the full transcript, a summary, and answers to your questions.</span></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features slider -->
+  <section id="features">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <div class="kicker"><span data-i18n="t1">Features</span></div>
+        <h2><span data-i18n="t28">Everything from class, in one place.</span></h2>
+        <p><span data-i18n="t29">Swipe through what Nomi can do before, during and after a lecture.</span></p>
+      </div>
+
+      <div class="slider reveal" id="slider">
+        <div class="slides" id="slides">
+          <article class="slide" aria-roledescription="slide" aria-label="1 of 7">
+            <div>
+              <span class="tag"><span data-i18n="t30">During class</span></span>
+              <h3><span data-i18n="t31">Live transcription and translation</span></h3>
+              <p><span data-i18n="t32">Press Start Transcription and Nomi listens through your microphone. Words appear as the teacher speaks, then settle into sentences with the translation underneath.</span></p>
+              <ul>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t33">Pause and resume any time</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t34">Works with AirPods and other mics</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t35">Jump back to the latest line with one click</span></li>
+              </ul>
+            </div>
+            <div class="mock">
+              <div class="para"><div class="stamp">03:12</div><div class="src">Photosynthesis turns light energy into chemical energy stored in glucose.</div><div class="tr show">光合作用把光能转化为储存在葡萄糖中的化学能。</div></div>
+              <div class="para" style="margin-top:14px"><div class="stamp">03:20</div><div class="src">It happens mainly in the <span class="w draft">chloroplasts of leaf cells</span></div></div>
+            </div>
+          </article>
+
+          <article class="slide" aria-roledescription="slide" aria-label="2 of 7">
+            <div>
+              <span class="tag"><span data-i18n="n2">During and after class</span></span>
+              <h3><span data-i18n="n3">The teacher's questions, answered</span></h3>
+              <p><span data-i18n="n4">The Q&amp;A tab collects the real questions the teacher asks in class and answers each one from the lecture, your files and the web. A quick way to check you understood.</span></p>
+              <ul>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="n5">Skips filler like “right?” and “can you hear me?”</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="n6">Jump to the moment each question was asked</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="n7">Turn off Auto-answer to ask them one by one</span></li>
+              </ul>
+            </div>
+            <div class="mock">
+              <div class="qa">
+                <div class="qa-head"><span class="qa-time">12:40</span></div>
+                <b><span data-i18n="n8">Why do we divide by √d in attention?</span></b>
+                <p><span data-i18n="n9">So the dot products don't grow too large. Softmax then stays smooth and the gradients stay healthy.</span><span class="cite">12:44</span></p>
+              </div>
+              <div class="qa">
+                <div class="qa-head"><span class="qa-time">18:05</span><span class="qa-state"><span data-i18n="n10">Queued</span></span></div>
+                <b><span data-i18n="n11">What does multi-head attention add over a single head?</span></b>
+              </div>
+            </div>
+          </article>
+
+          <article class="slide" aria-roledescription="slide" aria-label="3 of 7">
+            <div>
+              <span class="tag"><span data-i18n="t36">After class</span></span>
+              <h3><span data-i18n="t37">Ask about the lecture</span></h3>
+              <p><span data-i18n="t38">Didn't catch the main idea? Ask Nomi in your own language. Answers point to the exact moment in the transcript or page in your slides.</span></p>
+              <ul>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t39">Choose which lectures and files to use</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="n1">Ask about last week's lecture or an earlier chat, and Nomi finds it</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t40">Turn on Web to add sources from the internet</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t41">Use a local model or your own API key</span></li>
+              </ul>
+            </div>
+            <div class="mock">
+              <div class="bubble-q">教授说的 “opportunity cost” 是什么意思？</div>
+              <div class="bubble-a"><b>机会成本</b>是你为了做一个选择而放弃的、价值最高的另一个选择。比如教授举的例子：上课的时间本来可以用来打工。<span class="cite">24:31</span> <span class="cite">Slides p.7</span>
+                <div class="web"><span>🌐 investopedia.com</span><span>🌐 khanacademy.org</span></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="slide" aria-roledescription="slide" aria-label="4 of 7">
+            <div>
+              <span class="tag"><span data-i18n="t42">Learn by doing</span></span>
+              <h3><span data-i18n="t43">Interactive demos</span></h3>
+              <p><span data-i18n="t44">When an idea is easier to see than to read, Nomi builds a small interactive page right in the chat. Drag a slider, press a button, and watch the concept move.</span></p>
+              <ul>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t45">Physics, math, biology, economics</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t46">Save the page and open it later</span></li>
+              </ul>
+            </div>
+            <div class="mock">
+              <h4><span data-i18n="t47">Wave frequency</span></h4>
+              <div class="demo-stage"><svg class="wave-line" id="demo-wave" viewBox="0 0 300 150" preserveAspectRatio="none"><path id="demo-path" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/></svg></div>
+              <label class="demo-controls"><span data-i18n="t48">Frequency</span> <input id="demo-freq" type="range" min="1" max="6" step="0.1" value="2" aria-label="Wave frequency"><span id="demo-val">2.0 Hz</span></label>
+            </div>
+          </article>
+
+          <article class="slide" aria-roledescription="slide" aria-label="5 of 7">
+            <div>
+              <span class="tag"><span data-i18n="t49">Before class</span></span>
+              <h3><span data-i18n="t50">Keep your slides and readings with the lecture</span></h3>
+              <p><span data-i18n="t51">Import PDFs, slides and documents into Sources. Link them to a meeting, and Nomi reads them together with the transcript when you ask a question.</span></p>
+              <ul>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t52">Sort everything into course categories</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t53">Files stay on your Mac</span></li>
+              </ul>
+            </div>
+            <div class="mock">
+              <div class="row"><span class="file">PDF</span><div>Week 4 – Neurons.pdf<small><span data-i18n="t55">Biology 101</span></small></div><span class="pill"><span data-i18n="t54">Linked</span></span></div>
+              <div class="row"><span class="file ppt">PPT</span><div>Lecture 4 slides.pptx<small><span data-i18n="t55">Biology 101</span></small></div><span class="pill"><span data-i18n="t54">Linked</span></span></div>
+              <div class="row"><span class="file doc">DOC</span><div>Reading notes.docx<small><span data-i18n="t55">Biology 101</span></small></div></div>
+              <div class="row"><span class="file">PDF</span><div>Supply and demand.pdf<small><span data-i18n="t56">Economics</span></small></div></div>
+            </div>
+          </article>
+
+          <article class="slide" aria-roledescription="slide" aria-label="6 of 7">
+            <div>
+              <span class="tag"><span data-i18n="t57">Review</span></span>
+              <h3><span data-i18n="t58">One-click summaries</span></h3>
+              <p><span data-i18n="t59">Turn a 90-minute lecture into the key points, new terms and conclusions. Perfect for revising before an exam.</span></p>
+              <ul>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t60">Summary in your reply language</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t61">Every meeting keeps its own summary</span></li>
+              </ul>
+            </div>
+            <div class="mock">
+              <h4><span data-i18n="t62">Summary · Biology 101</span></h4>
+              <ul class="sum">
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t63">Neurons send signals as action potentials.</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t64">Myelin makes the signal travel faster.</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="t65">At the synapse, chemicals carry the signal to the next cell.</span></li>
+              </ul>
+              <h4 style="margin-top:14px"><span data-i18n="t66">New terms</span></h4>
+              <div class="web"><span>axon · 轴突</span><span>synapse · 突触</span><span>myelin · 髓鞘</span></div>
+            </div>
+          </article>
+          <article class="slide" aria-roledescription="slide" aria-label="7 of 7">
+            <div>
+              <span class="tag"><span data-i18n="n12">Over time</span></span>
+              <h3><span data-i18n="n13">Learns how you study</span></h3>
+              <p><span data-i18n="n14">Nomi notices what helps you, such as answers in Chinese with English terms, your courses and your exam dates, and uses it next time. You can see, edit or clear everything it remembers.</span></p>
+              <ul>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="n15">Stays on your Mac</span></li>
+                <li><svg><use href="#i-check"/></svg><span data-i18n="n16">Edit, pin or turn it off in Settings</span></li>
+              </ul>
+            </div>
+            <div class="mock">
+              <h4><span data-i18n="n17">Memory</span></h4>
+              <div class="mem"><span class="kind"><span data-i18n="n18">Preference</span></span><span data-i18n="n19">Answers in Chinese, with English terms in brackets</span></div>
+              <div class="mem"><span class="kind"><span data-i18n="n20">Course</span></span><span data-i18n="n21">Takes BIOL 101 and ECON 201</span></div>
+              <div class="mem"><span class="kind"><span data-i18n="n22">Goal</span></span><span data-i18n="n23">Biology midterm on 2026-11-03</span></div>
+              <div class="mem"><span class="kind"><span data-i18n="n24">Learning style</span></span><span data-i18n="n25">Likes interactive demos for formulas</span></div>
+            </div>
+          </article>
+        </div>
+        <div class="slider-ui">
+          <button class="arrow" id="prev" aria-label="Previous feature"><svg><use href="#i-left"/></svg></button>
+          <div class="dots" id="dots" role="tablist" aria-label="Choose a feature"></div>
+          <button class="arrow" id="next" aria-label="Next feature"><svg><use href="#i-right"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="how">
+    <div class="wrap">
+      <div class="section-head center reveal">
+        <div class="kicker"><span data-i18n="t2">How it works</span></div>
+        <h2><span data-i18n="t67">Three steps. That's it.</span></h2>
+      </div>
+      <div class="steps">
+        <div class="step reveal"><div class="num">1</div><h3><span data-i18n="t68">Start recording</span></h3><p><span data-i18n="t69">Click <kbd>Start Transcription</kbd>, pick your microphone, the lecture language and your language.</span></p></div>
+        <div class="step reveal" style="--d:.1s"><div class="num">2</div><h3><span data-i18n="t70">Follow along</span></h3><p><span data-i18n="t71">Read the live text and translation while you listen. Light words are still being heard; dark words are final.</span></p></div>
+        <div class="step reveal" style="--d:.2s"><div class="num">3</div><h3><span data-i18n="t72">Review and ask</span></h3><p><span data-i18n="t73">Open the meeting later for the full transcript, the summary and the teacher's questions with answers, then ask follow-ups in Chat.</span></p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Languages -->
+  <section style="padding-top:24px">
+    <div class="wrap">
+      <div class="section-head center reveal" style="margin-bottom:28px">
+        <div class="kicker"><span data-i18n="t74">Languages</span></div>
+        <h2><span data-i18n="t75">Lectures and translations in 9 languages</span></h2>
+      </div>
+    </div>
+    <div class="langs reveal" aria-label="Supported languages: Chinese, English, Japanese, Korean, German, French, Spanish, Russian, Arabic">
+      <div class="langs-track" id="langs"></div>
+    </div>
+  </section>
+
+  <!-- Privacy -->
+  <section id="privacy">
+    <div class="wrap">
+      <div class="band reveal">
+        <div>
+          <div class="kicker"><span data-i18n="t3">Privacy</span></div>
+          <h2><span data-i18n="t76">Your classes stay on your Mac.</span></h2>
+          <p style="color:var(--text-2);font-size:18px;margin:0"><span data-i18n="t77">Speech recognition and translation run on Apple silicon, without sending your recordings anywhere. You decide if and when anything goes online.</span></p>
+        </div>
+        <div class="checks">
+          <div class="check"><svg><use href="#i-chip"/></svg><div><b><span data-i18n="t78">On-device AI</span></b><span><span data-i18n="t79">Recognition and translation use local models on your Mac.</span></span></div></div>
+          <div class="check"><svg><use href="#i-lock"/></svg><div><b><span data-i18n="t80">Works without internet</span></b><span><span data-i18n="t81">Record and translate even when the classroom Wi-Fi is down.</span></span></div></div>
+          <div class="check"><svg><use href="#i-key"/></svg><div><b><span data-i18n="t82">You choose for questions</span></b><span><span data-i18n="t83">Use a local model, or connect your own API. Keys are kept in the macOS Keychain.</span></span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq">
+    <div class="wrap">
+      <div class="section-head center reveal">
+        <div class="kicker"><span data-i18n="t4">FAQ</span></div>
+        <h2><span data-i18n="t84">Questions students ask</span></h2>
+      </div>
+      <div class="faq">
+        <details class="reveal"><summary><span data-i18n="t85">Which Macs does Nomi run on?</span><svg><use href="#i-plus"/></svg></summary><div class="answer"><div><p><span data-i18n="t86">Nomi needs a Mac with Apple silicon (M1 or newer) and macOS 26 or later.</span></p></div></div></details>
+        <details class="reveal"><summary><span data-i18n="t87">Do I need internet in class?</span><svg><use href="#i-plus"/></svg></summary><div class="answer"><div><p><span data-i18n="t88">No. After you download the models once, transcription and translation work offline. Internet is only needed if you turn on Web search or use an API model for questions.</span></p></div></div></details>
+        <details class="reveal"><summary><span data-i18n="t89">Which languages are supported?</span><svg><use href="#i-plus"/></svg></summary><div class="answer"><div><p><span data-i18n="t90">Chinese, English, Japanese, Korean, German, French, Spanish, Russian and Arabic, both for the lecture and for the translation.</span></p></div></div></details>
+        <details class="reveal"><summary><span data-i18n="t91">Can I chat with Nomi while it is recording?</span><svg><use href="#i-plus"/></svg></summary><div class="answer"><div><p><span data-i18n="t92">Yes. Ask questions during class without stopping the recording. Live transcription keeps priority, so the text keeps up with the teacher.</span></p></div></div></details>
+        <details class="reveal"><summary><span data-i18n="n26">Can Nomi find something from an earlier class?</span><svg><use href="#i-plus"/></svg></summary><div class="answer"><div><p><span data-i18n="n27">Yes. Ask something like “what did the teacher say about the exam last week?” and Nomi searches all your lectures, earlier chats and files, then shows where each part of the answer came from.</span></p></div></div></details>
+        <details class="reveal"><summary><span data-i18n="n28">Does Nomi remember things about me?</span><svg><use href="#i-plus"/></svg></summary><div class="answer"><div><p><span data-i18n="n29">Only what makes answers better: the preferences, courses and goals it learns from your chats. It stays on your Mac, and you can edit, pin, clear or turn it off in Settings › Memory.</span></p></div></div></details>
+        <details class="reveal"><summary><span data-i18n="t93">Is it okay to record my lectures?</span><svg><use href="#i-plus"/></svg></summary><div class="answer"><div><p><span data-i18n="t94">Rules differ between schools and countries. Check your university's policy and ask your teacher before you record a class.</span></p></div></div></details>
+        <details class="reveal"><summary><span data-i18n="t95">How much does Nomi cost?</span><svg><use href="#i-plus"/></svg></summary><div class="answer"><div><p><span data-i18n="t96">Nomi is open source under the MIT license. If you connect your own API for questions, that provider may charge you.</span></p></div></div></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- Download -->
+  <section id="download" style="padding-top:24px">
+    <div class="wrap">
+      <div class="final reveal">
+        <svg class="leaf"><use href="#leaf"/></svg>
+        <h2><span data-i18n="t97">Ready for your next class?</span></h2>
+        <p><span data-i18n="t98">Download Nomi, open it before the lecture starts, and press Start Transcription.</span></p>
+        <div class="cta-row" style="justify-content:center">
+          <a class="btn btn-primary btn-lg" href="https://github.com/Jasonsu22/Nomi"><svg><use href="#i-apple"/></svg><span data-i18n="t9">Download for Mac</span></a>
+        </div>
+        <p style="font-size:14px;margin:18px auto 0"><span data-i18n="t99">macOS 26 · Apple silicon</span></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <a class="brand" href="#top" aria-label="Nomi home"><svg><use href="#leaf"/></svg>Nomi</a>
+    <nav aria-label="Footer">
+      <a href="#features"><span data-i18n="t1">Features</span></a>
+      <a href="#faq"><span data-i18n="t4">FAQ</span></a>
+      <a href="https://github.com/Jasonsu22/Nomi">GitHub</a>
+      <a href="mailto:jasonsu210@gmail.com?subject=Nomi"><span data-i18n="t100">Contact</span></a>
+    </nav>
+    <span><span data-i18n="t101">© 2026 Jason Su · MIT License</span></span>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- Language ----------
+  const ZH = {
+"t0": "为什么选 Nomi",
+"t1": "功能",
+"t2": "使用方法",
+"t3": "隐私",
+"t4": "常见问题",
+"t5": "下载",
+"t6": "为留学生打造",
+"t7": "每一节课，<span class=\"soft\">都用你的母语听懂。</span>",
+"t8": "老师讲课时，Nomi 实时写下课堂内容，并把每一段翻译在原文下方。下课后，课上听到的任何内容都可以问它。一切都在你的 Mac 上完成。",
+"t9": "下载 Mac 版",
+"t10": "看看怎么用",
+"t11": "离线可用",
+"t12": "支持 9 种语言",
+"t13": "开源",
+"t14": "生物 101 · 神经元",
+"t15": "什么是动作电位？",
+"t16": "神经元放电时，沿轴突快速传导的电信号。",
+"t17": "老师讲得快，Nomi 帮你跟上。",
+"t18": "用第二语言上课本来就不容易。Nomi 帮你听、帮你记，你只需要专心理解。",
+"t19": "老师语速太快",
+"t20": "口音、语速和长句子，一不留神就会漏掉重点、跟不上思路。",
+"t21": "老师说话时文字实时出现。漏听了？往回翻就能看到。",
+"t22": "生词太多",
+"t23": "还在用母语思考时，专业术语和习语会拖慢你的理解。",
+"t24": "每段译文就在原文下方，两种语言一起学。",
+"t25": "听还是记？",
+"t26": "边听边记，往往两头都顾不好；回看录音又要花好几个小时。",
+"t27": "完整的文字记录、课程摘要，还能回答你的问题。",
+"t28": "课上的一切，都在一个地方。",
+"t29": "滑动查看 Nomi 在课前、课中和课后能为你做什么。",
+"t30": "课中",
+"t31": "实时转写与翻译",
+"t32": "点击「开始转录」，Nomi 就会通过麦克风收听。老师说话时文字随即出现，随后整理成句子，译文显示在下方。",
+"t33": "随时暂停、继续",
+"t34": "支持 AirPods 和其他麦克风",
+"t35": "一键回到最新内容",
+"t36": "课后",
+"t37": "针对课程提问",
+"t38": "没听懂重点？用母语问 Nomi。回答会标出转写里的具体时间点，或课件中的页码。",
+"t39": "自己选择要参考的课程和文件",
+"t40": "打开「联网」，加入网上的资料",
+"t41": "使用本地模型或你自己的 API 密钥",
+"t42": "动手学",
+"t43": "交互演示",
+"t44": "有些概念看比读更好懂。Nomi 会直接在对话里生成一个小的交互页面：拖动滑块、按下按钮，看着概念动起来。",
+"t45": "物理、数学、生物、经济",
+"t46": "保存页面，随时再打开",
+"t47": "波的频率",
+"t48": "频率",
+"t49": "课前",
+"t50": "课件、阅读材料和课程放在一起",
+"t51": "把 PDF、幻灯片和文档导入「资料」。关联到某节课后，提问时 Nomi 会把它们和转写一起参考。",
+"t52": "按课程分类整理",
+"t53": "文件只保存在你的 Mac 上",
+"t54": "已关联",
+"t55": "生物 101",
+"t56": "经济学",
+"t57": "复习",
+"t58": "一键生成摘要",
+"t59": "把 90 分钟的课浓缩成要点、新术语和结论，考前复习正合适。",
+"t60": "摘要使用你设定的回复语言",
+"t61": "每节课都有自己的摘要",
+"t62": "摘要 · 生物 101",
+"t63": "神经元以动作电位的形式传递信号。",
+"t64": "髓鞘让信号传得更快。",
+"t65": "在突触处，化学物质把信号传给下一个细胞。",
+"t66": "新术语",
+"t67": "只需三步。",
+"t68": "开始录音",
+"t69": "点击<kbd>开始转录</kbd>，选择麦克风、课堂语言和你的语言。",
+"t70": "边听边看",
+"t71": "听课时看着实时文字和译文。浅色字还在识别中，深色字已经确定。",
+"t72": "复习和提问",
+"t73": "之后打开这节课，查看完整转写、摘要和老师提问的问答，再到「提问」里继续追问。",
+"t74": "语言",
+"t75": "课堂与翻译支持 9 种语言",
+"t76": "你的课堂只留在你的 Mac 上。",
+"t77": "语音识别和翻译在 Apple 芯片上运行，录音不会被发送到任何地方。是否联网、何时联网，由你决定。",
+"t78": "本机 AI",
+"t79": "识别和翻译使用你 Mac 上的本地模型。",
+"t80": "没有网络也能用",
+"t81": "教室 Wi-Fi 断了，也能照常录音和翻译。",
+"t82": "提问方式由你选",
+"t83": "可以用本地模型，也可以接入你自己的 API。密钥保存在 macOS 钥匙串中。",
+"t84": "同学们常问的问题",
+"t85": "Nomi 支持哪些 Mac？",
+"t86": "需要搭载 Apple 芯片（M1 或更新）并运行 macOS 26 或更高版本的 Mac。",
+"t87": "上课时需要联网吗？",
+"t88": "不需要。模型下载一次后，转写和翻译都能离线使用。只有打开联网搜索，或用 API 模型提问时才需要网络。",
+"t89": "支持哪些语言？",
+"t90": "中文、英语、日语、韩语、德语、法语、西班牙语、俄语和阿拉伯语，课堂语言和翻译语言都支持。",
+"t91": "录音时可以和 Nomi 对话吗？",
+"t92": "可以。上课时随时提问，不用停止录音。实时转写始终优先，文字会一直跟上老师。",
+"t93": "可以录下我的课吗？",
+"t94": "不同学校和国家的规定不一样。录课前请先查看学校的规定，并征得老师同意。",
+"t95": "Nomi 收费吗？",
+"t96": "Nomi 以 MIT 许可证开源。如果你接入自己的 API 来提问，API 服务商可能会向你收费。",
+"t97": "准备好上下一节课了吗？",
+"t98": "下载 Nomi，上课前打开，点击「开始转录」就行。",
+"t99": "macOS 26 · Apple 芯片",
+"t100": "联系我们",
+"t101": "© 2026 Jason Su · MIT 许可证",
+"n1": "问上周的课或以前聊过的内容，Nomi 会自己找出来",
+"n2": "课中和课后",
+"n3": "老师的提问，都有答案",
+"n4": "「问答」页会收集老师在课上真正提出的问题，并结合课堂、资料和网络逐个回答。顺便检查自己有没有听懂。",
+"n5": "跳过「对吧？」「能听到吗？」这类口头禅",
+"n6": "一键跳回老师提问的那一刻",
+"n7": "关掉「自动回答」，可以一个个自己问",
+"n8": "注意力里为什么要除以 √d？",
+"n9": "这样点积不会变得太大，softmax 保持平滑，梯度也不会消失。",
+"n10": "排队中",
+"n11": "多头注意力比单头多了什么？",
+"n12": "越用越懂你",
+"n13": "记住你的学习习惯",
+"n14": "Nomi 会留意对你有帮助的东西，比如用中文回答并保留英文术语、你修的课、考试日期，下次回答时就会用上。它记住的一切你都能查看、编辑或清空。",
+"n15": "只保存在你的 Mac 上",
+"n16": "在设置里编辑、置顶或关闭",
+"n17": "记忆",
+"n18": "偏好",
+"n19": "用中文回答，英文术语放在括号里",
+"n20": "课程",
+"n21": "在修 BIOL 101 和 ECON 201",
+"n22": "目标",
+"n23": "生物期中考试在 2026-11-03",
+"n24": "学习方式",
+"n25": "公式类内容喜欢看交互演示",
+"n26": "Nomi 能找到以前课上的内容吗？",
+"n27": "可以。问「老师上周讲考试说了什么？」这样的问题，Nomi 会搜索你全部的课堂转写、以前的对话和资料，并标出回答每一部分的来源。",
+"n28": "Nomi 会记住我的信息吗？",
+"n29": "只记对回答有帮助的内容：从对话里学到的偏好、课程和目标。它只保存在你的 Mac 上，可以在「设置 › 记忆」里编辑、置顶、清空或关闭。"
+};
+  const META = {
+    en: { title: 'Nomi — Lecture Notes in Your Language', description: document.querySelector('meta[name="description"]').content, lang: 'en' },
+    zh: { title: 'Nomi — 用母语听懂每一节课', description: 'Nomi 在老师讲课时实时转写，并在你的 Mac 上逐段翻译，下课后还能就课堂内容提问。为留学生打造。', lang: 'zh-Hans' },
+  };
+  const texts = [...document.querySelectorAll('[data-i18n]')];
+  const english = new Map(texts.map(node => [node, node.innerHTML]));
+  const toggle = document.querySelector('.lang-toggle');
+  const listeners = [];
+  let siteLanguage = 'en';
+  const store = {
+    get() { try { return localStorage.getItem('nomi-site-lang'); } catch { return null; } },
+    set(value) { try { localStorage.setItem('nomi-site-lang', value); } catch {} },
+  };
+  const applyLanguage = lang => {
+    siteLanguage = lang;
+    for (const node of texts) node.innerHTML = lang === 'zh' ? (ZH[node.dataset.i18n] ?? english.get(node)) : english.get(node);
+    document.documentElement.lang = META[lang].lang;
+    document.title = META[lang].title;
+    document.querySelector('meta[name="description"]').content = META[lang].description;
+    toggle.dataset.active = lang;
+    toggle.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', button.dataset.lang === lang));
+    listeners.forEach(listener => listener(lang));
+  };
+  const switchLanguage = lang => {
+    if (lang === siteLanguage) return;
+    store.set(lang);
+    const url = new URL(location.href);
+    url.searchParams.set('lang', lang);
+    history.replaceState(null, '', url);
+    if (reduced) { applyLanguage(lang); return; }
+    document.body.classList.add('swapping');
+    setTimeout(() => {
+      applyLanguage(lang);
+      requestAnimationFrame(() => document.body.classList.remove('swapping'));
+    }, 220);
+  };
+  toggle.addEventListener('click', event => {
+    const button = event.target.closest('button[data-lang]');
+    if (button) switchLanguage(button.dataset.lang);
+  });
+  // A shared ?lang= link wins, then the visitor's last choice, then the browser language.
+  const requested = new URLSearchParams(location.search).get('lang');
+  const browserChinese = (navigator.languages || [navigator.language]).some(code => /^zh\b/i.test(code));
+  const initial = ['en', 'zh'].includes(requested) ? requested : (store.get() || (browserChinese ? 'zh' : 'en'));
+
+  // Sticky nav gains a background once the page scrolls.
+  const nav = document.getElementById('nav');
+  const onScroll = () => nav.classList.toggle('scrolled', scrollY > 8);
+  addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // Sections fade up as they enter the viewport.
+  const io = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) { entry.target.classList.add('in'); io.unobserve(entry.target); }
+    }
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // ---------- Hero: live transcript demo ----------
+  const lecture = [
+    { at: '12:04', text: "Today we'll look at how neurons pass signals to each other.",
+      tr: { '中文': '今天我们来看看神经元之间是如何传递信号的。', '日本語': '今日はニューロンがどのように信号を伝えるかを見ていきます。', '한국어': '오늘은 뉴런이 서로 신호를 어떻게 전달하는지 살펴보겠습니다.', 'Español': 'Hoy veremos cómo las neuronas se transmiten señales entre sí.', 'العربية': 'سنتعرّف اليوم على كيفية تبادل الخلايا العصبية للإشارات.' } },
+    { at: '12:11', text: 'When a neuron fires, an electrical impulse called an action potential travels down the axon.',
+      tr: { '中文': '当神经元放电时，一种叫作动作电位的电脉冲会沿着轴突传导。', '日本語': 'ニューロンが発火すると、活動電位と呼ばれる電気信号が軸索を伝わります。', '한국어': '뉴런이 발화하면 활동 전위라는 전기 신호가 축삭을 따라 이동합니다.', 'Español': 'Cuando una neurona se activa, un impulso eléctrico llamado potencial de acción recorre el axón.', 'العربية': 'عندما تنشط الخلية العصبية، تنتقل نبضة كهربائية تُسمّى جهد الفعل على طول المحور العصبي.' } },
+    { at: '12:20', text: 'At the synapse, chemicals carry the message across to the next cell.',
+      tr: { '中文': '在突触处，化学物质把信息传递给下一个细胞。', '日本語': 'シナプスでは、化学物質が次の細胞へ情報を運びます。', '한국어': '시냅스에서는 화학 물질이 다음 세포로 메시지를 전달합니다.', 'Español': 'En la sinapsis, sustancias químicas llevan el mensaje a la siguiente célula.', 'العربية': 'عند المشبك، تنقل المواد الكيميائية الرسالة إلى الخلية التالية.' } },
+    { at: '12:28', text: 'This is why some medicines can change how we feel.',
+      tr: { '中文': '这就是为什么有些药物能改变我们的感受。', '日本語': 'だからこそ、ある種の薬は私たちの気分を変えることができるのです。', '한국어': '그래서 어떤 약은 우리의 기분을 바꿀 수 있습니다.', 'Español': 'Por eso algunos medicamentos pueden cambiar cómo nos sentimos.', 'العربية': 'ولهذا يمكن لبعض الأدوية أن تغيّر ما نشعر به.' } },
+  ];
+  const languages = ['中文', '日本語', '한국어', 'Español', 'العربية'];
+  let language = 0;
+  const transcript = document.getElementById('transcript');
+  const chips = document.getElementById('chips');
+  const targetName = document.getElementById('target-name');
+  const clock = document.getElementById('clock');
+  languages.forEach((name, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip' + (i === 0 ? ' on' : '');
+    chip.textContent = name;
+    chips.appendChild(chip);
+  });
+  const setLanguage = i => {
+    language = i;
+    [...chips.children].forEach((chip, n) => chip.classList.toggle('on', n === i));
+    targetName.textContent = languages[i];
+  };
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  let seconds = 12 * 60 + 4;
+  setInterval(() => {
+    seconds += 1;
+    clock.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  }, 1000);
+
+  const addParagraph = async line => {
+    const para = document.createElement('div');
+    para.className = 'para';
+    para.innerHTML = `<div class="stamp">${line.at}</div><div class="src"></div><div class="tr" dir="auto"></div>`;
+    transcript.appendChild(para);
+    const src = para.querySelector('.src');
+    const words = line.text.split(' ');
+    const spans = words.map((word, i) => {
+      const span = document.createElement('span');
+      span.className = 'w draft new';
+      span.textContent = word + (i < words.length - 1 ? ' ' : '');
+      src.appendChild(span);
+      return span;
+    });
+    // Words arrive light, like Nomi's live draft, then darken once the sentence is final.
+    for (let i = 0; i < spans.length; i++) {
+      await wait(reduced ? 0 : 150 + Math.random() * 120);
+      spans[i].classList.remove('new');
+      if (i >= 3) spans[i - 3].classList.remove('draft');
+    }
+    await wait(reduced ? 0 : 350);
+    spans.forEach(span => span.classList.remove('draft'));
+    const tr = para.querySelector('.tr');
+    tr.textContent = line.tr[languages[language]];
+    await wait(reduced ? 0 : 250);
+    tr.classList.add('show');
+    // Keep the newest three passages, like a transcript that scrolls with the class.
+    while (transcript.children.length > 3) {
+      const old = transcript.firstElementChild;
+      old.classList.add('leaving');
+      await wait(reduced ? 0 : 600);
+      old.remove();
+    }
+  };
+
+  const run = async () => {
+    for (;;) {
+      for (const line of lecture) {
+        await addParagraph(line);
+        await wait(reduced ? 4000 : 1400);
+      }
+      // Show the same lecture in the next language.
+      setLanguage((language + 1) % languages.length);
+      for (const para of [...transcript.children]) para.classList.add('leaving');
+      await wait(reduced ? 0 : 700);
+      transcript.innerHTML = '';
+      seconds = 12 * 60 + 4;
+    }
+  };
+  run();
+
+  // ---------- Feature slider ----------
+  const track = document.getElementById('slides');
+  const slides = [...track.children];
+  const dots = document.getElementById('dots');
+  const prev = document.getElementById('prev');
+  const next = document.getElementById('next');
+  let current = 0;
+  slides.forEach((slide, i) => {
+    const dot = document.createElement('button');
+    dot.setAttribute('role', 'tab');
+    dot.setAttribute('aria-label', `Feature ${i + 1}`);
+    dot.addEventListener('click', () => go(i));
+    dots.appendChild(dot);
+  });
+  const go = i => {
+    const slide = slides[Math.max(0, Math.min(slides.length - 1, i))];
+    track.scrollTo({ left: slide.offsetLeft - (track.clientWidth - slide.clientWidth) / 2, behavior: reduced ? 'auto' : 'smooth' });
+  };
+  const mark = i => {
+    current = i;
+    slides.forEach((slide, n) => slide.classList.toggle('active', n === i));
+    [...dots.children].forEach((dot, n) => { dot.classList.toggle('on', n === i); dot.setAttribute('aria-selected', n === i); });
+    prev.disabled = i === 0;
+    next.disabled = i === slides.length - 1;
+  };
+  // The slide closest to the center is the active one, whether you swipe, scroll or click.
+  let frame;
+  track.addEventListener('scroll', () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      const center = track.scrollLeft + track.clientWidth / 2;
+      let best = 0, distance = Infinity;
+      slides.forEach((slide, i) => {
+        const d = Math.abs(slide.offsetLeft + slide.clientWidth / 2 - center);
+        if (d < distance) { distance = d; best = i; }
+      });
+      if (best !== current) mark(best);
+    });
+  }, { passive: true });
+  prev.addEventListener('click', () => go(current - 1));
+  next.addEventListener('click', () => go(current + 1));
+  track.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(current + 1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); go(current - 1); }
+  });
+  track.tabIndex = 0;
+  mark(0);
+  addEventListener('resize', () => go(current));
+
+  // ---------- Demo inside slide 3 ----------
+  const path = document.getElementById('demo-path');
+  const freq = document.getElementById('demo-freq');
+  const val = document.getElementById('demo-val');
+  let phase = 0, shown = 2;
+  const draw = () => {
+    const target = parseFloat(freq.value);
+    shown += (target - shown) * 0.12;
+    let d = '';
+    for (let x = 0; x <= 300; x += 3) {
+      const y = 75 + Math.sin((x / 300) * Math.PI * 2 * shown + phase) * 42;
+      d += (x ? 'L' : 'M') + x + ' ' + y.toFixed(1);
+    }
+    path.setAttribute('d', d);
+    phase += reduced ? 0 : 0.05;
+    requestAnimationFrame(draw);
+  };
+  freq.addEventListener('input', () => { val.textContent = parseFloat(freq.value).toFixed(1) + ' Hz'; });
+  draw();
+
+  // ---------- Languages marquee ----------
+  const langs = [['中文', 'Chinese', ''], ['English', '', '英语'], ['日本語', 'Japanese', '日语'], ['한국어', 'Korean', '韩语'], ['Deutsch', 'German', '德语'], ['Français', 'French', '法语'], ['Español', 'Spanish', '西班牙语'], ['Русский', 'Russian', '俄语'], ['العربية', 'Arabic', '阿拉伯语']];
+  const lane = document.getElementById('langs');
+  const fillLanes = lang => {
+    lane.innerHTML = '';
+    for (let copy = 0; copy < 2; copy++) {
+      for (const [name, en, zh] of langs) {
+        const pill = document.createElement('span');
+        const label = lang === 'zh' ? zh : en;
+        pill.innerHTML = label ? `${name}<em>${label}</em>` : name;
+        if (copy) pill.setAttribute('aria-hidden', 'true');
+        lane.appendChild(pill);
+      }
+    }
+  };
+  listeners.push(fillLanes);
+
+  applyLanguage(initial);
+})();
+</script>
+</body>
+</html>
