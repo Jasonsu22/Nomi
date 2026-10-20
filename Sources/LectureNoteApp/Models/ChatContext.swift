@@ -282,14 +282,40 @@ enum ChatContext {
         return phrases.contains { folded.contains($0) }
     }
 
-    /// The query the app searches when Web is on. A short follow-up borrows the previous question so it still makes sense alone.
+    /// The query the app searches when Web is on. A follow-up such as "那它和经典计算机比呢？"
+    /// borrows the most recent standalone question, so the search engine sees the topic.
     static func searchQuery(question: String, history: [ChatTurn]) -> String? {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return nil }
-        guard question.count < 12, let last = history.last?.question.trimmingCharacters(in: .whitespacesAndNewlines), !last.isEmpty else {
+        guard isFollowUp(question), let topic = topicQuestion(in: history) else {
             return String(question.prefix(300))
         }
-        return String("\(last.prefix(150)) \(question)".prefix(300))
+        return String("\(topic.prefix(80)) \(question)".prefix(300))
+    }
+
+    private static let followUpWords = ["它", "它们", "他们", "她们", "这个", "那个", "这些", "那些", "这种", "那种", "这一点", "继续", "再讲", "再说", "再来", "还有呢", "然后呢"]
+    private static let followUpEnglish = try! NSRegularExpression(
+        pattern: #"\b(it|its|this|that|these|those|they|them|more|also|else|continue|and then)\b"#,
+        options: [.caseInsensitive]
+    )
+
+    /// Refers back to something said before, or too short to stand on its own.
+    static func isFollowUp(_ question: String) -> Bool {
+        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.count < 6 { return true }
+        if followUpWords.contains(where: text.contains) { return true }
+        let ending = text.trimmingCharacters(in: CharacterSet(charactersIn: "？?！!。. "))
+        if ending.hasSuffix("呢") || ending.hasPrefix("那") { return true }
+        let range = NSRange(text.startIndex..., in: text)
+        return followUpEnglish.firstMatch(in: text, range: range) != nil
+    }
+
+    /// The latest earlier question that stands on its own, looking back up to three answered turns.
+    private static func topicQuestion(in history: [ChatTurn]) -> String? {
+        let questions = ChatHistory.answeredTurns(history).suffix(3).reversed()
+            .map { $0.question.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return questions.first { !isFollowUp($0) } ?? questions.first
     }
 
     /// Whether the answer view will show this fence as a live page rather than as source.
