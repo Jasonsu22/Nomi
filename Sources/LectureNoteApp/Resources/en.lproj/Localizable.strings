@@ -411,3 +411,4 @@
 "当前模型看不到图片，图片只会留在对话里。" = "This model can’t see images. They stay in the chat only.";
 "添加图片" = "Add image";
 "移走图片" = "Remove image";
+"回到正在录制的会议" = "Go to the meeting being recorded";

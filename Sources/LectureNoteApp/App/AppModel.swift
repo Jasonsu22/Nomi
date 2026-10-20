@@ -416,6 +416,12 @@ final class AppModel {
         page = .meetings
     }
 
+    /// Shows the meeting being recorded, from whichever page is open.
+    func openLiveMeeting() {
+        guard let liveMeetingID, meetings.contains(where: { $0.id == liveMeetingID }) else { return }
+        openMeeting(liveMeetingID)
+    }
+
     func closeMeeting() {
         openMeetingID = nil
     }

@@ -42,7 +42,10 @@ struct TopBar: View {
                 reduceMotion: reduceMotion,
                 onStart: { model.performRecordingAction() },
                 onStop: { model.stopTranscription() },
-                onTogglePause: model.togglePause
+                onTogglePause: model.togglePause,
+                onOpen: {
+                    withAnimation(Motion.layout(reduceMotion)) { model.openLiveMeeting() }
+                }
             )
         }
         .padding(.trailing, Space.s4)

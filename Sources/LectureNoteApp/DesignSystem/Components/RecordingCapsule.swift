@@ -9,6 +9,9 @@ struct SessionControl: View {
     var onStart: () -> Void
     var onStop: () -> Void
     var onTogglePause: () -> Void
+    /// Opens the meeting being recorded. The compact window already shows it and passes nil.
+    var onOpen: (() -> Void)? = nil
+
     var body: some View {
         phaseControl
             // Tinted glass, not the interactive kind. The interactive hover tracker
@@ -74,14 +77,16 @@ struct SessionControl: View {
 
     private var listeningControl: some View {
         HStack(spacing: 10) {
-            DotWaveform(meter: meter, paused: session.isPaused, reduceMotion: reduceMotion)
-                .foregroundStyle(ink)
-            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                Text(formatClock(session.elapsed))
-                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(ink)
-                    .contentTransition(.numericText())
-                    .frame(width: 48, alignment: .leading)
+            if let onOpen {
+                // A sibling of the pause and stop buttons, so those keep their own clicks.
+                Button(action: onOpen) {
+                    progress.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain.clicking())
+                .help(tr("回到正在录制的会议"))
+                .accessibilityLabel(tr("回到正在录制的会议"))
+            } else {
+                progress
             }
             iconButton(
                 systemName: session.isPaused ? "play.fill" : "pause.fill",
@@ -94,6 +99,20 @@ struct SessionControl: View {
         .padding(.leading, 14)
         .padding(.trailing, 8)
         .frame(height: 40)
+    }
+
+    private var progress: some View {
+        HStack(spacing: 10) {
+            DotWaveform(meter: meter, paused: session.isPaused, reduceMotion: reduceMotion)
+                .foregroundStyle(ink)
+            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                Text(formatClock(session.elapsed))
+                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(ink)
+                    .contentTransition(.numericText())
+                    .frame(width: 48, alignment: .leading)
+            }
+        }
     }
 
     private func iconButton(systemName: String, label: String, filled: Bool, danger: Bool = false, action: @escaping () -> Void) -> some View {
