@@ -96,6 +96,7 @@ final class AppModel {
     var chatError: String?
     var chatDraftRestore: String?
     var chatFocusRequest = 0
+    @ObservationIgnored let chatViewportCache = ChatViewportCache()
     @ObservationIgnored var chatTask: Task<Void, Never>?
     @ObservationIgnored var visualTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored var localVisualBusy = false

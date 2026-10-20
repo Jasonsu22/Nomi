@@ -14,14 +14,18 @@ struct ChatComposer: View {
     var anchorMeetingID: UUID?
     @Bindable var state: ChatComposerState
     @Binding var scopePresented: Bool
+    /// A retained standalone Chat page must not make its hidden text view first
+    /// responder while the user works in Meetings or Settings.
+    var active = true
     var onOpenScope: () -> Void
     private var embedded: Bool { anchorMeetingID != nil }
     private var session: ChatSession? { model.chat(anchoredTo: anchorMeetingID) }
 
     var body: some View {
         composer
-            .onAppear { state.focused = true; restoreDraft() }
-            .onChange(of: model.chatFocusRequest) { _, _ in state.focused = true }
+            .onAppear { if active { state.focused = true }; restoreDraft() }
+            .onChange(of: active) { _, shown in state.focused = shown }
+            .onChange(of: model.chatFocusRequest) { _, _ in if active { state.focused = true } }
             .onChange(of: model.chatDraftRestore) { _, _ in restoreDraft() }
     }
 

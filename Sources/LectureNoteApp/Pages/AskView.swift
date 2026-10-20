@@ -4,6 +4,9 @@ struct AskView: View {
     var model: AppModel
     var anchorMeetingID: UUID? = nil
     var onHistoryChange: (Bool) -> Void = { _ in }
+    /// AppShell keeps standalone Chat mounted while another page is visible.
+    /// Embedded meeting chats remain active because they are independently shown.
+    var transcriptActive = true
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var composerState = ChatComposerState()
     @State private var scopePresented = false
@@ -135,8 +138,8 @@ struct AskView: View {
                         ChatTranscript(model: model, session: session,
                                        pendingQuestion: model.chatGeneratingID == session.id ? model.pendingQuestion : nil,
                                        preparing: model.preparingVisualTurnIDs,
-                                       nextModel: model.assistantModelName)
-                            .id(session.id)
+                                       nextModel: model.assistantModelName,
+                                       active: transcriptActive)
                             .task(id: session.id) {
                                 await AnswerPreparation.prewarm(session.turns.suffix(24).reversed().map(\.answer))
                             }
@@ -162,7 +165,7 @@ struct AskView: View {
                     .padding(.horizontal, Space.s4)
                     .padding(.bottom, Space.s2)
             }
-            ChatComposer(model: model, anchorMeetingID: anchorMeetingID, state: composerState, scopePresented: $scopePresented) {
+            ChatComposer(model: model, anchorMeetingID: anchorMeetingID, state: composerState, scopePresented: $scopePresented, active: transcriptActive) {
                 setHistory(false)
             }
         }

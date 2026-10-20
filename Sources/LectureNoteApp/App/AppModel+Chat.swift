@@ -108,6 +108,7 @@ extension AppModel {
         }
         let anchor = chats.first { $0.id == id }?.anchorMeetingID
         chats.removeAll { $0.id == id }
+        chatViewportCache.remove(id)
         if chatsReady { ChatStore.delete(id) }
         if let anchor, meetingChatID[anchor] == id {
             meetingChatID[anchor] = chats.first { $0.anchorMeetingID == anchor }?.id
@@ -297,6 +298,7 @@ extension AppModel {
                 var briefs: [String] = []
                 var webNotice: String?
                 var searched = false
+                var lastCitationScan: String?
                 for round in 0..<2 {
                     let system = ChatContext.composedSystemPrompt(
                         override: self.prompts.systemOverride,
@@ -332,7 +334,20 @@ extension AppModel {
                         let shown = ChatTools.parse(ChatContext.streamingDisplay(partial), streaming: true).visible
                         let combined = self.joinedAnswer(carried, shown)
                         self.pendingAnswer = combined
-                        self.pendingCitations = ChatContext.citations(in: combined, blocks: cited)
+                        let delta: Substring
+                        if let lastCitationScan, combined.hasPrefix(lastCitationScan) {
+                            delta = combined.dropFirst(lastCitationScan.count)
+                        } else {
+                            delta = Substring(combined)
+                        }
+                        // Citation extraction walks the complete answer. Most
+                        // streamed chunks are ordinary prose, so only rescan
+                        // when a new citation / URL can have changed it. The
+                        // completed turn below always performs a full scan.
+                        if lastCitationScan == nil || Self.mightChangeCitations(delta) {
+                            self.pendingCitations = ChatContext.citations(in: combined, blocks: cited)
+                            lastCitationScan = combined
+                        }
                     }
                     defer { updates.cancel() }
                     let text = try await self.completeChat(
@@ -397,6 +412,10 @@ extension AppModel {
         let base = current.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !base.isEmpty else { return piece }
         return base + "\n\n" + piece
+    }
+
+    private static func mightChangeCitations(_ text: Substring) -> Bool {
+        text.contains("[") || text.contains("]") || text.contains("://")
     }
 
     private func searchPasses(_ queries: ArraySlice<String>) async throws -> (blocks: [ContextBlock], notice: String?) {

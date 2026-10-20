@@ -8,6 +8,9 @@ struct ChatTranscript: NSViewRepresentable {
     var pendingQuestion: String?
     var preparing: Set<UUID>
     var nextModel: String
+    /// Keep the established view tree when another page is selected, but do not
+    /// spend CPU building offscreen rich text.
+    var active = true
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.locale) private var locale
     @Environment(\.appReduceMotion) private var reduceMotion
@@ -56,6 +59,7 @@ struct ChatTranscript: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+        coordinator.storeViewport()
         coordinator.alive = false
         coordinator.preloadTask?.cancel()
         coordinator.clearPreloadedRows()
@@ -86,7 +90,10 @@ struct ChatTranscript: NSViewRepresentable {
         private var preloadGeneration = 0
         var preloadTask: Task<Void, Never>?
         private var lastScrollY: CGFloat = .greatestFiniteMagnitude
+        private var lastScrollDate: Date?
+        private var scrollVelocity: CGFloat = 0
         private var scrollingUp = true
+        private var active = true
         var preloadedRowIDs: Set<UUID> { Set(cells.keys).subtracting(nativeCells) }
         var cachedRowCount: Int { cells.count }
 
@@ -115,7 +122,7 @@ struct ChatTranscript: NSViewRepresentable {
         }
 
         private func preloadNeighbours() {
-            guard alive, let table, table.window != nil else { return }
+            guard alive, active, let table, table.window != nil else { return }
             for (index, item) in rows.enumerated() {
                 if !nativeCells.contains(item.id), let cell = cells[item.id], cell.window == nil {
                     cell.frame = table.rect(ofRow: index)
@@ -125,15 +132,29 @@ struct ChatTranscript: NSViewRepresentable {
             let visible = table.rows(in: table.visibleRect)
             guard visible.location != NSNotFound, visible.length > 0 else { return }
             let y = table.visibleRect.minY
-            if abs(y - lastScrollY) > 1 { scrollingUp = y < lastScrollY }
+            let now = Date()
+            if lastScrollY.isFinite, abs(y - lastScrollY) > 1 {
+                scrollingUp = y < lastScrollY
+                if let lastScrollDate {
+                    let elapsed = max(now.timeIntervalSince(lastScrollDate), 1.0 / 240.0)
+                    let instantaneous = abs(y - lastScrollY) / elapsed
+                    scrollVelocity = scrollVelocity * 0.65 + instantaneous * 0.35
+                }
+            }
             lastScrollY = y
+            lastScrollDate = now
             let first = visible.location
             let last = min(rows.count, NSMaxRange(visible)) - 1
-            let above = (1...6).compactMap { first - $0 >= 0 ? first - $0 : nil }
-            let below = (1...6).compactMap { last + $0 < rows.count ? last + $0 : nil }
-            // Prepare actual SwiftUI/TextKit rows, not just parsed Markdown.
-            // Six in the reading direction and two behind, one per run-loop turn.
-            let indices = scrollingUp ? above + below.prefix(2) : below + above.prefix(2)
+            // Preload distance follows scrolling speed. At rest this is already
+            // more than a viewport; a fast trackpad fling prepares far enough
+            // ahead that the next visible row is not a blank placeholder.
+            let forwardCount = min(28, max(10, 10 + Int(scrollVelocity / 650)))
+            let reverseCount = min(8, max(3, forwardCount / 3))
+            let above = (1...forwardCount).compactMap { first - $0 >= 0 ? first - $0 : nil }
+            let below = (1...forwardCount).compactMap { last + $0 < rows.count ? last + $0 : nil }
+            let trailingAbove = (1...reverseCount).compactMap { first - $0 >= 0 ? first - $0 : nil }
+            let trailingBelow = (1...reverseCount).compactMap { last + $0 < rows.count ? last + $0 : nil }
+            let indices = scrollingUp ? above + trailingBelow : below + trailingAbove
             let targets = indices.map { rows[$0].id }
             let missing = indices.filter { cells[rows[$0].id] == nil }.map { rows[$0].id }
             for id in cells.keys.filter({ !targets.contains($0) && !nativeCells.contains($0) }) {
@@ -169,8 +190,11 @@ struct ChatTranscript: NSViewRepresentable {
                         table.addSubview(cell)
                         cell.layoutSubtreeIfNeeded()
                     }
-                    // Give input and drawing a chance between rich-text layouts.
-                    try? await Task.sleep(for: .milliseconds(4))
+                    // Rich text layout is main-thread work. Yield between small
+                    // batches so a fling and the native composer stay responsive.
+                    if let index = missing.firstIndex(of: id), index.isMultiple(of: 3) {
+                        await Task.yield()
+                    }
                 }
             }
         }
@@ -237,22 +261,52 @@ struct ChatTranscript: NSViewRepresentable {
             let nextRows = TranscriptItem.items(next)
             let reset = value?.session.id != next.session.id
             let environmentChanged = value?.colorScheme != next.colorScheme || value?.locale != next.locale || value?.reduceMotion != next.reduceMotion
+            let activeChanged = active != next.active
+            let captured = captureAnchor()
+            if value != nil { storeViewport() }
             value = next
+            active = next.active
             scroll?.appearance = NSAppearance(named: next.colorScheme == .dark ? .darkAqua : .aqua)
-            guard reset || environmentChanged || nextRows != rows else { return }
-            let anchor = captureAnchor()
+            if !active {
+                preloadTask?.cancel()
+                preloadTask = nil
+                preloadTargets = []
+                return
+            }
+            guard reset || environmentChanged || activeChanged || nextRows != rows else { return }
+            let cached = reset ? next.model.chatViewportCache.snapshot(for: next.session.id, width: width) : nil
+            let anchor = cached.map { Anchor(id: $0.anchorID, offset: $0.anchorOffset, bottom: $0.followsLatest) } ?? captured
             layoutGeneration += 1
             pendingHeights.removeAll()
             preloadTask?.cancel()
             preloadGeneration += 1
             preloadTask = nil
             preloadTargets = []
-            clearPreloadedRows()
             let old = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+            if reset || environmentChanged {
+                clearPreloadedRows()
+            } else {
+                let removedOrChanged = Set(cells.keys).filter { id in
+                    guard let oldItem = old[id], let nextItem = nextRows.first(where: { $0.id == id }) else { return true }
+                    return oldItem != nextItem
+                }
+                for id in removedOrChanged {
+                    cells.removeValue(forKey: id)?.removeFromSuperview()
+                    nativeCells.remove(id)
+                }
+            }
             for row in nextRows where old[row.id] != row { heights[row.id] = nil }
             rows = nextRows
-            if reset || environmentChanged { heights.removeAll() }
-            if reset { initial = true; lastScrollY = .greatestFiniteMagnitude; scrollingUp = true }
+            if reset || environmentChanged {
+                heights = cached?.heights ?? [:]
+            }
+            if reset {
+                initial = cached == nil
+                lastScrollY = .greatestFiniteMagnitude
+                lastScrollDate = nil
+                scrollVelocity = 0
+                scrollingUp = true
+            }
             table.reloadData()
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.alive else { return }
@@ -326,6 +380,21 @@ struct ChatTranscript: NSViewRepresentable {
             // Being near the bottom is not the same as following it: even a small
             // upward scroll must survive a neighbouring row's height update.
             return Anchor(id: id, offset: offset, bottom: table.bounds.height <= bounds.maxY + 2)
+        }
+
+        func storeViewport() {
+            guard let value else { return }
+            let anchor = captureAnchor()
+            value.model.chatViewportCache.store(
+                .init(
+                    heights: heights,
+                    anchorID: anchor.id,
+                    anchorOffset: anchor.offset,
+                    followsLatest: anchor.bottom,
+                    width: width
+                ),
+                for: value.session.id
+            )
         }
 
         private func restore(_ anchor: Anchor, bottom: Bool = false) {

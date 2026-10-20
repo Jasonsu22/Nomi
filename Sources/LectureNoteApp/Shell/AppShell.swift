@@ -16,11 +16,23 @@ struct AppShell: View {
                     TopBar(model: model, reduceMotion: reduce)
                     HStack(spacing: 0) {
                         Rail(model: model, reduceMotion: reduce)
-                        page
-                            .id(model.page)
-                            .transition(.pageEnter(reduceMotion: reduce))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
+                        ZStack {
+                            // The chat renderer owns expensive text layout and
+                            // keeps a small, bounded viewport cache. Hiding it
+                            // keeps switching back to Chat from rebuilding every
+                            // answer while it also stops preloading when inactive.
+                            AskView(model: model, transcriptActive: model.page == .ask)
+                                .opacity(model.page == .ask ? 1 : 0)
+                                .allowsHitTesting(model.page == .ask)
+                                .accessibilityHidden(model.page != .ask)
+                            if model.page != .ask {
+                                page
+                                    .id(model.page)
+                                    .transition(.pageEnter(reduceMotion: reduce))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
                     }
                 }
             }
@@ -79,7 +91,7 @@ struct AppShell: View {
         case .meetings:
             MeetingsPage(model: model, reduceMotion: reduce)
         case .ask:
-            AskView(model: model)
+            EmptyView()
         case .sources:
             SourcesView(model: model)
         case .help:

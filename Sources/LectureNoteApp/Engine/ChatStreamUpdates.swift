@@ -8,7 +8,9 @@ final class ChatStreamUpdates {
     private let onUpdate: (String) -> Void
     private let interval: Duration
 
-    init(interval: Duration = .milliseconds(50), onUpdate: @escaping (String) -> Void) {
+    /// One UI update per display frame keeps streamed speech legible without
+    /// making the main actor process every network chunk.
+    init(interval: Duration = .milliseconds(33), onUpdate: @escaping (String) -> Void) {
         self.interval = interval
         self.onUpdate = onUpdate
     }

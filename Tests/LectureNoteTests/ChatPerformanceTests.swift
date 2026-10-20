@@ -162,7 +162,9 @@ struct ChatPerformanceTests {
             try await Task.sleep(for: .milliseconds(20))
         }
         #expect(preceding.allSatisfy(ready), "上方六轮应在进入视口前完成视图准备")
-        #expect(coordinator.preloadedRowIDs.count <= 8)
+        // The preload window grows during a fast scroll so it can cover the
+        // next real viewport. It remains bounded instead of retaining history.
+        #expect(coordinator.preloadedRowIDs.count <= 32)
         let upcomingDemo = try #require(descendants(table).compactMap { $0 as? DemoWebHost }.first { $0.html.contains("Preloaded chart") })
         #expect(!upcomingDemo.convert(upcomingDemo.bounds, to: table).intersects(table.visibleRect))
         #expect(upcomingDemo.active && upcomingDemo.bounds.height > 200, "下一轮的 HTML 应在进入视口前加载并确定高度")
