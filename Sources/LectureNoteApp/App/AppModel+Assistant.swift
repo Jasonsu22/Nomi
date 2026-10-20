@@ -68,7 +68,10 @@ extension AppModel {
             defer { state.isGenerating = false; state.draft = ""; state.task = nil }
             do {
                 let show: @MainActor (String) -> Void = { [weak state] partial in state?.draft = partial }
-                if mode == .local { await self.waitForAfterAnswerWork() }
+                if mode == .local {
+                    await self.waitForAfterAnswerWork()
+                    await self.waitForQuestionWork()
+                }
                 @MainActor func generate(_ prompt: String, _ onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
                     if mode == .api {
                         guard let profile else { throw llmError(tr("请先在设置中选择 API 配置。")) }

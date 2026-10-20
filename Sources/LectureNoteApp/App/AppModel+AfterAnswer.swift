@@ -59,7 +59,7 @@ extension AppModel {
 
     private func mayStartBackgroundJob(local: Bool) -> Bool {
         guard !Task.isCancelled else { return false }
-        return !local || (chatGeneratingID == nil && !assistantIsBusy)
+        return !local || (chatGeneratingID == nil && !assistantIsBusy && !questionWorkGenerating)
     }
 
     /// The summary pass a chat needs now, or nil.

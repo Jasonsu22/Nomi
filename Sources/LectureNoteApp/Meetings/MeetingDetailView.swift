@@ -44,6 +44,7 @@ struct MeetingDetailView: View {
                         transcript: model.engine.transcript,
                         reduceMotion: reduceMotion,
                         canCompare: proxy.size.width >= 1100,
+                        jump: model.transcriptJump?.meetingID == meeting.id ? model.transcriptJump : nil,
                         onCopy: { model.copyTranscript($0) }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

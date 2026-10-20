@@ -490,7 +490,7 @@ extension AppModel {
         return base + "\n\n" + piece
     }
 
-    private func searchPasses(_ queries: ArraySlice<String>) async throws -> (blocks: [ContextBlock], notice: String?) {
+    func searchPasses(_ queries: ArraySlice<String>) async throws -> (blocks: [ContextBlock], notice: String?) {
         var blocks: [ContextBlock] = []
         var notice: String?
         for query in queries {
@@ -529,6 +529,7 @@ extension AppModel {
         }
         guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
         await waitForAfterAnswerWork()
+        await waitForQuestionWork()
         return try await engine.generate(system: system, prompt: prompt, maxTokens: localMaxTokens, onUpdate: onUpdate)
     }
 
@@ -619,6 +620,13 @@ extension AppModel {
         guard let id = session.profileID, llmConfiguration.profiles.contains(where: { $0.id == id }) else { return }
         llmConfiguration.setMode(.api)
         llmConfiguration.activate(id)
+    }
+
+    /// Adds a finished turn to a meeting's chat, such as a Q&A answer the student wants to follow up on.
+    func appendTurnToMeetingChat(_ meetingID: UUID, turn: ChatTurn) {
+        ensureMeetingChat(meetingID)
+        guard let id = meetingChatID[meetingID] else { return }
+        mutate(id) { $0.turns.append(turn) }
     }
 
     private func mutate(_ id: UUID, _ body: (inout ChatSession) -> Void) {
@@ -724,7 +732,7 @@ extension AppModel {
 
     /// A meeting longer than `summaryAbove` characters also contributes its saved summary,
     /// pinned ahead of its paragraphs, so the model sees the whole lecture's outline.
-    private func passageBlocks(meetings: [Meeting], sources: [KnowledgeSource], summaryAbove: Int = .max) async -> [ContextBlock] {
+    func passageBlocks(meetings: [Meeting], sources: [KnowledgeSource], summaryAbove: Int = .max) async -> [ContextBlock] {
         var blocks: [ContextBlock] = []
         for meeting in meetings {
             let length = meeting.paragraphs.reduce(0) { $0 + $1.renderedSource(language: meeting.sourceLanguage).count }

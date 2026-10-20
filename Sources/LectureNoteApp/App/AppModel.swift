@@ -87,6 +87,16 @@ final class AppModel {
     let prompts = PromptPreferences()
     /// What Nomi has learned about the student. Kept on disk only for the real app, not previews and tests.
     private(set) var memory = UserMemory(file: nil)
+    /// Each meeting's Q&A tab, loaded when first needed. The tab observes the object itself.
+    @ObservationIgnored var qaStates: [UUID: MeetingQA] = [:]
+    /// Checks the transcript for new questions while recording.
+    @ObservationIgnored var questionScanTask: Task<Void, Never>?
+    /// Answers queued questions one at a time.
+    @ObservationIgnored var questionQueueTask: Task<Void, Never>?
+    /// A Q&A job is generating on the local model, so other local work waits for it.
+    @ObservationIgnored var questionWorkGenerating = false
+    /// Scrolls a meeting's transcript to a moment, from the Q&A tab.
+    var transcriptJump: TranscriptJump?
     /// Work that runs after an answer (chat summary, then memory), if it is waiting or running.
     @ObservationIgnored var afterAnswerTask: Task<Void, Never>?
     /// That work has started generating, so a local question waits for it instead of cancelling it.
@@ -110,6 +120,10 @@ final class AppModel {
     var pendingCitations: [ChatCitation] = []
     var pendingImageDrafts: [ChatImageDraft] = []
     var composerImages: [UUID: [ChatImageDraft]] = [:]
+    /// Messages sent while an answer was coming, for every chat, oldest first. Kept in memory only.
+    var chatQueue: [QueuedPrompt] = []
+    /// Chats whose queue waits for the student after a Stop or an error.
+    var queuePaused: Set<UUID> = []
     var enlargedImage: NSImage?
     var enlargedImageName = "image.png"
     var enlargedImageURL: URL?
@@ -369,6 +383,7 @@ final class AppModel {
         resumedMeetingSnapshot = nil
         meetings.insert(meeting, at: 0)
         liveMeetingID = meeting.id
+        startLiveQuestionScan(meeting.id)
         openMeetingID = meeting.id
         page = .meetings
         engine.start()
@@ -395,6 +410,7 @@ final class AppModel {
         engine.recordingURL = nextAudioFile(for: &meetings[index])
         meetings[index].isLive = true
         liveMeetingID = id
+        startLiveQuestionScan(id)
         openMeetingID = id
         page = .meetings
         recordingSetupPresented = false
@@ -463,6 +479,7 @@ final class AppModel {
         persistMeetings()
         ChatStore.flush()
         memory.flush()
+        MeetingQAStore.flush()
         ChatImages.removeTemporary()
         (engine as? LocalEngine)?.shutdown()
     }
@@ -604,6 +621,7 @@ final class AppModel {
         if let meeting = meetings.first(where: { $0.id == id }) { removeAudio(of: meeting) }
         meetings.removeAll { $0.id == id }
         assistantStates[id] = nil
+        forgetQA(id)
         meetingLinks[id] = nil
         meetingChatID[id] = nil
         if openMeetingID == id {
@@ -873,5 +891,9 @@ final class AppModel {
         liveMeetingID = nil
         resumedMeetingSnapshot = nil
         persistMeetings()
+        finishQuestionScan(id)
     }
+
+    /// The meeting being recorded, if any.
+    var recordingMeetingID: UUID? { liveMeetingID }
 }
