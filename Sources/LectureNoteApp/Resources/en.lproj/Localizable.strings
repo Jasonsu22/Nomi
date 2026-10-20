@@ -322,6 +322,7 @@
 "本机模型不能联网，换成支持联网的 API 服务商后可用。" = "The local model cannot search the web. Switch to an API provider that supports it.";
 "正在回答…" = "Answering…";
 "正在准备图示…" = "Preparing the figure…";
+"这次没能生成图示。" = "The figure could not be created this time.";
 "互动图示" = "Interactive figure";
 "清空" = "Clear";
 "现在不能提问。" = "Questions are unavailable right now.";

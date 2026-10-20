@@ -83,7 +83,10 @@ enum ChatContext {
 
     enum WebTool: Equatable {
         case off
+        /// Web is on and nothing has been searched yet.
         case available
+        /// The app already searched the question. The model may search once more.
+        case prefetched
         case used
     }
 
@@ -93,24 +96,28 @@ enum ChatContext {
             let search: String
             switch webTool {
             case .available:
-                search = "需要上网时先写 <tool name=\"web_search\">搜索词</tool>，不要先写结论。"
+                search = "联网已开启，搜索是默认动作：除非问题只涉及所附的会议和资料，或者只是寒暄，都要先写 <tool name=\"web_search\">具体的搜索词</tool>，可以写一到两个。写完搜索调用就停下，不要先写结论，结果会在下一步给你。"
+            case .prefetched:
+                search = "联网已开启，系统已经用这个问题搜索过一次，带网址的编号段落就是结果。回答时优先使用这些结果并标出编号。如果结果不够、过时或不相关，先写 <tool name=\"web_search\">更具体的搜索词</tool> 再停下，不要先写结论；结果够用就直接回答。"
             case .used:
                 search = "搜索已经完成，结果在编号段落里，不要再调用 web_search。"
             case .off:
                 search = "这次不能上网，不要调用 web_search。"
             }
-            return "用 Markdown 写回答。需要动作时调用工具，工具标记不会显示在对话里。\(search)只要讲解的内容可以做成交互或可视化，就主动为用户提供必要的演示，主动意愿要非常高，演示对理解只要有帮助就要写。写 <tool name=\"create_demo\">用几句话说明这个页面要表现什么、有哪些控件</tool>。create_demo 里只写做法说明，不要写 HTML。这段说明不会出现在主对话里，会交给一个隐藏的子任务单独生成页面。只有用户明确说不要演示时，才不调用 create_demo。如果用户只是要求编写 HTML 源码，用普通代码围栏给出源码，围栏语言不要写成 html；只要用户没有明确说不要演示，仍然调用 create_demo。"
+            return "用 Markdown 写回答。需要动作时调用工具，工具标记不会显示在对话里。\(search)只要讲解的内容可以做成交互或可视化，就主动为用户提供必要的演示，主动意愿要非常高，演示对理解只要有帮助就要写：公式和参数、过程和步骤、算法、对比、数据和趋势、时间线、结构和关系都适合做成演示。在回答末尾写一次 <tool name=\"create_demo\">用几句话说明这个页面要表现什么、有哪些控件、用到哪些具体数值</tool>。每次回答最多一个 create_demo。create_demo 里只写做法说明，不要写 HTML。这段说明不会出现在主对话里，会交给一个隐藏的子任务单独生成页面。只有用户明确说不要演示时，才不调用 create_demo。如果用户只是要求编写 HTML 源码，用普通代码围栏给出源码，围栏语言不要写成 html；只要用户没有明确说不要演示，仍然调用 create_demo。"
         }
         let search: String
         switch webTool {
         case .available:
-            search = "When you need the web, first write <tool name=\"web_search\">search query</tool> and do not state the conclusion yet."
+            search = "Web search is on, and searching is the default: unless the question is only about the attached meetings and files, or is small talk, first write <tool name=\"web_search\">a specific search query</tool>. You may write one or two. Stop right after the search call and do not state a conclusion yet; the results come in the next step."
+        case .prefetched:
+            search = "Web search is on, and the app already searched this question once; the numbered passages with URLs are the results. Prefer them and cite their numbers. If they are not enough, outdated, or off-topic, first write <tool name=\"web_search\">a more specific query</tool> and stop without stating a conclusion; if they are enough, answer directly."
         case .used:
             search = "Web search already finished and its results are in the numbered passages. Do not call web_search again."
         case .off:
             search = "Web search is unavailable. Do not call web_search."
         }
-        return "Write the answer in Markdown. When you need an action, call a tool. Tool markers are not shown in the conversation. \(search) Whenever the explanation can become an interaction or a visualization, proactively give the user the demonstration they need. Be very eager: if a demonstration would help at all, write one. Write <tool name=\"create_demo\">a few sentences describing what the page shows and which controls it has</tool>. The create_demo text is only that description, not HTML. It stays out of the main conversation and is given to a hidden subtask that builds the page. Skip create_demo only when the user explicitly says they do not want a demonstration. If the user only asks for HTML source, give it in an ordinary code fence, do not label that fence html, and still call create_demo unless they explicitly said not to show a demonstration."
+        return "Write the answer in Markdown. When you need an action, call a tool. Tool markers are not shown in the conversation. \(search) Whenever the explanation can become an interaction or a visualization, proactively give the user the demonstration they need. Be very eager: if a demonstration would help at all, write one. Formulas and parameters, processes and steps, algorithms, comparisons, data and trends, timelines, and structures all make good demonstrations. At the end of the answer, write <tool name=\"create_demo\">a few sentences describing what the page shows, which controls it has, and which concrete values it uses</tool> once. Use at most one create_demo per answer. The create_demo text is only that description, not HTML. It stays out of the main conversation and is given to a hidden subtask that builds the page. Skip create_demo only when the user explicitly says they do not want a demonstration. If the user only asks for HTML source, give it in an ordinary code fence, do not label that fence html, and still call create_demo unless they explicitly said not to show a demonstration."
     }
 
     /// Meeting answers still write a display page in the same reply. Chat uses tools instead.
@@ -155,30 +162,81 @@ enum ChatContext {
 
     static func visualSystemPrompt(language: String) -> String {
         let instruction = language == "Simplified Chinese"
-            ? "下面这段文字只说明一个 HTML 演示要怎么做。只输出一块语言为 html 的围栏，不要任何其它文字。用滑块、按钮、内联样式、内联脚本和内联 SVG，可以是片段或完整页面，不要引用外部地址。如果这段说明无法做成页面，只输出 NONE。"
-            : "The message below only describes how to build one HTML demonstration. Output only one html fence and no other text. Use sliders, buttons, inline styles, inline scripts, and inline SVG. A fragment or a complete page is fine. Do not reference external addresses. If the description cannot become a page, output only NONE."
+            ? "你要为下面这次讲解做一个 HTML 演示。只输出一块语言为 html 的围栏，不要任何其它文字。围栏开头可以写标题，例如 ```html 双缝干涉。用滑块、按钮、内联样式、内联脚本、内联 SVG 和 canvas，可以是片段或完整页面。页面会在没有网络的沙盒里显示，所以不要用 img、form、iframe、link、外部脚本、外部或 data: 地址，链接只能是 #。颜色用 var(--nomi-text)、var(--nomi-surface)、var(--nomi-accent)，页面要同时适合浅色和深色。数值和名称要和讲解一致。保持精简，整页完整写完。如果这次讲解确实无法做成有用的页面，只输出 NONE。"
+            : "Build one HTML demonstration for the explanation below. Output only one html fence and no other text. The fence may carry a title, like ```html Double slit. Use sliders, buttons, inline styles, inline scripts, inline SVG, and canvas. A fragment or a complete page is fine. The page runs in an offline sandbox, so do not use img, form, iframe, link, external scripts, or external or data: addresses, and links may only be #. Use var(--nomi-text), var(--nomi-surface), and var(--nomi-accent) for colors so the page works in light and dark mode. Keep values and names consistent with the explanation. Keep it compact and finish the whole page. If the explanation truly cannot become a useful page, output only NONE."
         return "You are Nomi. Answer in \(language). \(instruction)"
     }
 
-    static func visualUserPrompt(brief: String) -> String {
-        brief
+    /// The hidden demo task sees the question and the answer, not only the brief.
+    /// Without a brief the model was not asked for a demo, and the task decides whether one helps.
+    static func visualUserPrompt(brief: String?, question: String = "", answer: String = "") -> String {
+        var parts: [String] = []
+        let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !question.isEmpty { parts.append("Question:\n\(question.prefix(600))") }
+        let answer = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !answer.isEmpty { parts.append("Answer already shown to the user:\n\(answer.prefix(3000))") }
+        if let brief = brief?.trimmingCharacters(in: .whitespacesAndNewlines), !brief.isEmpty {
+            parts.append("Demonstration to build:\n\(brief)")
+        } else {
+            parts.append("Demonstration to build: choose the one interaction or visualization that best helps the user understand this answer. Output only NONE if nothing would help.")
+        }
+        return parts.joined(separator: "\n\n")
     }
 
-    /// The rendered page from a visual reply, or nil when the model declined.
+    static func visualRetryPrompt(_ prompt: String) -> String {
+        prompt + "\n\nThe previous page was rejected because it was unfinished or used something the sandbox blocks (img, form, iframe, link, external scripts, external or data: addresses, or links other than #). Write a shorter, complete page that follows the rules."
+    }
+
+    /// Whether the app should build a demo even though the model did not ask for one.
+    static func wantsFallbackVisual(question: String, answer: String) -> Bool {
+        guard answer.trimmingCharacters(in: .whitespacesAndNewlines).count >= 300 else { return false }
+        return !declinesDemo(question)
+    }
+
+    static func declinesDemo(_ question: String) -> Bool {
+        let folded = question.lowercased()
+        let phrases = ["不要演示", "不用演示", "别做演示", "不需要演示", "不要图示", "不用图示", "不要可视化", "不用可视化", "no demo", "without a demo", "no visualization", "don't visualize", "do not visualize"]
+        return phrases.contains { folded.contains($0) }
+    }
+
+    /// The query the app searches when Web is on. A short follow-up borrows the previous question so it still makes sense alone.
+    static func searchQuery(question: String, history: [ChatTurn]) -> String? {
+        let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else { return nil }
+        guard question.count < 12, let last = history.last?.question.trimmingCharacters(in: .whitespacesAndNewlines), !last.isEmpty else {
+            return String(question.prefix(300))
+        }
+        return String("\(last.prefix(150)) \(question)".prefix(300))
+    }
+
+    /// Whether the answer view will show this fence as a live page rather than as source.
+    static func rendersWidget(_ fence: String) -> Bool {
+        AnswerDocument.pieces(in: fence).contains { piece in
+            if case .widget = piece { return true }
+            return false
+        }
+    }
+
+    /// The rendered page from a visual reply, or nil when the model declined or the reply was cut off.
     static func htmlFence(from response: String) -> String? {
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty || trimmed == "NONE" { return nil }
-        if let body = fencedHTML(in: trimmed) {
-            let clean = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let fence = fencedHTML(in: trimmed) {
+            let clean = fence.body.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !clean.isEmpty, clean != "NONE" else { return nil }
-            return "```html\n\(clean)\n```"
+            if !fence.closed {
+                let folded = clean.lowercased()
+                guard folded.contains("</html>") || folded.contains("</body>") else { return nil }
+            }
+            return "```\(fence.info)\n\(clean)\n```"
         }
         let folded = trimmed.lowercased()
         guard folded.contains("<!doctype") || folded.contains("<html") || folded.contains("<svg") || folded.contains("<div") else { return nil }
         return "```html\n\(trimmed)\n```"
     }
 
-    private static func fencedHTML(in source: String) -> String? {
+    /// The fence's info string, its body, and whether the closing fence arrived.
+    private static func fencedHTML(in source: String) -> (info: String, body: String, closed: Bool)? {
         let lines = source
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
@@ -187,19 +245,22 @@ enum ChatContext {
         var index = 0
         while index < lines.count {
             let spaces = lines[index].prefix { $0 == " " }.count
-            let trimmed = lines[index].dropFirst(spaces).trimmingCharacters(in: .whitespaces).lowercased()
+            let opening = lines[index].dropFirst(spaces).trimmingCharacters(in: .whitespaces)
+            let trimmed = opening.lowercased()
             let opens = spaces <= 3 && (trimmed == "```html" || trimmed.hasPrefix("```html ") || trimmed.hasPrefix("```html\t"))
             guard opens else { index += 1; continue }
+            let info = String(opening.dropFirst(3))
             index += 1
             var body: [String] = []
+            var closed = false
             while index < lines.count {
                 let closeSpaces = lines[index].prefix { $0 == " " }.count
                 let core = lines[index].dropFirst(closeSpaces).trimmingCharacters(in: .whitespaces)
-                if closeSpaces <= 3, core.count >= 3, core.allSatisfy({ $0 == "`" }) { break }
+                if closeSpaces <= 3, core.count >= 3, core.allSatisfy({ $0 == "`" }) { closed = true; break }
                 body.append(lines[index])
                 index += 1
             }
-            return body.joined(separator: "\n")
+            return (info, body.joined(separator: "\n"), closed)
         }
         return nil
     }

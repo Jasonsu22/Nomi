@@ -297,7 +297,26 @@ extension AppModel {
                 var briefs: [String] = []
                 var webNotice: String?
                 var searched = false
+                var prefetched = false
+                var webReachable = allowsWeb
+                // With Web on, search the question itself first so a search happens even when the model would skip it.
+                if allowsWeb, let query = ChatContext.searchQuery(question: question, history: history) {
+                    let found = try await self.searchPasses([query][...])
+                    if found.blocks.isEmpty {
+                        if let notice = found.notice {
+                            webNotice = notice
+                            webReachable = false
+                        }
+                    } else {
+                        blocks.append(contentsOf: found.blocks)
+                        prefetched = true
+                    }
+                }
                 for round in 0..<2 {
+                    let webTool: ChatContext.WebTool
+                    if !webReachable { webTool = .off }
+                    else if searched { webTool = .used }
+                    else { webTool = prefetched ? .prefetched : .available }
                     let system = ChatContext.composedSystemPrompt(
                         override: self.prompts.systemOverride,
                         language: language,
@@ -305,8 +324,9 @@ extension AppModel {
                         hasPassages: !blocks.isEmpty,
                         skills: self.prompts.skills,
                         tools: true,
-                        webTool: allowsWeb ? (searched ? .used : .available) : .off
+                        webTool: webTool
                     )
+                    let mayStillSearch = webReachable && !searched
                     var prompt = ChatContext.userPrompt(
                         question: question,
                         history: history,
@@ -334,21 +354,23 @@ extension AppModel {
                         prompt: prompt,
                         images: promptImages
                     ) { [weak self] partial in
-                        let shown = ChatTools.parse(ChatContext.streamingDisplay(partial), streaming: true).visible
+                        let shown = ChatTools.parse(ChatContext.streamingDisplay(partial), streaming: true, stopAtSearch: mayStillSearch).visible
                         let combined = self?.joinedAnswer(carried, shown) ?? shown
                         self?.pendingAnswer = combined
                         self?.pendingCitations = ChatContext.citations(in: combined, blocks: cited)
                     }
                     try Task.checkCancellation()
-                    let parsed = ChatTools.parse(ChatContext.splitVisual(text, streaming: false).text, streaming: false)
+                    let parsed = ChatTools.parse(ChatContext.splitVisual(text, streaming: false).text, streaming: false, stopAtSearch: mayStillSearch)
                     answer = joinedAnswer(answer, parsed.visible)
                     briefs.append(contentsOf: parsed.calls.filter { $0.name == ChatTools.createDemo }.map(\.body))
                     let queries = parsed.calls.filter { $0.name == ChatTools.webSearch }.map(\.body)
-                    guard allowsWeb, !searched, !queries.isEmpty else { break }
+                    guard mayStillSearch, !queries.isEmpty else { break }
                     searched = true
                     let found = try await self.searchPasses(queries.prefix(2))
                     if found.blocks.isEmpty {
-                        webNotice = found.notice ?? tr("联网搜索没有返回结果，这次只根据会议和资料回答。")
+                        if !prefetched {
+                            webNotice = found.notice ?? tr("联网搜索没有返回结果，这次只根据会议和资料回答。")
+                        }
                     } else {
                         blocks.append(contentsOf: found.blocks)
                     }
@@ -358,11 +380,17 @@ extension AppModel {
                 self.pendingAnswer = ""
                 self.pendingCitations = []
                 if let webNotice { self.chatError = webNotice }
-                if let turnID, !briefs.isEmpty {
+                // One demo per answer: the last brief has seen the search results. Without a brief, API models still get a demo when the answer is substantial.
+                // Local models skip that fallback because a demo there blocks the next question until it finishes.
+                let brief = briefs.last { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                let fallback = brief == nil && mode == .api && ChatContext.wantsFallbackVisual(question: question, answer: answer)
+                if let turnID, brief != nil || fallback {
                     self.startVisual(
                         chatID: id,
                         turnID: turnID,
-                        briefs: briefs,
+                        brief: brief,
+                        question: question,
+                        answer: answer,
                         mode: mode,
                         profile: profile,
                         language: language
@@ -423,6 +451,7 @@ extension AppModel {
         system: String,
         prompt: String,
         images: [ModelImage] = [],
+        localMaxTokens: Int = 2048,
         onUpdate: @escaping @MainActor (String) -> Void
     ) async throws -> String {
         if mode == .api {
@@ -432,21 +461,20 @@ extension AppModel {
             return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
         }
         guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
-        return try await engine.generate(system: system, prompt: prompt, onUpdate: onUpdate)
+        return try await engine.generate(system: system, prompt: prompt, maxTokens: localMaxTokens, onUpdate: onUpdate)
     }
 
     private func startVisual(
         chatID: UUID,
         turnID: UUID,
-        briefs: [String],
+        brief: String?,
+        question: String,
+        answer: String,
         mode: LLMMode,
         profile: LLMAPIProfile?,
         language: String
     ) {
-        let briefs = briefs
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard !briefs.isEmpty else { return }
+        let requested = brief != nil
         preparingVisualTurnIDs.insert(turnID)
         visualTasks[turnID] = Task { [weak self] in
             guard let self else { return }
@@ -462,19 +490,28 @@ extension AppModel {
                     }
                     self.localVisualBusy = true
                 }
-                for brief in briefs {
+                let system = ChatContext.visualSystemPrompt(language: language)
+                var prompt = ChatContext.visualUserPrompt(brief: brief, question: question, answer: answer)
+                // API models get one repair attempt. A local retry would block the next question for another full run.
+                let attempts = mode == .api ? 2 : 1
+                for attempt in 0..<attempts {
                     try Task.checkCancellation()
                     let visual = try await self.completeChat(
                         mode: mode,
                         profile: profile,
-                        system: ChatContext.visualSystemPrompt(language: language),
-                        prompt: ChatContext.visualUserPrompt(brief: brief)
+                        system: system,
+                        prompt: prompt,
+                        localMaxTokens: 4096
                     ) { _ in }
                     try Task.checkCancellation()
-                    if let fence = ChatContext.htmlFence(from: visual) {
+                    if visual.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "NONE" { return }
+                    if let fence = ChatContext.htmlFence(from: visual), ChatContext.rendersWidget(fence) {
                         self.appendVisual(chatID, turnID: turnID, fence: fence)
+                        return
                     }
+                    if attempt == 0 { prompt = ChatContext.visualRetryPrompt(prompt) }
                 }
+                if requested { self.chatError = tr("这次没能生成图示。") }
             } catch is CancellationError {
             } catch let error as URLError where error.code == .cancelled {
             } catch {
