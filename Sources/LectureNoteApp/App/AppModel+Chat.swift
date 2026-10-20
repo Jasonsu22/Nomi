@@ -279,6 +279,7 @@ extension AppModel {
         let language = prompts.modelLanguageName
         let remembered = memoryPrompt(for: question)
         let history = session.turns
+        let chatSummary = session.summary
         let pickedMeetings = meetings.filter { chosenMeetings.contains($0.id) }
         let pickedSources = sources.filter { chosenSources.contains($0.id) }
         mutate(id) {
@@ -316,6 +317,7 @@ extension AppModel {
                 let historyWindow = ChatHistory.window(
                     history,
                     budget: contextBudget,
+                    summary: chatSummary,
                     omittedImageTurns: seesImages ? imagePlan.omittedTurnIDs : []
                 )
                 var blocks = packed
@@ -443,7 +445,7 @@ extension AppModel {
                 self.pendingAnswer = ""
                 self.pendingCitations = []
                 if let webNotice { self.chatError = webNotice }
-                self.scheduleMemoryLearning()
+                self.scheduleAfterAnswerWork(chatID: id)
                 // One demo per answer: the last brief has seen the search results. Without a brief, API models still get a demo when the answer is substantial.
                 // Local models skip that fallback because a demo there blocks the next question until it finishes.
                 let skipsDemo = ChatContext.skipsDemo(question, usedLibrary: library != .available && library != .off)
@@ -526,7 +528,7 @@ extension AppModel {
             return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
         }
         guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
-        await waitForMemory()
+        await waitForAfterAnswerWork()
         return try await engine.generate(system: system, prompt: prompt, maxTokens: localMaxTokens, onUpdate: onUpdate)
     }
 
@@ -709,7 +711,7 @@ extension AppModel {
         }
         for chat in chats {
             let turns = chat.turns.filter { !excluded.turns.contains($0.id) }
-            documents += LibrarySearch.chatDocuments(id: chat.id, title: chat.displayTitle, turns: turns)
+            documents += LibrarySearch.chatDocuments(id: chat.id, title: chat.displayTitle, turns: turns, summary: chat.summary)
         }
         let files = sources.filter { !excluded.sources.contains($0.id) }
         await SourceTextCache.shared.keep(only: Set(sources.map(\.id)))

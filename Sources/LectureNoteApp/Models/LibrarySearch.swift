@@ -305,8 +305,20 @@ extension LibrarySearch {
         return documents
     }
 
-    static func chatDocuments(id: UUID, title: String, turns: [ChatTurn]) -> [LibraryDocument] {
-        turns.compactMap { turn in
+    static func chatDocuments(id: UUID, title: String, turns: [ChatTurn], summary: ChatSummary? = nil) -> [LibraryDocument] {
+        // A long chat's summary is searchable too, so "what did we cover in that chat" can find it.
+        let digest = summary.map { summary in
+            LibraryDocument(
+                kind: .chat,
+                title: trf("%@ 的对话", LibraryDates.shortDay(summary.throughDate)),
+                date: summary.throughDate,
+                detail: tr("对话摘要"),
+                body: "Summary of an earlier conversation.\n\(summary.text)",
+                group: id,
+                chatID: id
+            )
+        }
+        return (digest.map { [$0] } ?? []) + turns.compactMap { turn in
             let answer = turn.answer.trimmingCharacters(in: .whitespacesAndNewlines)
             guard turn.error == nil, !turn.question.isEmpty || !answer.isEmpty else { return nil }
             // A chat's own title is usually its first question, which says little; the date tells turns apart.

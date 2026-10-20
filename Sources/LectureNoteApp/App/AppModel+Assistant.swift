@@ -71,7 +71,7 @@ extension AppModel {
                     text = try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, onUpdate: show)
                 } else {
                     guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
-                    await self.waitForMemory()
+                    await self.waitForAfterAnswerWork()
                     text = try await engine.generate(system: system, prompt: prompt, onUpdate: show)
                 }
                 if summary { state.summary = text; state.summaryModelName = name }

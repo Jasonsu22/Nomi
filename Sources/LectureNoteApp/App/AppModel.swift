@@ -87,10 +87,12 @@ final class AppModel {
     let prompts = PromptPreferences()
     /// What Nomi has learned about the student. Kept on disk only for the real app, not previews and tests.
     private(set) var memory = UserMemory(file: nil)
-    /// The background learning pass, if one is waiting or running.
-    @ObservationIgnored var memoryTask: Task<Void, Never>?
-    /// The pass has started generating, so a question waits for it instead of cancelling it.
-    @ObservationIgnored var memoryGenerating = false
+    /// Work that runs after an answer (chat summary, then memory), if it is waiting or running.
+    @ObservationIgnored var afterAnswerTask: Task<Void, Never>?
+    /// That work has started generating, so a local question waits for it instead of cancelling it.
+    @ObservationIgnored var afterAnswerGenerating = false
+    /// Summary passes that failed in a row, per chat. A chat stops trying after a few.
+    @ObservationIgnored var summaryFailures: [UUID: Int] = [:]
     /// Learning passes that failed in a row. Each failure waits for more turns before trying again.
     @ObservationIgnored var memoryFailures = 0
     var assistantStates: [UUID: MeetingAssistantState] = [:]

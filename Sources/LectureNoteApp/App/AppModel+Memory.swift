@@ -15,67 +15,49 @@ extension AppModel {
         memory.isEnabled(for: llmConfiguration.mode)
     }
 
-    private var canLearnMemory: Bool {
-        llmConfiguration.mode == .api ? llmConfiguration.activeProfile != nil : engine is LocalEngine
+    /// One learning pass, prepared when an answer finishes and run by the after-answer queue.
+    struct MemoryJob {
+        var mode: LLMMode
+        var profile: LLMAPIProfile?
+        var system: String
+        var prompt: String
+        var known: [MemoryItem]
+        var last: ChatTurn
     }
 
-    /// Learns from recent chats once a few new turns have finished. It runs quietly in the background.
-    /// After a failure it waits for three more turns, and after three failures in a row it moves past
-    /// those turns, so a broken model or key does not resend the same conversation after every answer.
-    func scheduleMemoryLearning() {
-        guard memoryEnabled, memoryTask == nil, canLearnMemory else { return }
+    /// A learning pass once a few new turns have finished, or nil. After a failure it waits for three
+    /// more turns, and after three failures in a row it moves past those turns, so a broken model or
+    /// key does not resend the same conversation after every answer.
+    func memoryJob() -> MemoryJob? {
+        guard memoryEnabled, canRunBackgroundWork else { return nil }
         let turns = unlearnedTurns()
         let needed = min(MemoryLearning.batch + 3 * memoryFailures, 8)
-        guard turns.count >= needed, let last = turns.last else { return }
-        let mode = llmConfiguration.mode
-        let profile = llmConfiguration.activeProfile
-        let system = MemoryLearning.system(language: prompts.modelLanguageName)
+        guard turns.count >= needed, let last = turns.last else { return nil }
         let known = memory.items
-        let prompt = MemoryLearning.prompt(items: known, turns: turns)
-        memoryTask = Task { [weak self] in
-            // A local model has one chat worker, so the pass waits for a quiet moment. A new question cancels the wait.
-            if mode == .local { try? await Task.sleep(for: .seconds(30)) }
-            guard let self else { return }
-            defer {
-                self.memoryTask = nil
-                self.memoryGenerating = false
-            }
-            guard !Task.isCancelled, self.memoryEnabled else { return }
-            if mode == .local, self.chatGeneratingID != nil || self.assistantIsBusy { return }
-            self.memoryGenerating = true
-            guard let reply = try? await self.memoryReply(mode: mode, profile: profile, system: system, prompt: prompt) else {
-                self.memoryFailures += 1
-                if self.memoryFailures >= 3 {
-                    self.memory.skip(through: last.createdAt)
-                    self.memoryFailures = 0
-                }
-                return
-            }
-            self.memoryFailures = 0
-            let changes = MemoryLearning.parse(reply, known: known)
-            let learned = self.memory.learn(changes, through: last.createdAt)
-            if !learned.isEmpty { self.noteMemory(learned, onTurn: last.id) }
-        }
+        return MemoryJob(
+            mode: llmConfiguration.mode,
+            profile: llmConfiguration.activeProfile,
+            system: MemoryLearning.system(language: prompts.modelLanguageName),
+            prompt: MemoryLearning.prompt(items: known, turns: turns),
+            known: known,
+            last: last
+        )
     }
 
-    /// A local reply waits for a running memory pass, and cancels one that is only waiting for a quiet moment.
-    func waitForMemory() async {
-        guard let task = memoryTask else { return }
-        if memoryGenerating {
-            await task.value
-        } else {
-            task.cancel()
+    func runMemory(_ job: MemoryJob) async {
+        afterAnswerGenerating = true
+        guard let reply = try? await backgroundReply(mode: job.mode, profile: job.profile, system: job.system, prompt: job.prompt, maxTokens: 300) else {
+            memoryFailures += 1
+            if memoryFailures >= 3 {
+                memory.skip(through: job.last.createdAt)
+                memoryFailures = 0
+            }
+            return
         }
-    }
-
-    private func memoryReply(mode: LLMMode, profile: LLMAPIProfile?, system: String, prompt: String) async throws -> String {
-        if mode == .api {
-            guard let profile else { throw llmError(tr("请先在设置中选择 API 配置。")) }
-            let key = try LLMKeychain.read(profile)
-            return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt) { _ in }
-        }
-        guard let engine = engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
-        return try await engine.generate(system: system, prompt: prompt, maxTokens: 300, background: true) { _ in }
+        memoryFailures = 0
+        let changes = MemoryLearning.parse(reply, known: job.known)
+        let learned = memory.learn(changes, through: job.last.createdAt)
+        if !learned.isEmpty { noteMemory(learned, onTurn: job.last.id) }
     }
 
     /// Shows what was learned under the answer that triggered the pass, without moving the chat up in history.

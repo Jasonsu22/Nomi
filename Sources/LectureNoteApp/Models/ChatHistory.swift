@@ -17,34 +17,59 @@ enum ChatHistory {
     static let questionLimit = 800
 
     /// Fills the history budget with whole turns, newest first. The newest turn is always shown,
-    /// cut harder if it alone is over budget. `dated` adds the day and time to each turn.
+    /// cut harder if it alone is over budget. A running summary goes first and covers older turns,
+    /// which then do not count as hidden. `dated` adds the day and time to each turn.
     static func window(
         _ turns: [ChatTurn],
         budget: ContextBudget,
+        summary: ChatSummary? = nil,
         omittedImageTurns: Set<UUID> = [],
         dated: Bool = true
     ) -> HistoryWindow {
-        let answered = turns.filter { $0.error == nil && !$0.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let answered = answeredTurns(turns)
+        let summaryBlock = summary.map { "Summary of earlier conversation (reference only):\n\($0.text)" } ?? ""
+        let room = max(budget.history / 2, budget.history - summaryBlock.count)
         var shown: [(UUID, String)] = []
         var used = 0
         for turn in answered.reversed() {
             var text = render(turn, answerLimit: budget.turnAnswer, image: omittedImageTurns.contains(turn.id), dated: dated)
-            if shown.isEmpty, text.count > budget.history {
-                let room = max(200, budget.history - min(turn.question.count, questionLimit) - 60)
-                text = render(turn, answerLimit: room, image: omittedImageTurns.contains(turn.id), dated: dated)
-            } else if !shown.isEmpty, used + text.count > budget.history {
+            if shown.isEmpty, text.count > room {
+                let answerRoom = max(200, room - min(turn.question.count, questionLimit) - 60)
+                text = render(turn, answerLimit: answerRoom, image: omittedImageTurns.contains(turn.id), dated: dated)
+            } else if !shown.isEmpty, used + text.count > room {
                 break
             }
             shown.append((turn.id, text))
             used += text.count
         }
-        guard !shown.isEmpty else { return .empty }
-        let body = shown.reversed().map(\.1).joined(separator: "\n\n")
+        guard !shown.isEmpty || !summaryBlock.isEmpty else { return .empty }
+        var parts: [String] = []
+        if !summaryBlock.isEmpty { parts.append(summaryBlock) }
+        if !shown.isEmpty {
+            parts.append("Previous conversation (reference only):\n" + shown.reversed().map(\.1).joined(separator: "\n\n"))
+        }
+        let older = answered.count - shown.count
+        let covered = summary.map { coveredCount(answered, through: $0.throughTurnID) } ?? 0
         return HistoryWindow(
-            text: "Previous conversation (reference only):\n\(body)",
+            text: parts.joined(separator: "\n\n"),
             includedTurns: Set(shown.map(\.0)),
-            omittedOlderTurns: answered.count - shown.count
+            omittedOlderTurns: max(0, older - covered)
         )
+    }
+
+    /// Turns with an answer, in order. Failed or empty turns never reach a prompt.
+    static func answeredTurns(_ turns: [ChatTurn]) -> [ChatTurn] {
+        turns.filter { $0.error == nil && !$0.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    /// How many of `answered` a summary through `turnID` covers.
+    static func coveredCount(_ answered: [ChatTurn], through turnID: UUID) -> Int {
+        answered.firstIndex { $0.id == turnID }.map { $0 + 1 } ?? 0
+    }
+
+    /// One turn as it appears in a prompt.
+    static func rendered(_ turn: ChatTurn, answerLimit: Int, dated: Bool = true) -> String {
+        render(turn, answerLimit: answerLimit, image: false, dated: dated)
     }
 
     private static func render(_ turn: ChatTurn, answerLimit: Int, image: Bool, dated: Bool) -> String {
@@ -120,5 +145,57 @@ enum ChatHistory {
     private static func timeStamp(_ date: Date) -> String {
         let parts = LibraryDates.calendar.dateComponents([.hour, .minute], from: date)
         return LibraryDates.dayStamp(date, calendar: LibraryDates.calendar) + String(format: " %02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
+    }
+}
+
+/// When a long chat's older turns get summarized, and how.
+enum ChatSummaries {
+    /// A chat shorter than this is never summarized.
+    static let minimumTurns = 6
+    /// Uncovered older turns, or their characters, that start a new pass.
+    static let batchTurns = 3
+    static let batchCharacters = 3_000
+    /// Failed passes before a chat is left alone until the app restarts.
+    static let maxFailures = 3
+
+    static func limit(for mode: LLMMode) -> Int {
+        mode == .local ? 600 : 1_500
+    }
+
+    /// The older turns not yet in the summary, when there are enough of them; nil otherwise.
+    static func pending(_ turns: [ChatTurn], summary: ChatSummary?, budget: ContextBudget) -> [ChatTurn]? {
+        let answered = ChatHistory.answeredTurns(turns)
+        guard answered.count >= minimumTurns else { return nil }
+        let window = ChatHistory.window(turns, budget: budget, summary: summary)
+        guard let oldestShown = answered.firstIndex(where: { window.includedTurns.contains($0.id) }) else { return nil }
+        let covered = summary.map { ChatHistory.coveredCount(answered, through: $0.throughTurnID) } ?? 0
+        guard covered < oldestShown else { return nil }
+        let uncovered = Array(answered[covered..<oldestShown])
+        let characters = uncovered.reduce(0) { $0 + ChatHistory.rendered($1, answerLimit: budget.turnAnswer).count }
+        guard uncovered.count >= batchTurns || characters >= batchCharacters else { return nil }
+        return uncovered
+    }
+
+    static func system(language: String, limit: Int) -> String {
+        """
+        You keep a running summary of one study conversation between a student and Nomi, their study assistant. Merge the earlier summary with the new turns into one summary.
+        Keep the topics covered, conclusions and definitions given, numbers, names and dates, decisions the student made, and questions still open. Drop greetings, demos and anything repeated.
+        Write in \(language), as short plain sentences or bullets, at most \(limit) characters. Reply with the summary only.
+        """
+    }
+
+    static func prompt(previous: ChatSummary?, turns: [ChatTurn], budget: ContextBudget) -> String {
+        let earlier = previous?.text ?? "(none)"
+        let body = turns.map { ChatHistory.rendered($0, answerLimit: budget.turnAnswer) }.joined(separator: "\n\n")
+        return "Earlier summary:\n\(earlier)\n\nNew turns:\n\(body)"
+    }
+
+    /// The summary to store, or nil for an empty reply.
+    static func cleaned(_ reply: String, limit: Int) -> String? {
+        var text = ChatContext.splitVisual(reply, streaming: false).text
+        text = ChatTools.parse(text, streaming: false).visible
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return ChatHistory.trimmed(text, limit: limit)
     }
 }

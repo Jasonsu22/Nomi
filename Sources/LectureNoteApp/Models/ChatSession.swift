@@ -293,13 +293,15 @@ struct ChatSession: Codable, Equatable, Identifiable, Sendable {
     var turns: [ChatTurn]
     /// Set when the chat was started from one meeting. The meeting page only lists these.
     var anchorMeetingID: UUID?
+    /// A running summary of the turns too old to fit in the prompt, written in the background.
+    var summary: ChatSummary?
 
     var displayTitle: String {
         title.isEmpty ? tr("新会话") : title
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, titleCustom, createdAt, updatedAt, scope, allowsWeb, modelMode, profileID, turns, anchorMeetingID
+        case id, title, titleCustom, createdAt, updatedAt, scope, allowsWeb, modelMode, profileID, turns, anchorMeetingID, summary
     }
 
     init(
@@ -341,6 +343,7 @@ struct ChatSession: Codable, Equatable, Identifiable, Sendable {
         profileID = try container.decodeIfPresent(UUID.self, forKey: .profileID)
         turns = try container.decodeIfPresent([ChatTurn].self, forKey: .turns) ?? []
         anchorMeetingID = try container.decodeIfPresent(UUID.self, forKey: .anchorMeetingID)
+        summary = try container.decodeIfPresent(ChatSummary.self, forKey: .summary)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -356,5 +359,17 @@ struct ChatSession: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(profileID, forKey: .profileID)
         try container.encode(turns, forKey: .turns)
         try container.encodeIfPresent(anchorMeetingID, forKey: .anchorMeetingID)
+        try container.encodeIfPresent(summary, forKey: .summary)
     }
+}
+
+/// What a long chat covered before the turns the prompt still shows.
+struct ChatSummary: Codable, Equatable, Sendable {
+    var text: String
+    /// The last turn the summary covers.
+    var throughTurnID: UUID
+    var throughDate: Date
+    var coveredTurns: Int
+    var modelName: String
+    var updatedAt: Date
 }
