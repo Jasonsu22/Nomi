@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 struct AskView: View {
     var model: AppModel
     var anchorMeetingID: UUID? = nil
-    var onHistoryChange: (Bool) -> Void = { _ in }
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var draft = ""
     @State private var composerFocused = false
@@ -30,14 +29,7 @@ struct AskView: View {
             if embedded {
                 VStack(spacing: 0) {
                     embeddedHeader
-                    HStack(alignment: .top, spacing: historyPresented ? Space.s2 : 0) {
-                        conversation
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        if historyPresented {
-                            historyPanel
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
-                        }
-                    }
+                    conversation
                 }
             } else {
                 VStack(alignment: .leading, spacing: 0) {
@@ -48,16 +40,9 @@ struct AskView: View {
                         searchGuide
                             .padding(.bottom, Space.s4)
                     }
-                    HStack(alignment: .top, spacing: historyPresented ? Space.s3 : 0) {
-                        conversation
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .layoutPriority(1)
-                            .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                        if historyPresented {
-                            historyPanel
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
-                        }
-                    }
+                    conversation
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
                     .padding(.bottom, Space.s5)
                 }
                 .pageColumn()
@@ -181,6 +166,13 @@ struct AskView: View {
                     AskScopePopover(model: model) { scopePresented = false }
                         .padding(.leading, Space.s4)
                         .padding(.bottom, Space.s3)
+                }
+                if historyPresented {
+                    historyPanel
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(.top, Space.s3)
+                        .padding(.trailing, Space.s4)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .topTrailing)))
                 }
             }
             if let error = model.chatError, model.chatGeneratingID == nil {
@@ -578,10 +570,7 @@ struct AskView: View {
         ) {
             setHistory(false)
         }
-        .padding(.top, Space.s2)
-        .padding(.trailing, embedded ? Space.s2 : 0)
-        .padding(.bottom, Space.s2)
-        .fixedSize(horizontal: true, vertical: false)
+        .fixedSize()
         .background {
             OutsideClickObserver(isActive: true, shield: historyShield) {
                 historyGate.suppressButton = true
@@ -593,11 +582,9 @@ struct AskView: View {
 
     private func setHistory(_ shown: Bool) {
         guard shown != historyPresented else { return }
-        if shown { onHistoryChange(true) }
         withAnimation(Motion.layout(reduceMotion)) {
             historyPresented = shown
         }
-        if !shown { onHistoryChange(false) }
     }
 
     private func dismissPanels() {

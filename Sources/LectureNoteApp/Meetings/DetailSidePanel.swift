@@ -86,9 +86,7 @@ struct DetailSidePanel: View {
                 case .info:
                     info
                 case .ask:
-                    AskView(model: model, anchorMeetingID: meeting.id) { shown in
-                        if shown { onPreferredSideWidth(640) }
-                    }
+                    AskView(model: model, anchorMeetingID: meeting.id)
                 case .summary:
                     MeetingAssistantPanel(model: model, meeting: meeting, summary: true)
                 case .sources:

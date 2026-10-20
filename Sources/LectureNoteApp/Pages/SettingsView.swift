@@ -92,30 +92,15 @@ struct SettingsView: View {
 
     private func valueMenu(selection: Binding<String>, options: [(value: String, title: String)]) -> some View {
         let current = options.first { $0.value == selection.wrappedValue }?.title ?? ""
-        return Menu {
-            Picker("", selection: selection) {
-                ForEach(options, id: \.value) { option in
-                    Text(option.title).tag(option.value)
-                }
+        return Picker("", selection: selection) {
+            ForEach(options, id: \.value) { option in
+                Text(option.title).tag(option.value)
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
-        } label: {
-            HStack(spacing: 6) {
-                Text(current)
-                    .font(AppFont.secondary.weight(.medium))
-                    .foregroundStyle(AppColor.textPrimary)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(AppColor.textSecondary)
-            }
-            .contentShape(Rectangle())
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain.clicking())
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .labelsHidden()
+        .font(AppFont.secondary)
         .clickCursor()
+        .selectedTextPickerWidth(current)
     }
 
     private func allowMicrophoneNow() async {

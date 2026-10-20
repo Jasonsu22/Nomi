@@ -79,32 +79,15 @@ enum SearchKeychain {
     }
 
     static func read(_ vendor: SearchVendor) throws -> String {
-        var request = query(vendor)
-        request[kSecReturnData as String] = true
-        request[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(request as CFDictionary, &result)
-        if status == errSecItemNotFound { return "" }
-        guard status == errSecSuccess, let data = result as? Data, let key = String(data: data, encoding: .utf8) else {
-            throw llmError(tr("无法读取钥匙串中的 API 密钥。"))
-        }
-        return key
+        try KeychainTrust.read(service: service, account: vendor.rawValue)
     }
 
     static func save(_ key: String, vendor: SearchVendor) throws {
-        let values = [kSecValueData as String: Data(key.utf8)]
-        let status = SecItemUpdate(query(vendor) as CFDictionary, values as CFDictionary)
-        if status == errSecItemNotFound {
-            var item = query(vendor)
-            item[kSecValueData as String] = Data(key.utf8)
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { throw llmError(tr("无法保存 API 密钥到钥匙串。")) }
-        } else if status != errSecSuccess { throw llmError(tr("无法保存 API 密钥到钥匙串。")) }
+        try KeychainTrust.save(service: service, account: vendor.rawValue, secret: key)
     }
 
     static func delete(_ vendor: SearchVendor) throws {
-        let status = SecItemDelete(query(vendor) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw llmError(tr("无法删除钥匙串中的 API 密钥。")) }
+        try KeychainTrust.delete(service: service, account: vendor.rawValue)
     }
 }
 

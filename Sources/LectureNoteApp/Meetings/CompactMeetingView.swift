@@ -4,8 +4,6 @@ struct CompactMeetingView: View {
     @Bindable var model: AppModel
     var meetingID: UUID
     var reduceMotion: Bool
-    @State private var recordingChoice = false
-    @State private var stopArmed = false
 
     var body: some View {
         Group {
@@ -77,17 +75,6 @@ struct CompactMeetingView: View {
         .padding(Space.s4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppColor.canvas.ignoresSafeArea().gesture(WindowDragGesture()))
-        .onChange(of: model.engine.session.phase) { _, phase in
-            if phase == .idle { stopArmed = false }
-        }
-        .alert(tr("继续录制还是停止？"), isPresented: $recordingChoice) {
-            Button(tr("继续录制")) { continueRecording() }
-            Button(tr("停止"), role: .destructive) { chooseStop() }
-        } message: {
-            Text(model.engine.session.phase == .idle
-                 ? tr("继续会开始录制这场会议。")
-                 : tr("停止后需要再点一次红色按钮，才会结束录制。"))
-        }
     }
 
     private var sessionControl: some View {
@@ -97,33 +84,9 @@ struct CompactMeetingView: View {
             canStart: model.canStart,
             startTitle: model.recordingActionTitle,
             reduceMotion: reduceMotion,
-            stopArmed: stopArmed,
-            onStart: beginRecording,
-            onStop: {
-                stopArmed = false
-                model.stopTranscription()
-            },
-            onTogglePause: model.togglePause,
-            onAsk: { recordingChoice = true }
+            onStart: { model.performRecordingAction() },
+            onStop: { model.stopTranscription() },
+            onTogglePause: model.togglePause
         )
-    }
-
-    private func beginRecording() {
-        if model.resumableMeeting != nil {
-            recordingChoice = true
-        } else {
-            model.performRecordingAction()
-        }
-    }
-
-    private func continueRecording() {
-        stopArmed = false
-        guard model.engine.session.phase == .idle else { return }
-        model.performRecordingAction()
-    }
-
-    private func chooseStop() {
-        guard model.engine.session.phase != .idle else { return }
-        stopArmed = true
     }
 }

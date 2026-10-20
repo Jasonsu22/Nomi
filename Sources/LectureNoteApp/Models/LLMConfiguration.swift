@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import Security
 
 enum LLMMode: String, CaseIterable, Identifiable, Equatable {
     case local, api
@@ -202,6 +201,8 @@ final class LLMConfiguration {
 }
 
 enum LLMKeychain {
+    private static let service = "local.nomi.llm-api"
+
     private enum Cache {
         nonisolated(unsafe) static var values: [String: String] = [:]
         static let lock = NSLock()
@@ -229,46 +230,21 @@ enum LLMKeychain {
         "\(profile.id.uuidString)|\(profile.baseURL)"
     }
 
-    private static func query(_ profile: LLMAPIProfile) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: "local.nomi.llm-api",
-         kSecAttrAccount as String: account(profile)]
-    }
-
     static func read(_ profile: LLMAPIProfile) throws -> String {
         let id = account(profile)
         if let cached = Cache.get(id) { return cached }
-        var request = query(profile)
-        request[kSecReturnData as String] = true
-        request[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(request as CFDictionary, &result)
-        if status == errSecItemNotFound {
-            Cache.set(id, "")
-            return ""
-        }
-        guard status == errSecSuccess, let data = result as? Data, let key = String(data: data, encoding: .utf8) else {
-            throw llmError(tr("无法读取钥匙串中的 API 密钥。"))
-        }
+        let key = try KeychainTrust.read(service: service, account: id)
         Cache.set(id, key)
         return key
     }
 
     static func save(_ key: String, profile: LLMAPIProfile) throws {
-        let values = [kSecValueData as String: Data(key.utf8)]
-        let status = SecItemUpdate(query(profile) as CFDictionary, values as CFDictionary)
-        if status == errSecItemNotFound {
-            var item = query(profile)
-            item[kSecValueData as String] = Data(key.utf8)
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { throw llmError(tr("无法保存 API 密钥到钥匙串。")) }
-        } else if status != errSecSuccess { throw llmError(tr("无法保存 API 密钥到钥匙串。")) }
+        try KeychainTrust.save(service: service, account: account(profile), secret: key)
         Cache.set(account(profile), key)
     }
 
     static func delete(_ profile: LLMAPIProfile) throws {
-        let status = SecItemDelete(query(profile) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw llmError(tr("无法删除钥匙串中的 API 密钥。")) }
+        try KeychainTrust.delete(service: service, account: account(profile))
         Cache.remove(account(profile))
     }
 }

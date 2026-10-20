@@ -28,14 +28,6 @@ struct RecordingLanguagePicker: View {
         }
         .clickCursor()
     }
-
-    func sourceField() -> some View {
-        inputPicker.labelsHidden()
-    }
-
-    func targetField() -> some View {
-        translationPicker.labelsHidden()
-    }
 }
 
 struct RecordingSetupView: View {
@@ -97,10 +89,10 @@ struct RecordingSetupView: View {
                     .foregroundStyle(.red)
             }
             HStack {
-                Spacer()
                 Button(tr("取消")) { model.cancelRecordingSetup() }
                     .clickCursor()
                     .keyboardShortcut(.cancelAction)
+                Spacer()
                 Button(model.recordingResumeID == nil ? tr("开始录制") : tr("继续录制")) {
                     model.startTranscription(title: title, categoryID: categoryID)
                 }

@@ -6,17 +6,15 @@ struct SessionControl: View {
     var canStart: Bool
     var startTitle: String
     var reduceMotion: Bool
-    var stopArmed: Bool
     var onStart: () -> Void
     var onStop: () -> Void
     var onTogglePause: () -> Void
-    var onAsk: () -> Void
     var body: some View {
-        control
+        phaseControl
             // Tinted glass, not the interactive kind. The interactive hover tracker
             // crashes on macOS 26 when this control is replaced during the click.
             .glassEffect(.regular.tint(fill), in: Capsule())
-            .clickCursor(enabled: stopArmed || session.phase == .listening || (session.phase == .idle && canStart))
+            .clickCursor(enabled: session.phase == .listening || (session.phase == .idle && canStart))
     }
 
     private var listening: Bool {
@@ -24,33 +22,17 @@ struct SessionControl: View {
     }
 
     private var fill: Color {
-        if stopArmed { return .red }
-        return listening ? AppColor.selection : AppColor.accent
+        listening ? AppColor.selection : AppColor.accent
     }
 
     private var ink: Color {
-        if stopArmed { return .white }
-        return listening ? AppColor.onSelection : AppColor.onAccent
+        listening ? AppColor.onSelection : AppColor.onAccent
     }
 
-    @ViewBuilder
-    private var control: some View {
-        if stopArmed {
-            Button(action: onStop) {
-                HStack(spacing: Space.s2) {
-                    Image(systemName: "stop.fill")
-                    Text(tr("停止"))
-                }
-                .font(AppFont.secondary.weight(.semibold))
-                .foregroundStyle(ink)
-                .padding(.horizontal, 16)
-                .frame(height: 40)
-            }
-            .buttonStyle(.plain.clicking())
-            .accessibilityLabel(tr("停止"))
-        } else {
-            phaseControl
-        }
+    private func hitCapsule<V: View>(_ content: V) -> some View {
+        content
+            .background(Color.white.opacity(0.001), in: Capsule())
+            .contentShape(Capsule())
     }
 
     @ViewBuilder
@@ -58,7 +40,7 @@ struct SessionControl: View {
         switch session.phase {
         case .idle:
             Button(action: onStart) {
-                label(title: startTitle, pulsing: false)
+                hitCapsule(label(title: startTitle, pulsing: false))
             }
             .buttonStyle(.plain.clicking())
             .disabled(!canStart)
@@ -107,7 +89,7 @@ struct SessionControl: View {
                 filled: false,
                 action: onTogglePause
             )
-            iconButton(systemName: "stop.fill", label: tr("停止"), filled: true, danger: true, action: onAsk)
+            iconButton(systemName: "stop.fill", label: tr("停止"), filled: true, danger: true, action: onStop)
         }
         .padding(.leading, 14)
         .padding(.trailing, 8)
@@ -121,6 +103,7 @@ struct SessionControl: View {
                 .foregroundStyle(filled ? Color.white : ink)
                 .frame(width: 22, height: 22)
                 .background(danger ? Color.red : (filled ? AppColor.accent : AppColor.surface), in: Circle())
+                .contentShape(Circle())
         }
         .buttonStyle(.plain.clicking())
         .accessibilityLabel(label)

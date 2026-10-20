@@ -425,10 +425,11 @@ struct SourcesView: View {
                         .foregroundStyle(AppColor.textSecondary)
                         .frame(width: 20, height: 20)
                 }
-                .menuStyle(.button)
+                .menuStyle(.borderlessButton)
                 .buttonStyle(.plain.clicking())
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .clickCursor()
                 .help(tr("移到分类"))
                 Button {
                     deleting = source

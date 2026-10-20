@@ -32,7 +32,18 @@ struct AskHistoryPopover: View {
                                 .foregroundStyle(AppColor.textSecondary)
                                 .padding(.horizontal, Space.s2)
                             ForEach(group.sessions) { session in
-                                historyRow(session)
+                                AskHistoryRow(
+                                    title: session.displayTitle,
+                                    subtitle: subtitle(session),
+                                    time: formatRelativeTime(session.updatedAt),
+                                    current: session.id == (currentID ?? model.currentChatID),
+                                    onOpen: {
+                                        model.openChat(session.id, forAnchor: anchorMeetingID)
+                                        onClose()
+                                    },
+                                    onRename: { onRename(session) },
+                                    onDelete: { onDelete(session) }
+                                )
                             }
                         }
                     }
@@ -85,26 +96,35 @@ struct AskHistoryPopover: View {
         )
     }
 
-    private func historyRow(_ session: ChatSession) -> some View {
-        let current = session.id == (currentID ?? model.currentChatID)
-        return Button {
-            model.openChat(session.id, forAnchor: anchorMeetingID)
-            onClose()
-        } label: {
+}
+
+private struct AskHistoryRow: View {
+    var title: String
+    var subtitle: String
+    var time: String
+    var current: Bool
+    var onOpen: () -> Void
+    var onRename: () -> Void
+    var onDelete: () -> Void
+    @Environment(\.appReduceMotion) private var reduceMotion
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onOpen) {
             HStack(alignment: .top, spacing: Space.s2) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(session.displayTitle)
+                    Text(title)
                         .font(AppFont.secondary.weight(.medium))
                         .foregroundStyle(AppColor.textPrimary)
                         .lineLimit(1)
-                    Text(subtitle(session))
-                    .font(AppFont.caption)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineLimit(1)
+                    Text(subtitle)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: Space.s2)
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(formatRelativeTime(session.updatedAt))
+                    Text(time)
                         .font(AppFont.caption)
                         .foregroundStyle(AppColor.textSecondary)
                     if current {
@@ -117,12 +137,21 @@ struct AskHistoryPopover: View {
             .padding(.horizontal, Space.s3)
             .padding(.vertical, Space.s2)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(current ? AppColor.accentSoft : Color.clear, in: RoundedRectangle(cornerRadius: Radius.tag, style: .continuous))
+            .background(fill, in: RoundedRectangle(cornerRadius: Radius.tag, style: .continuous))
         }
         .buttonStyle(.plain.clicking())
+        .onHover { hovering = $0 }
+        .animation(Motion.fade(reduceMotion), value: hovering)
         .contextMenu {
-            Button(tr("重命名")) { onRename(session) }
-            Button(tr("删除"), role: .destructive) { onDelete(session) }
+            Button(tr("重命名"), action: onRename)
+            Button(tr("删除"), role: .destructive, action: onDelete)
         }
+    }
+
+    private var fill: Color {
+        if current {
+            return hovering ? AppColor.selection : AppColor.accentSoft
+        }
+        return hovering ? AppColor.surfaceInset : Color.clear
     }
 }

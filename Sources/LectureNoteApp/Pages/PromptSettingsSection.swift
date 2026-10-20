@@ -54,36 +54,19 @@ struct PromptSettingsSection: View {
     }
 
     private var replyLanguageMenu: some View {
-        let options = [(PromptPreferences.followInterface, tr("跟随界面"))]
-            + LectureLanguages.supported.map { ($0, languageName($0)) }
-        let current = model.prompts.replyLanguageTitle
-        return Menu {
-            Picker("", selection: Binding(
-                get: { model.prompts.replyLanguage },
-                set: { model.prompts.setReplyLanguage($0) }
-            )) {
-                ForEach(options, id: \.0) { option in
-                    Text(option.1).tag(option.0)
-                }
+        Picker(tr("默认回复语言"), selection: Binding(
+            get: { model.prompts.replyLanguage },
+            set: { model.prompts.setReplyLanguage($0) }
+        )) {
+            Text(tr("跟随界面")).tag(PromptPreferences.followInterface)
+            ForEach(LectureLanguages.supported, id: \.self) { code in
+                Text(languageName(code)).tag(code)
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
-        } label: {
-            HStack(spacing: 6) {
-                Text(current)
-                    .font(AppFont.secondary.weight(.medium))
-                    .foregroundStyle(AppColor.textPrimary)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(AppColor.textSecondary)
-            }
-            .contentShape(Rectangle())
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain.clicking())
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .labelsHidden()
+        .font(AppFont.secondary)
         .clickCursor()
+        .selectedTextPickerWidth(model.prompts.replyLanguageTitle)
     }
 
     private func skillRow(_ skill: PromptSkill) -> some View {
