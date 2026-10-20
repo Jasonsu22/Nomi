@@ -2,6 +2,19 @@ import Foundation
 import Testing
 
 struct LocalizationTests {
+    /// One malformed line makes macOS ignore the whole file, and every string falls back to Chinese.
+    @Test func englishCatalogParses() throws {
+        let file = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/LectureNoteApp/Resources/en.lproj/Localizable.strings")
+        let data = try Data(contentsOf: file)
+        let table = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String]
+        #expect((table?.count ?? 0) > 100)
+        #expect(table?["设置"] == "Settings")
+    }
+
     @Test func englishCatalogCoversInterfaceKeys() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
