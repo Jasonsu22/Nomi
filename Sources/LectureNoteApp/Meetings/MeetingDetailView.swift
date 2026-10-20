@@ -15,6 +15,8 @@ struct MeetingDetailView: View {
         return stored > 0 ? stored : 340
     }()
     @State private var showingLanguages = false
+    @State private var showingCategory = false
+    @State private var showingInput = false
     @State private var showingStartTime = false
     @State private var creatingCategory = false
     @State private var categoryDraft = CategoryDraft()
@@ -191,68 +193,126 @@ struct MeetingDetailView: View {
     }
 
     private func categoryChip(_ meeting: Meeting) -> some View {
-        Menu {
-            Button(tr("未分类")) {
-                model.assign(meeting: meeting.id, category: nil)
-            }
-            ForEach(model.categories) { category in
-                Button(category.name) {
-                    model.assign(meeting: meeting.id, category: category.id)
-                }
-            }
-            Divider()
-            Button {
-                categoryDraft = CategoryDraft(
-                    colorIndex: model.categories.count % CategoryPalette.swatches.count
-                )
-                creatingCategory = true
-            } label: {
-                Label(tr("新建分类"), systemImage: "plus")
-            }
+        Button {
+            showingCategory = true
         } label: {
             metaLabel(model.categoryName(for: meeting) ?? tr("未分类"))
         }
-        .menuStyle(.borderlessButton)
         .buttonStyle(.plain.clicking())
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .background(AppColor.surface, in: Capsule())
-        .clickCursor()
-        .popover(isPresented: $creatingCategory, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+        .popover(isPresented: $showingCategory, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            categoryPopover(meeting)
+        }
+        .onChange(of: showingCategory) { _, shown in
+            if !shown { creatingCategory = false }
+        }
+    }
+
+    @ViewBuilder
+    private func categoryPopover(_ meeting: Meeting) -> some View {
+        if creatingCategory {
             CategoryEditor(title: tr("新建分类"), draft: $categoryDraft) {
                 if let categoryID = model.addCategory(name: categoryDraft.name, colorIndex: categoryDraft.colorIndex, symbol: categoryDraft.symbol) {
                     model.assign(meeting: meeting.id, category: categoryID)
                     creatingCategory = false
+                    showingCategory = false
                 }
             }
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                categoryChoice(meeting, title: tr("未分类"), id: nil)
+                ForEach(model.categories) { category in
+                    categoryChoice(meeting, title: category.name, id: category.id)
+                }
+                Divider()
+                    .padding(.vertical, 4)
+                Button {
+                    categoryDraft = CategoryDraft(
+                        colorIndex: model.categories.count % CategoryPalette.swatches.count
+                    )
+                    creatingCategory = true
+                } label: {
+                    Label(tr("新建分类"), systemImage: "plus")
+                        .font(AppFont.secondary)
+                        .foregroundStyle(AppColor.textPrimary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain.clicking())
+            }
+            .padding(Space.s2)
+            .frame(minWidth: 180)
         }
     }
 
-    private var audioInputChip: some View {
-        @Bindable var inputs = model.audioInputs
-        return Menu {
-            Picker(tr("输入源"), selection: $inputs.selectedUID) {
-                Text(tr("系统默认")).tag(AudioInputs.systemDefault)
-                ForEach(model.audioInputs.devices) { device in
-                    Text(device.name).tag(device.id)
-                }
-                if model.audioInputs.selectedUID != AudioInputs.systemDefault, model.audioInputs.selectedDevice == nil {
-                    Text(tr("设备已断开")).tag(model.audioInputs.selectedUID)
+    private func categoryChoice(_ meeting: Meeting, title: String, id: UUID?) -> some View {
+        Button {
+            model.assign(meeting: meeting.id, category: id)
+            showingCategory = false
+        } label: {
+            HStack(spacing: Space.s3) {
+                Text(title)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if meeting.categoryID == id {
+                    Image(systemName: "checkmark")
                 }
             }
-            .pickerStyle(.inline)
+            .font(AppFont.secondary)
+            .foregroundStyle(AppColor.textPrimary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain.clicking())
+    }
+
+    private var audioInputChip: some View {
+        Button {
+            showingInput = true
         } label: {
             metaLabel(model.audioInputs.selectionTitle, symbol: "mic")
         }
-        .menuStyle(.borderlessButton)
         .buttonStyle(.plain.clicking())
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .background(AppColor.surface, in: Capsule())
-        .clickCursor()
         .disabled(model.engine.session.phase != .idle)
         .accessibilityLabel(tr("输入源"))
         .help(model.audioInputs.selectionTitle)
+        .popover(isPresented: $showingInput, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 0) {
+                audioChoice(tr("系统默认"), id: AudioInputs.systemDefault)
+                ForEach(model.audioInputs.devices) { device in
+                    audioChoice(device.name, id: device.id)
+                }
+                if model.audioInputs.selectedUID != AudioInputs.systemDefault, model.audioInputs.selectedDevice == nil {
+                    audioChoice(tr("设备已断开"), id: model.audioInputs.selectedUID)
+                }
+            }
+            .padding(Space.s2)
+            .frame(minWidth: 180)
+        }
+    }
+
+    private func audioChoice(_ title: String, id: String) -> some View {
+        Button {
+            model.audioInputs.selectedUID = id
+            showingInput = false
+        } label: {
+            HStack(spacing: Space.s3) {
+                Text(title)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if model.audioInputs.selectedUID == id {
+                    Image(systemName: "checkmark")
+                }
+            }
+            .font(AppFont.secondary)
+            .foregroundStyle(AppColor.textPrimary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain.clicking())
     }
 
     private func metaChip(_ text: String) -> some View {
@@ -264,12 +324,12 @@ struct MeetingDetailView: View {
             if let symbol { Image(systemName: symbol) }
             Text(text).truncationMode(.middle)
         }
-            .font(AppFont.caption)
+            .font(.system(size: 13, weight: .medium))
             .monospacedDigit()
             .foregroundStyle(AppColor.textSecondary)
             .lineLimit(1)
             .padding(.horizontal, 10)
-            .frame(height: 26)
+            .frame(height: 28)
             .background(AppColor.surface, in: Capsule())
     }
 
