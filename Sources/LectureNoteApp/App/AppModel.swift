@@ -39,6 +39,8 @@ enum AppPage: String, CaseIterable, Identifiable {
 @Observable
 final class AppModel {
     var page: AppPage = .meetings
+    /// The quick tutorial's current tip, or nil when it is not running.
+    var tutorialStep: TutorialStop?
     var revealSearchSettings = false
     let webSearch = SearchConfiguration()
     var meetings: [Meeting] {
@@ -414,6 +416,10 @@ final class AppModel {
     func openMeeting(_ id: UUID) {
         openMeetingID = id
         page = .meetings
+    }
+
+    func startTutorial() {
+        tutorialStep = TutorialStop.allCases.first
     }
 
     /// Shows the meeting being recorded, from whichever page is open.

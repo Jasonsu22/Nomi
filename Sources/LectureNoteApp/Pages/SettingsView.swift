@@ -46,22 +46,6 @@ struct SettingsView: View {
                     SearchSettingsSection(model: model)
                         .id("search-settings")
                     PromptSettingsSection(model: model)
-
-                    HStack(spacing: Space.s3) {
-                        BrandLogo(side: 64)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Nomi")
-                                .font(AppFont.sectionTitle)
-                                .foregroundStyle(AppColor.textPrimary)
-                            Text(tr("本机讲座笔记"))
-                                .font(AppFont.secondary)
-                                .foregroundStyle(AppColor.textSecondary)
-                        }
-                    }
-
-                    Text(tr("识别和翻译在本机运行。提问和摘要可选择本地模型或 API。"))
-                        .font(AppFont.secondary)
-                        .foregroundStyle(AppColor.textSecondary)
                 }
                 .pageColumn(maxWidth: 760)
                 .padding(.bottom, Space.s7)
@@ -136,28 +120,5 @@ private func requestMicrophoneAccess() async -> Bool {
         AVAudioApplication.requestRecordPermission { granted in
             continuation.resume(returning: granted)
         }
-    }
-}
-
-struct HelpView: View {
-    var body: some View {
-        PageScaffold(title: tr("帮助")) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                note(tr("按下右上角的「开始转录」，Nomi 会听麦克风，在本机识别，并翻译成目标语言。"))
-                note(tr("正在说的字是浅色，提交之后在原位变深，译文接在这一段下面。"))
-                note(tr("往上翻之后，右下角会出现「回到最新」。"))
-            }
-            .pageColumn(maxWidth: 760)
-        }
-    }
-
-    private func note(_ text: String) -> some View {
-        Text(text)
-            .font(AppFont.body)
-            .foregroundStyle(AppColor.textPrimary)
-            .lineSpacing(5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Space.s4)
-            .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
     }
 }

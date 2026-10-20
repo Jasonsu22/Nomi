@@ -31,5 +31,19 @@ struct Rail: View {
                 model.select(page)
             }
         }
+        .tutorialTarget(for: page)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func tutorialTarget(for page: AppPage) -> some View {
+        switch page {
+        case .meetings: tutorialTarget(.meetings)
+        case .sources: tutorialTarget(.sources)
+        case .ask: tutorialTarget(.chat)
+        case .settings: tutorialTarget(.settings)
+        case .help: self
+        }
     }
 }
