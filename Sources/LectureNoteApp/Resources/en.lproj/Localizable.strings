@@ -451,3 +451,6 @@
 "已记住：%@" = "Remembered: %@";
 "；" = "; ";
 "对话摘要" = "Chat summary";
+"正在整理第 %d/%d 段…" = "Summarizing part %d of %d…";
+"转写有更新，可以重新生成摘要。" = "The transcript has grown since this summary. You can regenerate it.";
+"会议摘要" = "Meeting summary";

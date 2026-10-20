@@ -305,7 +305,7 @@ extension AppModel {
             do {
                 let contextBudget = ContextBudget.current(mode: mode, profile: profile)
                 let packed = ChatContext.pack(
-                    await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources),
+                    await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources, summaryAbove: contextBudget.scope),
                     question: question,
                     budget: contextBudget.scope
                 )
@@ -706,7 +706,8 @@ extension AppModel {
                 startedAt: meeting.startedAt,
                 paragraphs: meeting.paragraphs.map {
                     ($0.openedAt, $0.renderedSource(language: language), $0.renderedTranslation(language: meeting.targetLanguage))
-                }
+                },
+                summary: meeting.assistant?.summary
             )
         }
         for chat in chats {
@@ -721,9 +722,15 @@ extension AppModel {
         return documents
     }
 
-    private func passageBlocks(meetings: [Meeting], sources: [KnowledgeSource]) async -> [ContextBlock] {
+    /// A meeting longer than `summaryAbove` characters also contributes its saved summary,
+    /// pinned ahead of its paragraphs, so the model sees the whole lecture's outline.
+    private func passageBlocks(meetings: [Meeting], sources: [KnowledgeSource], summaryAbove: Int = .max) async -> [ContextBlock] {
         var blocks: [ContextBlock] = []
         for meeting in meetings {
+            let length = meeting.paragraphs.reduce(0) { $0 + $1.renderedSource(language: meeting.sourceLanguage).count }
+            if length > summaryAbove, let summary = meeting.assistant?.summary, !summary.isEmpty {
+                blocks.append(ContextBlock(title: meeting.title, detail: tr("会议摘要"), body: summary, meetingID: meeting.id, pinned: true))
+            }
             for paragraph in meeting.paragraphs {
                 let text = paragraph.renderedSource(language: meeting.sourceLanguage)
                     .trimmingCharacters(in: .whitespacesAndNewlines)

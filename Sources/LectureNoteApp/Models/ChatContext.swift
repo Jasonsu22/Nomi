@@ -9,12 +9,20 @@ struct ContextBlock: Equatable, Sendable {
     var url: String?
     /// Set on a passage from an earlier chat, so its citation opens that chat.
     var chatID: UUID? = nil
+    /// Always kept by `pack`, ahead of ranked passages, such as a long meeting's saved summary.
+    var pinned = false
 }
 
 enum ChatContext {
     static let budget = ContextBudget.local.scope
 
     static func pack(_ blocks: [ContextBlock], question: String, budget: Int = ChatContext.budget) -> [ContextBlock] {
+        let pinned = blocks.filter { $0.pinned && !$0.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard pinned.isEmpty else {
+            let room = budget - pinned.reduce(0) { $0 + $1.body.count }
+            return pinned + pack(blocks.filter { !$0.pinned }, question: question, budget: max(0, room))
+        }
+        guard budget > 0 else { return [] }
         let usable = blocks.compactMap { block -> ContextBlock? in
             let body = block.body.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !body.isEmpty else { return nil }

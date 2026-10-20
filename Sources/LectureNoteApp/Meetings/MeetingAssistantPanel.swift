@@ -7,6 +7,27 @@ struct MeetingAssistantPanel: View {
     @State private var question = ""
 
     private var state: MeetingAssistantState? { model.assistantStates[meeting.id] }
+    /// What the panel produced before, shown until this session asks something new.
+    private var record: MeetingAssistantRecord? { meeting.assistant }
+
+    private var shownSummary: String? { state?.summary ?? record?.summary }
+
+    private var shownSummaryModel: String {
+        if let state, state.summary != nil { return state.summaryModelName }
+        return record?.summaryModelName ?? ""
+    }
+
+    private var shownAnswers: [MeetingAssistantAnswer] {
+        if let state { return state.answers }
+        return (record?.answers ?? []).map {
+            MeetingAssistantAnswer(id: $0.id, question: $0.question, answer: $0.answer, modelName: $0.modelName, createdAt: $0.createdAt)
+        }
+    }
+
+    private var summaryIsStale: Bool {
+        guard state?.isGenerating != true, let record, state?.summary == nil || state?.summary == record.summary else { return false }
+        return record.summaryIsStale(transcriptEnd: meeting.paragraphs.map(\.openedAt).max() ?? 0)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
@@ -16,18 +37,22 @@ struct MeetingAssistantPanel: View {
                     if summary {
                         if state?.isGenerating == true, let draft = state?.draft, !draft.isEmpty {
                             result(draft, modelName: state?.summaryModelName ?? "", streaming: true)
-                        } else if let text = state?.summary {
-                            result(text, modelName: state?.summaryModelName ?? "")
+                        } else if let text = shownSummary {
+                            result(text, modelName: shownSummaryModel)
+                            if summaryIsStale {
+                                Text(tr("转写有更新，可以重新生成摘要。"))
+                                    .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                            }
                         } else {
                             Text(tr("生成这场会议的要点、术语和结论。"))
                                 .font(AppFont.secondary).foregroundStyle(AppColor.textSecondary)
                         }
                     } else {
-                        if state?.answers.isEmpty != false && (state?.draft.isEmpty != false) {
+                        if shownAnswers.isEmpty && (state?.draft.isEmpty != false) {
                             Text(tr("根据这场会议的转写提问，回答会引用相关时间。"))
                                 .font(AppFont.secondary).foregroundStyle(AppColor.textSecondary)
                         }
-                        ForEach(state?.answers ?? []) { answer in
+                        ForEach(shownAnswers) { answer in
                             VStack(alignment: .leading, spacing: Space.s2) {
                                 Text(answer.question).font(AppFont.body.weight(.medium))
                                 result(answer.answer, modelName: answer.modelName)
@@ -58,7 +83,7 @@ struct MeetingAssistantPanel: View {
                     Text(tr("正在生成…")).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
                 }
                 Spacer()
-                Button(summary ? (state?.summary == nil ? tr("生成摘要") : tr("重新生成")) : tr("发送")) {
+                Button(summary ? (shownSummary == nil ? tr("生成摘要") : tr("重新生成")) : tr("发送")) {
                     let value = question.trimmingCharacters(in: .whitespacesAndNewlines)
                     model.generateAssistant(for: meeting.id, question: summary ? nil : value)
                 }
