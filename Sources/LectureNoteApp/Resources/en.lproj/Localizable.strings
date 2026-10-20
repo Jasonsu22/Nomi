@@ -430,3 +430,9 @@
 "主题：" = "Topic:";
 "发生了什么：" = "What happened:";
 "复现步骤：" = "Steps to reproduce:";
+"%@ 的对话" = "Chat on %@";
+"偏好" = "Preference";
+"课程" = "Course";
+"目标" = "Goal";
+"学习方式" = "Learning style";
+"其他" = "Other";

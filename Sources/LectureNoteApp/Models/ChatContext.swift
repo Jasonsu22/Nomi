@@ -153,7 +153,7 @@ enum ChatContext {
             case .off:
                 search = "这次不能上网，不要调用 web_search。"
             }
-            return "用 Markdown 写回答。需要动作时调用工具，工具标记不会显示在对话里。\(search)\(lookup)只要讲解的内容可以做成交互或可视化，就主动为用户提供必要的演示，主动意愿要非常高，演示对理解只要有帮助就要写：公式和参数、过程和步骤、算法、对比、数据和趋势、时间线、结构和关系都适合做成演示。在回答末尾写一次 <tool name=\"create_demo\">用几句话说明这个页面要表现什么、有哪些控件、用到哪些具体数值</tool>。每次回答最多一个 create_demo。create_demo 里只写做法说明，不要写 HTML。这段说明不会出现在主对话里，会交给一个隐藏的子任务单独生成页面。只有用户明确说不要演示时，才不调用 create_demo。如果用户只是要求编写 HTML 源码，用普通代码围栏给出源码，围栏语言不要写成 html；只要用户没有明确说不要演示，仍然调用 create_demo。"
+            return "用 Markdown 写回答。需要动作时调用工具，工具标记不会显示在对话里。\(search)\(lookup)讲解知识时，如果交互或可视化能明显帮助理解，就主动提供演示：公式和参数、过程和步骤、算法、对比、数据和趋势、时间线、结构和关系都适合做成演示。寒暄、关于学生自己的对话记录或课程安排的问题、简单的事实或是非问题、很短的回答，都不要调用 create_demo。在回答末尾写一次 <tool name=\"create_demo\">用几句话说明这个页面要表现什么、有哪些控件、用到哪些具体数值</tool>。每次回答最多一个 create_demo。create_demo 里只写做法说明，不要写 HTML。这段说明不会出现在主对话里，会交给一个隐藏的子任务单独生成页面。只有用户明确说不要演示时，才不调用 create_demo。如果用户只是要求编写 HTML 源码，用普通代码围栏给出源码，围栏语言不要写成 html；只要用户没有明确说不要演示，仍然调用 create_demo。"
         }
         let search: String
         switch webTool {
@@ -166,7 +166,7 @@ enum ChatContext {
         case .off:
             search = "Web search is unavailable. Do not call web_search."
         }
-        return "Write the answer in Markdown. When you need an action, call a tool. Tool markers are not shown in the conversation. \(search)\(lookup) Whenever the explanation can become an interaction or a visualization, proactively give the user the demonstration they need. Be very eager: if a demonstration would help at all, write one. Formulas and parameters, processes and steps, algorithms, comparisons, data and trends, timelines, and structures all make good demonstrations. At the end of the answer, write <tool name=\"create_demo\">a few sentences describing what the page shows, which controls it has, and which concrete values it uses</tool> once. Use at most one create_demo per answer. The create_demo text is only that description, not HTML. It stays out of the main conversation and is given to a hidden subtask that builds the page. Skip create_demo only when the user explicitly says they do not want a demonstration. If the user only asks for HTML source, give it in an ordinary code fence, do not label that fence html, and still call create_demo unless they explicitly said not to show a demonstration."
+        return "Write the answer in Markdown. When you need an action, call a tool. Tool markers are not shown in the conversation. \(search)\(lookup) When you explain knowledge and an interaction or a visualization would clearly help understanding, proactively give the user that demonstration. Formulas and parameters, processes and steps, algorithms, comparisons, data and trends, timelines, and structures all make good demonstrations. Do not call create_demo for small talk, questions about the student's own chats, classes or schedule, simple factual or yes/no questions, or very short answers. At the end of the answer, write <tool name=\"create_demo\">a few sentences describing what the page shows, which controls it has, and which concrete values it uses</tool> once. Use at most one create_demo per answer. The create_demo text is only that description, not HTML. It stays out of the main conversation and is given to a hidden subtask that builds the page. Skip create_demo only when the user explicitly says they do not want a demonstration. If the user only asks for HTML source, give it in an ordinary code fence, do not label that fence html, and still call create_demo unless they explicitly said not to show a demonstration."
     }
 
     /// Meeting answers still write a display page in the same reply. Chat uses tools instead.
@@ -239,7 +239,20 @@ enum ChatContext {
     /// Whether the app should build a demo even though the model did not ask for one.
     static func wantsFallbackVisual(question: String, answer: String) -> Bool {
         guard answer.trimmingCharacters(in: .whitespacesAndNewlines).count >= 300 else { return false }
-        return !declinesDemo(question)
+        return !skipsDemo(question)
+    }
+
+    /// No demo for small talk, for questions about the student's own chats and classes, or when they asked for none,
+    /// even if the model wrote a create_demo call.
+    static func skipsDemo(_ question: String, usedLibrary: Bool = false) -> Bool {
+        if usedLibrary || declinesDemo(question) || LibraryRequest.referencesPast(question) { return true }
+        let folded = question.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        let smallTalk = ["你好", "您好", "嗨", "谢谢", "多谢", "你是谁", "你能干什么", "你会什么", "早上好", "晚上好", "再见",
+                         "hi", "hello", "hey", "thanks", "thank you", "who are you", "what can you do", "good morning", "bye"]
+        // English phrases must end at a word boundary, so "hi" does not match "history".
+        return folded.count <= 20 && smallTalk.contains { phrase in
+            folded == phrase || folded.hasPrefix(phrase + " ") || folded.hasPrefix(phrase + ",") || (!phrase.allSatisfy(\.isASCII) && folded.hasPrefix(phrase))
+        }
     }
 
     static func declinesDemo(_ question: String) -> Bool {

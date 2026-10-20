@@ -432,8 +432,9 @@ extension AppModel {
                 if let webNotice { self.chatError = webNotice }
                 // One demo per answer: the last brief has seen the search results. Without a brief, API models still get a demo when the answer is substantial.
                 // Local models skip that fallback because a demo there blocks the next question until it finishes.
-                let brief = briefs.last { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                let fallback = brief == nil && mode == .api && ChatContext.wantsFallbackVisual(question: question, answer: answer)
+                let skipsDemo = ChatContext.skipsDemo(question, usedLibrary: library != .available && library != .off)
+                let brief = skipsDemo ? nil : briefs.last { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                let fallback = !skipsDemo && brief == nil && mode == .api && ChatContext.wantsFallbackVisual(question: question, answer: answer)
                 if let turnID, brief != nil || fallback {
                     self.startVisual(
                         chatID: id,

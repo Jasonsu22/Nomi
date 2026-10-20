@@ -134,6 +134,11 @@ enum LibraryDates {
         return String(format: "%04d-%02d-%02d %02d:%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0, parts.hour ?? 0, parts.minute ?? 0)
     }
 
+    static func shortDay(_ date: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.month, .day], from: date)
+        return String(format: "%02d-%02d", parts.month ?? 0, parts.day ?? 0)
+    }
+
     static func dayStamp(_ date: Date, calendar: Calendar = .current) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
@@ -304,9 +309,10 @@ extension LibrarySearch {
         turns.compactMap { turn in
             let answer = turn.answer.trimmingCharacters(in: .whitespacesAndNewlines)
             guard turn.error == nil, !turn.question.isEmpty || !answer.isEmpty else { return nil }
+            // A chat's own title is usually its first question, which says little; the date tells turns apart.
             return LibraryDocument(
                 kind: .chat,
-                title: title,
+                title: trf("%@ 的对话", LibraryDates.shortDay(turn.createdAt)),
                 date: turn.createdAt,
                 detail: LibraryDates.stamp(turn.createdAt),
                 body: "Earlier conversation.\nStudent: \(turn.question.prefix(600))\nNomi: \(answer.prefix(1_000))",
