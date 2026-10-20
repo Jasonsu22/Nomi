@@ -899,6 +899,7 @@ name = "llm-worker"
 version = "1.2.0"
 dependencies = [
  "anyhow",
+ "libc",
  "minijinja",
  "minijinja-contrib",
  "mlx-lm-utils",
