@@ -292,6 +292,42 @@ struct AnswerDocumentTests {
         #expect(!plain.runs.contains { $0.link != nil })
     }
 
+    @Test func preParsedHtmlUsesTheSameExport() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = """
+        保存为 `double-slit.html` 后打开。
+        ```html
+        <button>发射</button>
+        ```
+        """
+        let fromSource = ChatFiles.export(source, directory: directory)
+        let fromPieces = ChatFiles.export(AnswerDocument.pieces(in: source), directory: directory)
+        #expect(fromPieces == fromSource)
+    }
+
+    @MainActor @Test func aFinishedAnswerIsParsedOnceUntilItsCitationsChange() {
+        AnswerPreparedCache.removeAll()
+        defer { AnswerPreparedCache.removeAll() }
+        let source = "# 标题\n干涉条纹 [1]。\n\n- 第一\n- 第二"
+        let first = [ChatCitation(title: "第一讲", passage: 1)]
+        var made = 0
+        func prepared(_ citations: [ChatCitation]) -> AnswerPrepared {
+            AnswerPreparedCache.prepared(source, citations: citations) {
+                made += 1
+                return AnswerBody.prepare(source, streaming: false, citations: citations)
+            }
+        }
+        let cached = prepared(first)
+        #expect(prepared(first) == cached)
+        #expect(made == 1)
+        #expect(cached == AnswerBody.prepare(source, streaming: false, citations: first))
+        let renamed = [ChatCitation(id: first[0].id, title: "第二讲", passage: 1)]
+        #expect(prepared(renamed).citations[1]?.title == "第二讲")
+        #expect(made == 2)
+        #expect(AnswerPreparedCache.count == 1)
+    }
+
     @Test func aVisualMarkerWaitsForASecondReply() {
         let streaming = ChatContext.splitVisual("光会干涉。\n[[vis", streaming: true)
         #expect(streaming.text == "光会干涉。")

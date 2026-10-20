@@ -10,6 +10,15 @@ struct AskHistoryPopover: View {
     @State private var query = ""
 
     var body: some View {
+        let sessions = filtered(in: pool)
+        let grouped = groups(for: sessions)
+        let context = HistoryContext(
+            meetings: model.meetings,
+            scopeMeetings: model.chatMeetingItems(),
+            sources: model.chatSourceItems(),
+            categories: model.chatCategoryNames()
+        )
+        let isEmpty = sessions.isEmpty
         VStack(alignment: .leading, spacing: 0) {
             TextField(tr("搜索对话"), text: $query)
                 .textFieldStyle(.plain)
@@ -18,7 +27,7 @@ struct AskHistoryPopover: View {
                 .padding(.vertical, 8)
                 .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
                 .padding(Space.s3)
-            if filtered.isEmpty {
+            if isEmpty {
                 Text(tr("还没有对话"))
                     .font(AppFont.secondary)
                     .foregroundStyle(AppColor.textSecondary)
@@ -26,7 +35,7 @@ struct AskHistoryPopover: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Space.s3) {
-                        ForEach(groups, id: \.title) { group in
+                        ForEach(grouped, id: \.title) { group in
                             Text(group.title)
                                 .font(AppFont.caption)
                                 .foregroundStyle(AppColor.textSecondary)
@@ -34,7 +43,7 @@ struct AskHistoryPopover: View {
                             ForEach(group.sessions) { session in
                                 AskHistoryRow(
                                     title: session.displayTitle,
-                                    subtitle: subtitle(session),
+                                    subtitle: subtitle(session, context: context),
                                     time: formatRelativeTime(session.updatedAt),
                                     current: session.id == (currentID ?? model.currentChatID),
                                     onOpen: {
@@ -52,7 +61,7 @@ struct AskHistoryPopover: View {
                 }
             }
         }
-        .frame(width: anchorMeetingID == nil ? 360 : 300, height: filtered.isEmpty ? 220 : (anchorMeetingID == nil ? 420 : 320))
+        .frame(width: anchorMeetingID == nil ? 360 : 300, height: isEmpty ? 220 : (anchorMeetingID == nil ? 420 : 320))
         .background(AppColor.surface)
         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(AppColor.separator))
@@ -63,7 +72,7 @@ struct AskHistoryPopover: View {
         model.chatHistory(anchoredTo: anchorMeetingID)
     }
 
-    private var filtered: [ChatSession] {
+    private func filtered(in pool: [ChatSession]) -> [ChatSession] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return pool }
         return pool.filter { session in
@@ -72,7 +81,7 @@ struct AskHistoryPopover: View {
         }
     }
 
-    private var groups: [(title: String, sessions: [ChatSession])] {
+    private func groups(for sessions: [ChatSession]) -> [(title: String, sessions: [ChatSession])] {
         let calendar = Calendar.current
         let buckets: [(String, (Date) -> Bool)] = [
             (tr("今天"), calendar.isDateInToday),
@@ -80,22 +89,28 @@ struct AskHistoryPopover: View {
             (tr("更早"), { !calendar.isDateInToday($0) && !calendar.isDateInYesterday($0) }),
         ]
         return buckets.compactMap { title, match in
-            let sessions = filtered.filter { match($0.updatedAt) }
-            return sessions.isEmpty ? nil : (title, sessions)
+            let matching = sessions.filter { match($0.updatedAt) }
+            return matching.isEmpty ? nil : (title, matching)
         }
     }
 
-    private func subtitle(_ session: ChatSession) -> String {
-        if let id = session.anchorMeetingID, let meeting = model.meetings.first(where: { $0.id == id }) {
+    private func subtitle(_ session: ChatSession, context: HistoryContext) -> String {
+        if let id = session.anchorMeetingID, let meeting = context.meetings.first(where: { $0.id == id }) {
             return meeting.title
         }
         return session.scope.chipTitle(
-            meetings: model.chatMeetingItems(),
-            sources: model.chatSourceItems(),
-            categories: model.chatCategoryNames()
+            meetings: context.scopeMeetings,
+            sources: context.sources,
+            categories: context.categories
         )
     }
 
+    private struct HistoryContext {
+        var meetings: [Meeting]
+        var scopeMeetings: [ScopeItem]
+        var sources: [ScopeItem]
+        var categories: [ScopeCategoryName]
+    }
 }
 
 private struct AskHistoryRow: View {

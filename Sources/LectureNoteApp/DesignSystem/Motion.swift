@@ -52,6 +52,46 @@ extension AnyTransition {
     }
 }
 
+extension View {
+    /// Shows or hides a page that stays built, with the same motion as `pageEnter`.
+    func keptPage(active: Bool, reduceMotion: Bool) -> some View {
+        modifier(KeptPage(active: active, reduceMotion: reduceMotion))
+    }
+}
+
+private struct KeptPage: ViewModifier {
+    var active: Bool
+    var reduceMotion: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.pageActive, active)
+            .offset(y: active || reduceMotion ? 0 : 8)
+            .opacity(active ? 1 : 0)
+            .animation(animation, value: active)
+            .allowsHitTesting(active)
+            .accessibilityHidden(!active)
+            .zIndex(active ? 1 : 0)
+    }
+
+    private var animation: Animation {
+        if reduceMotion { return Motion.fade(true) }
+        return active ? Motion.page(false) : .easeOut(duration: 0.1)
+    }
+}
+
+private struct PageActiveKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    /// False while a page that stays built is hidden behind another page.
+    var pageActive: Bool {
+        get { self[PageActiveKey.self] }
+        set { self[PageActiveKey.self] = newValue }
+    }
+}
+
 private struct AppReduceMotionKey: EnvironmentKey {
     static let defaultValue = false
 }

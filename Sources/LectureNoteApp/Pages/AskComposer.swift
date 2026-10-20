@@ -61,11 +61,14 @@ struct AskComposerField: NSViewRepresentable {
         textView.onPasteImages = { context.coordinator.parent.onPasteImages($0) }
         textView.onRemoveLastImage = { context.coordinator.parent.onRemoveLastImage() }
         textView.onDropImages = { context.coordinator.parent.onPasteImages($0) }
-        textView.placeholder = placeholder
+        if textView.placeholder != placeholder {
+            textView.placeholder = placeholder
+            textView.needsDisplay = true
+        }
         if textView.string != text {
             textView.string = text
+            textView.needsDisplay = true
         }
-        textView.needsDisplay = true
         if focused, scroll.window?.firstResponder !== textView {
             scroll.window?.makeFirstResponder(textView)
         }

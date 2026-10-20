@@ -108,7 +108,7 @@ extension AppModel {
         }
         let anchor = chats.first { $0.id == id }?.anchorMeetingID
         chats.removeAll { $0.id == id }
-        if chatsReady { ChatStore.delete(id) }
+        if chatsReady { ChatStore.deleteInBackground(id) }
         if let anchor, meetingChatID[anchor] == id {
             meetingChatID[anchor] = chats.first { $0.anchorMeetingID == anchor }?.id
         }
@@ -521,8 +521,11 @@ extension AppModel {
         body(&chats[index])
         chats[index].updatedAt = .now
         guard chatsReady, !chats[index].turns.isEmpty else { return }
-        do { try ChatStore.save(chats[index]) }
-        catch { chatError = tr("无法保存对话。") }
+        let snapshot = chats[index]
+        let message = tr("无法保存对话。")
+        ChatStore.saveInBackground(snapshot) { [weak self] in
+            Task { @MainActor in self?.chatError = message }
+        }
     }
 
     @discardableResult
