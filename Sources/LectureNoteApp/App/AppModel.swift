@@ -150,6 +150,11 @@ final class AppModel {
             do {
                 sources = try SourceStore.load()
                 sourcesPersistence = true
+                // Reads file text ahead of time, so the first library search does not wait on every PDF.
+                let files = sources
+                Task.detached(priority: .background) {
+                    for file in files { _ = await SourceTextCache.shared.blocks(for: file) }
+                }
             } catch {
                 sourceError = tr("无法读取资料库，原文件已保留。")
             }

@@ -3,7 +3,11 @@ import Foundation
 /// Tools the main answer can call. The call itself is removed before the text is shown.
 enum ChatTools {
     static let webSearch = "web_search"
+    static let searchLibrary = "search_library"
     static let createDemo = "create_demo"
+
+    /// Tools whose results the model needs before it can go on, so the reply pauses at the call.
+    static let lookups: Set<String> = [webSearch, searchLibrary]
 
     struct Call: Equatable {
         var name: String
@@ -15,8 +19,8 @@ enum ChatTools {
         var calls: [Call]
     }
 
-    /// With `stopAtSearch`, text and other calls after the first web_search are dropped, because the model has not seen the results yet.
-    /// Further web_search calls are still collected.
+    /// With `stopAtSearch`, text and other calls after the first lookup (web_search or search_library) are dropped,
+    /// because the model has not seen the results yet. Further lookup calls are still collected.
     static func parse(_ raw: String, streaming: Bool, stopAtSearch: Bool = false) -> Parsed {
         var visible = ""
         var calls: [Call] = []
@@ -40,11 +44,11 @@ enum ChatTools {
                 break
             }
             let body = String(raw[bodyStart..<close.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !name.isEmpty, !body.isEmpty, !searching || name == webSearch {
+            if !name.isEmpty, !body.isEmpty, !searching || lookups.contains(name) {
                 calls.append(Call(name: name, body: body))
             }
             index = close.upperBound
-            if stopAtSearch, name == webSearch, !body.isEmpty { searching = true }
+            if stopAtSearch, lookups.contains(name), !body.isEmpty { searching = true }
         }
         if streaming { visible = droppingOpenTag(visible) }
         return Parsed(visible: visible, calls: calls)

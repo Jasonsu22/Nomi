@@ -192,6 +192,8 @@ struct ChatCitation: Codable, Equatable, Identifiable, Sendable {
     var url: String?
     /// Passage number written as [1] in the answer. Empty for a bare link.
     var passage: Int?
+    /// An earlier chat this passage came from.
+    var chatID: UUID?
 
     var inlineLabel: String {
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -206,14 +208,15 @@ struct ChatCitation: Codable, Equatable, Identifiable, Sendable {
            let scheme = parsed.scheme?.lowercased(), scheme == "http" || scheme == "https" {
             return parsed
         }
-        if meetingID != nil || sourceID != nil {
+        if meetingID != nil || sourceID != nil || chatID != nil {
             return URL(string: "nomi-cite://\(id.uuidString)")
         }
         return nil
     }
 
     var symbolName: String {
-        Self.symbolName(title: title, detail: detail, url: url, meetingID: meetingID, sourceID: sourceID)
+        if chatID != nil { return "bubble.left.and.bubble.right" }
+        return Self.symbolName(title: title, detail: detail, url: url, meetingID: meetingID, sourceID: sourceID)
     }
 
     static func symbolName(title: String, detail: String, url: String?, meetingID: UUID? = nil, sourceID: UUID? = nil) -> String {
