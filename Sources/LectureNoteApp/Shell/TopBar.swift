@@ -47,6 +47,7 @@ struct TopBar: View {
                     withAnimation(Motion.layout(reduceMotion)) { model.openLiveMeeting() }
                 }
             )
+            .tutorialTarget(.record)
         }
         .padding(.trailing, Space.s4)
         .frame(maxHeight: .infinity)

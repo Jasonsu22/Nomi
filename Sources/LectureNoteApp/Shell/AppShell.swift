@@ -84,6 +84,11 @@ struct AppShell: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlayPreferenceValue(TutorialAnchors.self) { anchors in
+            if let stop = model.tutorialStep {
+                TutorialOverlay(model: model, stop: stop, anchors: anchors, reduceMotion: reduce)
+            }
+        }
     }
 
     /// The primary pages stay built after their first visit, so returning to one
@@ -122,7 +127,7 @@ struct AppShell: View {
         case .sources:
             SourcesView(model: model)
         case .help:
-            HelpView()
+            HelpView(model: model)
         case .settings:
             SettingsView(model: model)
         }
