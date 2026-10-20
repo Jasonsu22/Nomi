@@ -173,7 +173,8 @@ final class AppModel {
         }
     }
 
-    var canStart: Bool { engine.canStart && localModels.deletingID == nil && !assistantIsBusy }
+    /// A chat that is still answering does not hold up a recording.
+    var canStart: Bool { engine.canStart && localModels.deletingID == nil }
 
     var canSwitchModels: Bool {
         engine.session.phase == .idle && localModels.switchingID == nil
@@ -413,6 +414,12 @@ final class AppModel {
     func openMeeting(_ id: UUID) {
         openMeetingID = id
         page = .meetings
+    }
+
+    /// Shows the meeting being recorded, from whichever page is open.
+    func openLiveMeeting() {
+        guard let liveMeetingID, meetings.contains(where: { $0.id == liveMeetingID }) else { return }
+        openMeeting(liveMeetingID)
     }
 
     func closeMeeting() {

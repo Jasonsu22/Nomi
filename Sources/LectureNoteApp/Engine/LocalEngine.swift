@@ -26,7 +26,7 @@ final class LocalEngine: TranscriptionEngine {
     private static let logger = Logger(subsystem: "local.nomi.preview", category: "Engine")
 
     var canStart: Bool {
-        process?.isRunning == true && session.phase == .idle && !isChangingModel && !isGenerating && (readiness == .ready || readiness == .sourceOnly)
+        process?.isRunning == true && session.phase == .idle && !isChangingModel && (readiness == .ready || readiness == .sourceOnly)
     }
 
     @ObservationIgnored private var process: Process?
@@ -283,7 +283,7 @@ final class LocalEngine: TranscriptionEngine {
     }
 
     func generate(system: String, prompt: String, maxTokens: Int = 2048, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
-        guard session.phase == .idle, !isGenerating, !isChangingModel else { throw llmError(tr("请等待录制或本地模型操作结束。")) }
+        guard !isGenerating, !isChangingModel else { throw llmError(tr("请等待录制或本地模型操作结束。")) }
         guard let port, let token else { throw llmError(tr("引擎还没准备好")) }
         isGenerating = true
         defer { isGenerating = false }
