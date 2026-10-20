@@ -27,14 +27,17 @@ The interface is SwiftUI and the engine is Rust. The product name is Nomi. The S
 
 | | |
 | --- | --- |
-| 🎙️ **Live transcription** | Listens to the microphone and writes as you speak. The translation follows each passage. A meeting can be paused and resumed. |
+| 🎙️ **Live transcription** | Listens to the microphone and writes as you speak. The translation follows each passage. A meeting can be paused and resumed. Works with AirPods and other Bluetooth microphones, and chat keeps working while you record. |
 | 🗂️ **Categories** | Meetings and sources share one set of categories. |
 | 📎 **Sources** | Import PDFs and documents. Files added on a meeting’s Sources tab stay linked to that meeting and are filed under its category. |
-| 💬 **Ask** | Choose meetings, sources, or categories as context. With nothing selected, only the question is sent. Ask inside a meeting reads that meeting and its linked files. |
-| 📝 **Summary** | Summarizes a meeting from its transcript. |
+| 💬 **Ask** | Choose meetings, sources, or categories as context. Ask inside a meeting reads that meeting and its linked files. When a question needs more, such as "what did the teacher say last week", Nomi searches all your lectures, earlier chats and files, and every passage it uses is cited; a cited chat opens that chat. With Web on, each question is searched on the web too. Explanations can come with an interactive demo. |
+| ❓ **Q&A** | A meeting's Q&A tab lists the real questions the teacher asked (not "right?" or "can you hear me?"), found while recording and again when it ends, and answers them one at a time from the lecture, its files and the web. Turn off Auto-answer to answer each one yourself. Each question links to its moment in the transcript. |
+| 📝 **Summary** | Summarizes a meeting from its transcript, and keeps the summary with the meeting. Long chats keep a running summary, so follow-ups still know what was said earlier. |
+| 🧩 **Memory** | Learns your preferences, courses and goals from your chats and uses them in later answers. Review, edit, pin, turn off or clear it in Settings › Memory. |
 | 🧠 **Local models** | Download, switch, and delete models for speech recognition, translation, and questions. |
 | 🔌 **API** | Save several model IDs, or fetch the list from the service. Keys stay in the macOS Keychain. |
 | 🪄 **Skills** | One system prompt, a default reply language, and skills you can turn on or off. |
+| ❔ **Help** | App information, a quick tutorial of the main buttons, and a contact email. |
 
 ## 🚀 Getting started
 
@@ -54,6 +57,14 @@ bash scripts/refresh-app.sh
 ```
 
 That script requires `build/Nomi.app` to exist already.
+
+Without a paid Apple Developer certificate, macOS asks for the Keychain password again after every rebuild. Debug builds, and release builds made with `NOMI_DEV_KEYS=1`, copy each API key into a private file after the first approval, so rebuilding stops asking:
+
+```sh
+NOMI_DEV_KEYS=1 bash scripts/build-app.sh release
+```
+
+The script prints a warning when this mode is on. Builds you give to other people should be plain release builds, which keep keys in the Keychain only.
 
 ## 🧩 Modules
 
@@ -81,12 +92,14 @@ The live transcription path began in Moxin-Voice. Thank you. See [Acknowledgemen
 
 | What | Where |
 | --- | --- |
-| Meetings and categories | `~/Library/Application Support/Nomi/meetings.json` |
+| Meetings, categories and meeting summaries | `~/Library/Application Support/Nomi/meetings.json` |
 | Source index and file copies | `~/Library/Application Support/Nomi/sources.json` and `sources/` |
 | Links between meetings and sources | `~/Library/Application Support/Nomi/meeting-links.json` |
 | Ask history | `~/Library/Application Support/Nomi/chats/` |
+| Meeting Q&A | `~/Library/Application Support/Nomi/qa/` |
+| Memory | `~/Library/Application Support/Nomi/memory.json` |
 | Local models | `~/.OminiX/models` |
-| API keys | macOS Keychain |
+| API keys | macOS Keychain; development builds also keep a copy in `~/Library/Application Support/Nomi/secrets.json` (readable only by you) |
 | Engine log | `~/Library/Logs/Nomi/engine.log` |
 
 Interface language, appearance, microphone permission, the selected local model, and API profiles are stored in the app’s UserDefaults.

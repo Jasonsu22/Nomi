@@ -7,6 +7,8 @@ struct TranscriptCard: View {
     var reduceMotion: Bool
     var canCompare: Bool
     var embedded = false
+    /// A moment to scroll to, sent from the Q&A tab.
+    var jump: TranscriptJump? = nil
     var onCopy: (Meeting) -> Void
 
     @AppStorage("lecturenote.transcriptFontSize") private var fontSize = 15.0
@@ -154,6 +156,10 @@ struct TranscriptCard: View {
                     followsLatest = atBottom
                 }
             }
+            .onChange(of: jump?.token, initial: true) { _, _ in
+                guard let jump, jump.isFresh else { return }
+                show(jump.time, in: paragraphs, proxy: proxy)
+            }
             .onChange(of: bottomToken(paragraphs)) { _, _ in
                 guard meeting.isLive, followsLatest else { return }
                 stick(proxy)
@@ -185,6 +191,15 @@ struct TranscriptCard: View {
         let last = paragraphs.last
         let spoken = last?.renderedSource(language: meeting.sourceLanguage).count ?? 0
         return "\(paragraphs.count)-\(last?.commits.count ?? 0)-\(spoken)-\(last?.tail.count ?? 0)"
+    }
+
+    /// Scrolls to the paragraph that was being spoken at `time`, and stops following the live end.
+    private func show(_ time: TimeInterval, in paragraphs: [Paragraph], proxy: ScrollViewProxy) {
+        guard let target = paragraphs.last(where: { $0.openedAt <= time + 0.5 }) ?? paragraphs.first else { return }
+        followsLatest = false
+        withAnimation(Motion.layout(reduceMotion)) {
+            proxy.scrollTo(target.id, anchor: .top)
+        }
     }
 
     private func stick(_ proxy: ScrollViewProxy) {

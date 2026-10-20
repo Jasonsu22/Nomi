@@ -106,7 +106,7 @@ struct ChatScopeTests {
     }
 
     @Test func aQuestionWithoutPassagesDoesNotAttachThem() {
-        let prompt = ChatContext.userPrompt(question: "什么是注意力？", history: [], blocks: [])
+        let prompt = ChatContext.userPrompt(question: "什么是注意力？", history: .empty, blocks: [])
         #expect(prompt == "Question: 什么是注意力？")
         #expect(!prompt.contains("passages"))
         let system = ChatContext.systemPrompt(language: "Simplified Chinese", allowsWeb: false, hasPassages: false)

@@ -5,14 +5,15 @@ import UniformTypeIdentifiers
 enum DetailTab: String, CaseIterable, Identifiable {
     case transcript = "转写"
     case ask = "提问"
+    case qa = "问答"
     case summary = "摘要"
     case sources = "资料"
     case info = "信息"
 
     var id: String { rawValue }
 
-    static let sideTabs: [DetailTab] = [.ask, .summary, .sources, .info]
-    static let compactTabs: [DetailTab] = [.transcript, .ask, .summary, .sources, .info]
+    static let sideTabs: [DetailTab] = [.ask, .qa, .summary, .sources, .info]
+    static let compactTabs: [DetailTab] = [.transcript, .ask, .qa, .summary, .sources, .info]
 }
 
 struct DetailSidePanel: View {
@@ -81,12 +82,17 @@ struct DetailSidePanel: View {
                         reduceMotion: reduceMotion,
                         canCompare: false,
                         embedded: true,
+                        jump: model.transcriptJump?.meetingID == meeting.id ? model.transcriptJump : nil,
                         onCopy: { model.copyTranscript($0) }
                     )
                 case .info:
                     info
                 case .ask:
                     AskView(model: model, anchorMeetingID: meeting.id)
+                case .qa:
+                    MeetingQAPanel(model: model, meeting: meeting) {
+                        withAnimation(Motion.page(reduceMotion)) { tab = .ask }
+                    }
                 case .summary:
                     MeetingAssistantPanel(model: model, meeting: meeting, summary: true)
                 case .sources:
@@ -95,6 +101,11 @@ struct DetailSidePanel: View {
             }
             .id(tab)
             .transition(.pageEnter(reduceMotion: reduceMotion))
+            // In the compact window the transcript is a tab, so a jump from Q&A shows it first.
+            .onChange(of: model.transcriptJump?.token) { _, _ in
+                guard model.transcriptJump?.meetingID == meeting.id, tabs.contains(.transcript) else { return }
+                withAnimation(Motion.page(reduceMotion)) { tab = .transcript }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))

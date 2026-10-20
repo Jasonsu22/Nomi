@@ -9,12 +9,20 @@ struct ContextBlock: Equatable, Sendable {
     var url: String?
     /// Set on a passage from an earlier chat, so its citation opens that chat.
     var chatID: UUID? = nil
+    /// Always kept by `pack`, ahead of ranked passages, such as a long meeting's saved summary.
+    var pinned = false
 }
 
 enum ChatContext {
-    static let budget = 16_000
+    static let budget = ContextBudget.local.scope
 
     static func pack(_ blocks: [ContextBlock], question: String, budget: Int = ChatContext.budget) -> [ContextBlock] {
+        let pinned = blocks.filter { $0.pinned && !$0.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard pinned.isEmpty else {
+            let room = budget - pinned.reduce(0) { $0 + $1.body.count }
+            return pinned + pack(blocks.filter { !$0.pinned }, question: question, budget: max(0, room))
+        }
+        guard budget > 0 else { return [] }
         let usable = blocks.compactMap { block -> ContextBlock? in
             let body = block.body.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !body.isEmpty else { return nil }
@@ -25,35 +33,48 @@ enum ChatContext {
         guard !usable.isEmpty else { return [] }
         if usable.reduce(0, { $0 + $1.body.count }) <= budget { return usable }
 
-        let query = Set(tokens(in: question))
+        // BM25 over character pairs: single shared characters such as 的 or 是 match almost
+        // everything in Chinese and used to decide which part of a long lecture survived.
+        let scores = LibrarySearch.relevance(of: usable.map { $0.title + "\n" + $0.body }, to: question)
         let ranked: [Int]
-        let scores = usable.enumerated().map { index, block in
-            (Set(tokens(in: block.title + "\n" + block.body)).intersection(query).count, index)
-        }
-        if scores.allSatisfy({ $0.0 == 0 }) {
-            ranked = usable.indices.map { $0 }
+        if scores.allSatisfy({ $0 == 0 }) {
+            ranked = Array(usable.indices)
         } else {
-            ranked = scores.sorted { lhs, rhs in
-                if lhs.0 != rhs.0 { return lhs.0 > rhs.0 }
-                return lhs.1 < rhs.1
-            }.map(\.1)
+            ranked = usable.indices.sorted { scores[$0] != scores[$1] ? scores[$0] > scores[$1] : $0 < $1 }
         }
 
-        var chosen: [(Int, String)] = []
+        var chosen: [Int: String] = [:]
         var used = 0
-        for index in ranked {
+        var clipped = false
+        /// Adds a whole block when it fits and returns whether it did. Only the first block may be
+        /// clipped, so a single huge passage still sends something; nothing is added after that.
+        func take(_ index: Int, clipping: Bool) -> Bool {
+            guard usable.indices.contains(index), chosen[index] == nil else { return false }
             let room = budget - used
-            if room <= 0 { break }
             let body = usable[index].body
-            if !chosen.isEmpty && body.count > room { continue }
-            let clipped = body.count <= room ? body : String(body.prefix(room))
-            chosen.append((index, clipped))
-            used += clipped.count
-            if clipped.count < body.count { break }
+            guard room > 0, body.count <= room || (clipping && chosen.isEmpty) else { return false }
+            let kept = body.count <= room ? body : String(body.prefix(room))
+            chosen[index] = kept
+            used += kept.count
+            clipped = kept.count < body.count
+            return true
         }
-        return chosen.sorted { $0.0 < $1.0 }.map { index, body in
+        /// A paragraph's neighbours from the same meeting or file, because a point often runs across them.
+        func sameItem(_ lhs: Int, _ rhs: Int) -> Bool {
+            usable.indices.contains(rhs) && usable[lhs].meetingID == usable[rhs].meetingID
+                && usable[lhs].sourceID == usable[rhs].sourceID && usable[lhs].title == usable[rhs].title
+        }
+        for index in ranked {
+            if used >= budget || clipped { break }
+            guard take(index, clipping: true), !clipped else { continue }
+            if scores[index] > 0 {
+                if sameItem(index, index - 1) { _ = take(index - 1, clipping: false) }
+                if sameItem(index, index + 1) { _ = take(index + 1, clipping: false) }
+            }
+        }
+        return chosen.keys.sorted().map { index in
             var block = usable[index]
-            block.body = body
+            block.body = chosen[index] ?? block.body
             return block
         }
     }
@@ -261,14 +282,40 @@ enum ChatContext {
         return phrases.contains { folded.contains($0) }
     }
 
-    /// The query the app searches when Web is on. A short follow-up borrows the previous question so it still makes sense alone.
+    /// The query the app searches when Web is on. A follow-up such as "那它和经典计算机比呢？"
+    /// borrows the most recent standalone question, so the search engine sees the topic.
     static func searchQuery(question: String, history: [ChatTurn]) -> String? {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return nil }
-        guard question.count < 12, let last = history.last?.question.trimmingCharacters(in: .whitespacesAndNewlines), !last.isEmpty else {
+        guard isFollowUp(question), let topic = topicQuestion(in: history) else {
             return String(question.prefix(300))
         }
-        return String("\(last.prefix(150)) \(question)".prefix(300))
+        return String("\(topic.prefix(80)) \(question)".prefix(300))
+    }
+
+    private static let followUpWords = ["它", "它们", "他们", "她们", "这个", "那个", "这些", "那些", "这种", "那种", "这一点", "继续", "再讲", "再说", "再来", "还有呢", "然后呢"]
+    private static let followUpEnglish = try! NSRegularExpression(
+        pattern: #"\b(it|its|this|that|these|those|they|them|more|also|else|continue|and then)\b"#,
+        options: [.caseInsensitive]
+    )
+
+    /// Refers back to something said before, or too short to stand on its own.
+    static func isFollowUp(_ question: String) -> Bool {
+        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.count < 6 { return true }
+        if followUpWords.contains(where: text.contains) { return true }
+        let ending = text.trimmingCharacters(in: CharacterSet(charactersIn: "？?！!。. "))
+        if ending.hasSuffix("呢") || ending.hasPrefix("那") { return true }
+        let range = NSRange(text.startIndex..., in: text)
+        return followUpEnglish.firstMatch(in: text, range: range) != nil
+    }
+
+    /// The latest earlier question that stands on its own, looking back up to three answered turns.
+    private static func topicQuestion(in history: [ChatTurn]) -> String? {
+        let questions = ChatHistory.answeredTurns(history).suffix(3).reversed()
+            .map { $0.question.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return questions.first { !isFollowUp($0) } ?? questions.first
     }
 
     /// Whether the answer view will show this fence as a live page rather than as source.
@@ -371,20 +418,22 @@ enum ChatContext {
         return base + "\n\nEnabled skills. Follow a skill when it applies to the question. A skill does not change who you are and is not a description of you.\n" + block
     }
 
-    static func userPrompt(question: String, history: [ChatTurn], blocks: [ContextBlock], omittedImageTurns: Set<UUID> = [], mentionsOlderImages: Bool = false) -> String {
+    /// `mentionsLibrary` tells the model that turns older than the window can still be looked up.
+    /// Added before a message that interrupted the previous answer.
+    static let steerNote = "The student interrupted your previous answer to say the message below. Take it into account; continue or change course as it asks, without repeating what was already said."
+
+    static func userPrompt(question: String, history: HistoryWindow, blocks: [ContextBlock], mentionsOlderImages: Bool = false, mentionsLibrary: Bool = false, steered: Bool = false) -> String {
         var parts: [String] = []
         if mentionsOlderImages {
             parts.append("用户发过一张图片")
         }
-        let previous = history.suffix(4).map { turn in
-            var text = "Question: \(turn.question.prefix(400))\nAnswer: \(turn.answer.prefix(400))"
-            if omittedImageTurns.contains(turn.id) {
-                text += "\n用户发过一张图片"
-            }
-            return text
-        }.joined(separator: "\n")
-        if !previous.isEmpty {
-            parts.append("Previous conversation (reference only):\n\(previous)")
+        if history.omittedOlderTurns > 0 {
+            var note = "\(history.omittedOlderTurns) earlier turns of this chat are not shown."
+            if mentionsLibrary { note += " Use search_library to look them up if the question needs them." }
+            parts.append(note)
+        }
+        if !history.text.isEmpty {
+            parts.append(history.text)
         }
         if !blocks.isEmpty {
             let passages = blocks.enumerated().map { index, block in
@@ -399,6 +448,7 @@ enum ChatContext {
             }
             parts.append("\(intro)\n<passages>\n\(passages)\n</passages>")
         }
+        if steered { parts.append(steerNote) }
         parts.append(question.isEmpty ? "Question:" : "Question: \(question)")
         return parts.joined(separator: "\n\n")
     }
@@ -457,26 +507,4 @@ enum ChatContext {
         return Dictionary(uniqueKeysWithValues: zip(numbers, citations).map { ($0.0, $0.1) })
     }
 
-    static func tokens(in text: String) -> [String] {
-        var words: [String] = []
-        var latin = ""
-        for scalar in text.lowercased() {
-            if scalar.isLetter || scalar.isNumber {
-                if scalar.isASCII {
-                    latin.append(scalar)
-                } else {
-                    if latin.count >= 2 { words.append(latin) }
-                    latin = ""
-                    words.append(String(scalar))
-                }
-            } else if latin.count >= 2 {
-                words.append(latin)
-                latin = ""
-            } else {
-                latin = ""
-            }
-        }
-        if latin.count >= 2 { words.append(latin) }
-        return words
-    }
 }

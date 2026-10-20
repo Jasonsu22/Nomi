@@ -78,6 +78,23 @@ impl Drop for Release {
     }
 }
 
+/// Stops the chat reply in progress. The worker ends at its next token and returns what it wrote.
+async fn cancel_assistant(State(app): State<App>, headers: HeaderMap) -> axum::response::Response {
+    if !authorized(&headers, &app.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if let Some(pid) = app.busy.lock().expect("busy").assistant_pid {
+        cancel_reply(pid);
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+fn cancel_reply(pid: u32) {
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGUSR1);
+    }
+}
+
 /// Live transcription comes first. During a recording the chat worker runs in the
 /// background priority band, which lowers its CPU and disk priority.
 fn set_background(pid: u32, background: bool) {
@@ -231,6 +248,7 @@ async fn serve() -> Result<()> {
         .route("/v1/models/select", post(select_model))
         .route("/v1/models/unload-path", post(unload_path))
         .route("/v1/assistant/generate", post(generate_assistant))
+        .route("/v1/assistant/cancel", post(cancel_assistant))
         .with_state(app);
     axum::serve(listener, router).await?;
     Ok(())
@@ -330,9 +348,16 @@ async fn generate_assistant(State(app): State<App>, headers: HeaderMap, axum::Js
                 state.assistant_pid = Some(pid);
                 set_background(pid, state.recording);
             }
+            let mut stopped = false;
             let result = worker.generate(id, request.system, request.prompt, request.max_tokens, &mut |text| {
-                if !text.is_empty() {
-                    send(serde_json::json!({ "text": text }));
+                if text.is_empty() {
+                    return;
+                }
+                let line = format!("data: {}\n\n", serde_json::json!({ "text": text }));
+                // The app went away (Stop, or a newer question): end the reply instead of finishing it unseen.
+                if tx.send(line).is_err() && !stopped {
+                    stopped = true;
+                    cancel_reply(pid);
                 }
             });
             busy.lock().expect("busy").assistant_pid = None;

@@ -147,7 +147,7 @@ enum LibraryDates {
 
 /// Ranks the library for a request and returns passages that fit the answer's budget.
 enum LibrarySearch {
-    static let budget = 9_000
+    static let budget = ContextBudget.local.library
     static let limit = 14
 
     static func run(_ request: LibraryRequest, in documents: [LibraryDocument], now: Date = .now, budget: Int = budget, limit: Int = limit) -> [ContextBlock] {
@@ -189,6 +189,31 @@ enum LibrarySearch {
             scored.append((score, index))
         }
         return scored.sorted { $0.0 != $1.0 ? $0.0 > $1.0 : documents[$0.1].date > documents[$1.1].date }.map { documents[$0.1] }
+    }
+
+    /// BM25 relevance of each text to `query`, with no preference for recent material.
+    /// Zero for a text that shares no search term with the query.
+    static func relevance(of texts: [String], to query: String) -> [Double] {
+        let terms = Set(searchTerms(in: query))
+        guard !terms.isEmpty, !texts.isEmpty else { return texts.map { _ in 0 } }
+        let tokenized = texts.map { searchTerms(in: $0) }
+        let lengths = tokenized.map { Double(max($0.count, 1)) }
+        let average = lengths.reduce(0, +) / Double(lengths.count)
+        var frequency: [String: Int] = [:]
+        for tokens in tokenized {
+            for term in Set(tokens) where terms.contains(term) { frequency[term, default: 0] += 1 }
+        }
+        let count = Double(texts.count)
+        return tokenized.enumerated().map { index, tokens in
+            var counts: [String: Int] = [:]
+            for token in tokens where terms.contains(token) { counts[token, default: 0] += 1 }
+            return counts.reduce(0.0) { score, entry in
+                let df = Double(frequency[entry.key] ?? 0)
+                let idf = log(1 + (count - df + 0.5) / (df + 0.5))
+                let tf = Double(entry.value)
+                return score + idf * tf * 2.2 / (tf + 1.2 * (0.25 + 0.75 * lengths[index] / average))
+            }
+        }
     }
 
     /// Newest first. A meeting or file shows its opening; each chat turn stands on its own.
@@ -273,8 +298,20 @@ enum LibrarySearch {
 
 extension LibrarySearch {
     /// Splits lecture transcripts into passages of a few paragraphs, so a hit carries its surrounding sentences.
-    static func meetingDocuments(id: UUID, title: String, startedAt: Date, paragraphs: [(openedAt: TimeInterval, source: String, translation: String)]) -> [LibraryDocument] {
+    static func meetingDocuments(id: UUID, title: String, startedAt: Date, paragraphs: [(openedAt: TimeInterval, source: String, translation: String)], summary: String? = nil) -> [LibraryDocument] {
         var documents: [LibraryDocument] = []
+        // A saved summary is searchable too, so "what did that lecture cover" finds the overview first.
+        if let summary = summary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
+            documents.append(LibraryDocument(
+                kind: .meeting,
+                title: title,
+                date: startedAt,
+                detail: LibraryDates.dayStamp(startedAt) + " · " + tr("会议摘要"),
+                body: summary,
+                group: id,
+                meetingID: id
+            ))
+        }
         var text = ""
         var opened: TimeInterval?
         func flush() {
@@ -305,8 +342,20 @@ extension LibrarySearch {
         return documents
     }
 
-    static func chatDocuments(id: UUID, title: String, turns: [ChatTurn]) -> [LibraryDocument] {
-        turns.compactMap { turn in
+    static func chatDocuments(id: UUID, title: String, turns: [ChatTurn], summary: ChatSummary? = nil) -> [LibraryDocument] {
+        // A long chat's summary is searchable too, so "what did we cover in that chat" can find it.
+        let digest = summary.map { summary in
+            LibraryDocument(
+                kind: .chat,
+                title: trf("%@ 的对话", LibraryDates.shortDay(summary.throughDate)),
+                date: summary.throughDate,
+                detail: tr("对话摘要"),
+                body: "Summary of an earlier conversation.\n\(summary.text)",
+                group: id,
+                chatID: id
+            )
+        }
+        return (digest.map { [$0] } ?? []) + turns.compactMap { turn in
             let answer = turn.answer.trimmingCharacters(in: .whitespacesAndNewlines)
             guard turn.error == nil, !turn.question.isEmpty || !answer.isEmpty else { return nil }
             // A chat's own title is usually its first question, which says little; the date tells turns apart.

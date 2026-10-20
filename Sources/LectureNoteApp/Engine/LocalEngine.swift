@@ -20,6 +20,8 @@ final class LocalEngine: TranscriptionEngine {
     private(set) var isGenerating = false
     /// A memory pass is running. It does not make the assistant look busy; chat waits for it instead.
     @ObservationIgnored private var isGeneratingInBackground = false
+    /// Counts cancel requests, so a reply that was cut short throws instead of returning part of an answer.
+    @ObservationIgnored private var cancelRequests = 0
     var sourceLanguage = "zh"
     var targetLanguage = "en"
     var inputDeviceUID: String?
@@ -289,6 +291,7 @@ final class LocalEngine: TranscriptionEngine {
         guard let port, let token else { throw llmError(tr("引擎还没准备好")) }
         if background { isGeneratingInBackground = true } else { isGenerating = true }
         defer { if background { isGeneratingInBackground = false } else { isGenerating = false } }
+        let cancelsAtStart = cancelRequests
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/assistant/generate")!, timeoutInterval: 300)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -324,10 +327,23 @@ final class LocalEngine: TranscriptionEngine {
             if accumulator.finished { break }
         }
         accumulator.finished = true
+        // A cancelled reply ends early with what it had written; that is not an answer.
+        if cancelRequests != cancelsAtStart { throw CancellationError() }
         let answer = accumulator.answer
         guard !answer.isEmpty else { throw llmError(tr("模型未返回文字，请重试。")) }
         if answer != shown { onUpdate(answer) }
         return answer
+    }
+
+    /// Stops the local reply in progress, chat or background, within about one token. Stopping by
+    /// cancelling the request's task also works: the engine stops a reply whose request went away.
+    func cancelGeneration() async {
+        guard isGenerating || isGeneratingInBackground, let port, let token else { return }
+        cancelRequests += 1
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/assistant/cancel")!, timeoutInterval: 5)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        _ = try? await URLSession.shared.data(for: request)
     }
 
     private func modelRequest(path: String, body: [String: Any]) async throws -> Data {

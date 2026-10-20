@@ -105,6 +105,7 @@ extension AppModel {
             }
             ChatImages.delete(session.turns.flatMap(\.images))
             discardComposerImages([id])
+            clearQueue(id)
         }
         let anchor = chats.first { $0.id == id }?.anchorMeetingID
         chats.removeAll { $0.id == id }
@@ -242,11 +243,15 @@ extension AppModel {
     }
 
     @discardableResult
-    func ask(_ question: String, images: [ChatImageDraft] = [], anchor: UUID? = nil) -> Bool {
+    /// `chatID` sends into that chat directly, such as a queued message for a chat that is not on screen.
+    /// `steered` marks a message that interrupted the previous answer, so the model is told.
+    func ask(_ question: String, images: [ChatImageDraft] = [], anchor: UUID? = nil, chatID: UUID? = nil, steered: Bool = false) -> Bool {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty || !images.isEmpty else { return false }
-        if let anchor { ensureMeetingChat(anchor) } else { ensureChat() }
-        let resolvedID = anchor.flatMap { meetingChatID[$0] } ?? currentChatID
+        if chatID == nil {
+            if let anchor { ensureMeetingChat(anchor) } else { ensureChat() }
+        }
+        let resolvedID = chatID ?? anchor.flatMap { meetingChatID[$0] } ?? currentChatID
         guard chatGeneratingID == nil, canGenerateAssistant, let id = resolvedID,
               let session = chats.first(where: { $0.id == id }) else {
             chatError = tr("现在不能提问。")
@@ -279,6 +284,7 @@ extension AppModel {
         let language = prompts.modelLanguageName
         let remembered = memoryPrompt(for: question)
         let history = session.turns
+        let chatSummary = session.summary
         let pickedMeetings = meetings.filter { chosenMeetings.contains($0.id) }
         let pickedSources = sources.filter { chosenSources.contains($0.id) }
         mutate(id) {
@@ -302,12 +308,23 @@ extension AppModel {
                 }
             }
             do {
-                let packed = ChatContext.pack(await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources), question: question)
+                let contextBudget = ContextBudget.current(mode: mode, profile: profile)
+                let packed = ChatContext.pack(
+                    await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources, summaryAbove: contextBudget.scope),
+                    question: question,
+                    budget: contextBudget.scope
+                )
                 if hasScope && packed.isEmpty { throw llmError(tr("所选范围里还没有可以阅读的文字。")) }
                 try Task.checkCancellation()
                 let seesImages = ChatImages.seesImages(mode: mode, modelID: profile?.modelID ?? "")
                 let imagePlan = ChatContext.attachedImages(history: history, currentCount: images.count)
                 let promptImages = seesImages ? self.promptImages(current: images, history: imagePlan.history) : []
+                let historyWindow = ChatHistory.window(
+                    history,
+                    budget: contextBudget,
+                    summary: chatSummary,
+                    omittedImageTurns: seesImages ? imagePlan.omittedTurnIDs : []
+                )
                 var blocks = packed
                 var answer = ""
                 var briefs: [String] = []
@@ -319,14 +336,15 @@ extension AppModel {
                 var library: ChatContext.LibraryTool = self.hasLibrary ? .available : .off
                 var libraryDocuments: [LibraryDocument]?
                 let excluded = LibraryExclusions(
-                    turns: Set(history.suffix(4).map(\.id)),
+                    turns: historyWindow.includedTurns,
                     meetings: chosenMeetings,
                     sources: chosenSources
                 )
                 func searchLibrary(_ request: LibraryRequest) async -> [ContextBlock] {
                     if libraryDocuments == nil { libraryDocuments = await self.libraryDocuments(excluding: excluded) }
                     let documents = libraryDocuments ?? []
-                    return await Task.detached(priority: .userInitiated) { LibrarySearch.run(request, in: documents) }.value
+                    let budget = contextBudget.library
+                    return await Task.detached(priority: .userInitiated) { LibrarySearch.run(request, in: documents, budget: budget) }.value
                 }
                 // A question about last week, an earlier chat, or what the teacher said gets searched before the first answer.
                 if library == .available, LibraryRequest.referencesPast(question) {
@@ -370,10 +388,11 @@ extension AppModel {
                     let mayStillSearch = (webReachable && !searched) || libraryOpen
                     var prompt = ChatContext.userPrompt(
                         question: question,
-                        history: history,
+                        history: historyWindow,
                         blocks: blocks,
-                        omittedImageTurns: seesImages ? imagePlan.omittedTurnIDs : [],
-                        mentionsOlderImages: seesImages && imagePlan.mentionsOlderImages
+                        mentionsOlderImages: seesImages && imagePlan.mentionsOlderImages,
+                        mentionsLibrary: libraryOpen,
+                        steered: steered
                     )
                     if round > 0 {
                         let draft = answer.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -432,13 +451,15 @@ extension AppModel {
                 self.pendingAnswer = ""
                 self.pendingCitations = []
                 if let webNotice { self.chatError = webNotice }
-                self.scheduleMemoryLearning()
+                self.scheduleAfterAnswerWork(chatID: id)
                 // One demo per answer: the last brief has seen the search results. Without a brief, API models still get a demo when the answer is substantial.
                 // Local models skip that fallback because a demo there blocks the next question until it finishes.
                 let skipsDemo = ChatContext.skipsDemo(question, usedLibrary: library != .available && library != .off)
                 let brief = skipsDemo ? nil : briefs.last { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 let fallback = !skipsDemo && brief == nil && mode == .api && ChatContext.wantsFallbackVisual(question: question, answer: answer)
-                if let turnID, brief != nil || fallback {
+                // A local demo would hold the only worker while queued messages wait.
+                let queueWaiting = mode == .local && self.chatQueue.contains { !self.queuePaused.contains($0.chatID) }
+                if let turnID, brief != nil || fallback, !queueWaiting {
                     self.startVisual(
                         chatID: id,
                         turnID: turnID,
@@ -450,15 +471,17 @@ extension AppModel {
                         language: language
                     )
                 }
+                self.chatDidEnd(id, succeeded: true)
             } catch is CancellationError {
-                self.restoreDraft(id, question: question, images: images)
+                self.chatWasStopped(id, question: question, images: images, modelName: name)
             } catch let error as URLError where error.code == .cancelled {
-                self.restoreDraft(id, question: question, images: images)
+                self.chatWasStopped(id, question: question, images: images, modelName: name)
             } catch {
                 if Task.isCancelled {
-                    self.restoreDraft(id, question: question, images: images)
+                    self.chatWasStopped(id, question: question, images: images, modelName: name)
                 } else {
-                    self.finishChat(id, question: question, answer: "", modelName: name, citations: [], error: error.localizedDescription, images: self.storedImages(images))
+                    _ = self.finishChat(id, question: question, answer: "", modelName: name, citations: [], error: error.localizedDescription, images: self.storedImages(images))
+                    self.chatDidEnd(id, succeeded: false)
                 }
             }
         }
@@ -477,7 +500,7 @@ extension AppModel {
         return base + "\n\n" + piece
     }
 
-    private func searchPasses(_ queries: ArraySlice<String>) async throws -> (blocks: [ContextBlock], notice: String?) {
+    func searchPasses(_ queries: ArraySlice<String>) async throws -> (blocks: [ContextBlock], notice: String?) {
         var blocks: [ContextBlock] = []
         var notice: String?
         for query in queries {
@@ -515,7 +538,8 @@ extension AppModel {
             return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
         }
         guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
-        await waitForMemory()
+        await waitForAfterAnswerWork()
+        await waitForQuestionWork()
         return try await engine.generate(system: system, prompt: prompt, maxTokens: localMaxTokens, onUpdate: onUpdate)
     }
 
@@ -608,6 +632,13 @@ extension AppModel {
         llmConfiguration.activate(id)
     }
 
+    /// Adds a finished turn to a meeting's chat, such as a Q&A answer the student wants to follow up on.
+    func appendTurnToMeetingChat(_ meetingID: UUID, turn: ChatTurn) {
+        ensureMeetingChat(meetingID)
+        guard let id = meetingChatID[meetingID] else { return }
+        mutate(id) { $0.turns.append(turn) }
+    }
+
     private func mutate(_ id: UUID, _ body: (inout ChatSession) -> Void) {
         guard let index = chats.firstIndex(where: { $0.id == id }) else { return }
         body(&chats[index])
@@ -621,6 +652,42 @@ extension AppModel {
     }
 
     @discardableResult
+    /// A stopped answer. Stop puts the question back in the composer and pauses the queue; a steer
+    /// keeps what was shown as an interrupted turn and sends the new message once this task ends.
+    private func chatWasStopped(_ id: UUID, question: String, images: [ChatImageDraft], modelName: String) {
+        guard let steer = pendingSteer, steer.chatID == id else {
+            restoreDraft(id, question: question, images: images)
+            chatDidEnd(id, succeeded: false)
+            return
+        }
+        pendingSteer = nil
+        let shown = pendingAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Nothing shown yet: the question is simply replaced, unless it carried images worth keeping.
+        if !shown.isEmpty || !images.isEmpty {
+            let turnID = finishChat(id, question: question, answer: shown, modelName: modelName, citations: pendingCitations, error: nil, images: storedImages(images))
+            if let turnID, let chatIndex = chats.firstIndex(where: { $0.id == id }),
+               let turnIndex = chats[chatIndex].turns.firstIndex(where: { $0.id == turnID }) {
+                chats[chatIndex].turns[turnIndex].interrupted = true
+                if chatsReady {
+                    let message = tr("无法保存对话。")
+                    ChatStore.saveInBackground(chats[chatIndex]) { [weak self] in
+                        Task { @MainActor in self?.chatError = message }
+                    }
+                }
+            }
+        } else {
+            images.forEach(ChatImages.discard)
+        }
+        // Runs after this answer's task has cleared `chatGeneratingID`.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if !self.ask(steer.text, images: steer.images, chatID: id, steered: true) {
+                self.chatQueue.insert(steer, at: 0)
+                self.queuePaused.insert(id)
+            }
+        }
+    }
+
     private func finishChat(_ id: UUID, question: String, answer: String, modelName: String, citations: [ChatCitation], error: String?, images: [ChatImage] = []) -> UUID? {
         guard chats.contains(where: { $0.id == id }) else { return nil }
         let turn = ChatTurn(
@@ -693,12 +760,13 @@ extension AppModel {
                 startedAt: meeting.startedAt,
                 paragraphs: meeting.paragraphs.map {
                     ($0.openedAt, $0.renderedSource(language: language), $0.renderedTranslation(language: meeting.targetLanguage))
-                }
+                },
+                summary: meeting.assistant?.summary
             )
         }
         for chat in chats {
             let turns = chat.turns.filter { !excluded.turns.contains($0.id) }
-            documents += LibrarySearch.chatDocuments(id: chat.id, title: chat.displayTitle, turns: turns)
+            documents += LibrarySearch.chatDocuments(id: chat.id, title: chat.displayTitle, turns: turns, summary: chat.summary)
         }
         let files = sources.filter { !excluded.sources.contains($0.id) }
         await SourceTextCache.shared.keep(only: Set(sources.map(\.id)))
@@ -708,9 +776,15 @@ extension AppModel {
         return documents
     }
 
-    private func passageBlocks(meetings: [Meeting], sources: [KnowledgeSource]) async -> [ContextBlock] {
+    /// A meeting longer than `summaryAbove` characters also contributes its saved summary,
+    /// pinned ahead of its paragraphs, so the model sees the whole lecture's outline.
+    func passageBlocks(meetings: [Meeting], sources: [KnowledgeSource], summaryAbove: Int = .max) async -> [ContextBlock] {
         var blocks: [ContextBlock] = []
         for meeting in meetings {
+            let length = meeting.paragraphs.reduce(0) { $0 + $1.renderedSource(language: meeting.sourceLanguage).count }
+            if length > summaryAbove, let summary = meeting.assistant?.summary, !summary.isEmpty {
+                blocks.append(ContextBlock(title: meeting.title, detail: tr("会议摘要"), body: summary, meetingID: meeting.id, pinned: true))
+            }
             for paragraph in meeting.paragraphs {
                 let text = paragraph.renderedSource(language: meeting.sourceLanguage)
                     .trimmingCharacters(in: .whitespacesAndNewlines)

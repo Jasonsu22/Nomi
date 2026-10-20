@@ -15,6 +15,7 @@ mlx-sys = { git = "https://github.com/OminiX-ai/OminiX-MLX.git", rev = "6aac996d
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
+libc = "0.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 minijinja = "2.12"

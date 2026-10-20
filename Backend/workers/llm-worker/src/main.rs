@@ -8,11 +8,20 @@ use mlx_rs::ops::indexing::{IndexOp, NewAxis};
 use std::collections::HashSet;
 use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use tracing_subscriber::EnvFilter;
 use voice_core::{read_frame, write_frame, WorkerEvent, WorkerRequest};
 
 const MAX_TOKENS: usize = 256;
+
+/// Set by SIGUSR1, which the engine sends to stop the reply in progress. The token loop checks it
+/// after every token and returns the text written so far as a normal result.
+static CANCELLED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn request_cancel(_: libc::c_int) {
+    CANCELLED.store(true, Ordering::SeqCst);
+}
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -30,6 +39,9 @@ fn main() -> Result<()> {
             return Err(anyhow!(message));
         }
     };
+    unsafe {
+        libc::signal(libc::SIGUSR1, request_cancel as *const () as libc::sighandler_t);
+    }
     write_frame(&mut stdout, &WorkerEvent::Ready, &[])?;
 
     let mut stdin = BufReader::new(io::stdin());
@@ -40,6 +52,8 @@ fn main() -> Result<()> {
             Err(error) => return Err(error.into()),
         };
         let request: WorkerRequest = serde_json::from_slice(&header)?;
+        // A cancel meant for an earlier reply must not stop this one.
+        CANCELLED.store(false, Ordering::SeqCst);
         match request {
             WorkerRequest::Shutdown => break,
             WorkerRequest::Transcribe { id, .. } => {
@@ -149,7 +163,7 @@ fn collect_response<E: std::fmt::Display>(
     let mut sent = String::new();
     let started = Instant::now();
     for token_result in generator.take(max_tokens) {
-        if started.elapsed().as_secs_f32() >= 120.0 { break; }
+        if started.elapsed().as_secs_f32() >= 120.0 || CANCELLED.load(Ordering::SeqCst) { break; }
         let token = token_result.map_err(|error| anyhow!("生成失败：{error}"))?;
         let id = token.item::<u32>();
         if eos_tokens.contains(&id) { break; }

@@ -9,6 +9,8 @@ struct AskComposerField: NSViewRepresentable {
     var onSubmit: () -> Void
     var onPasteImages: (NSPasteboard) -> Bool
     var onRemoveLastImage: () -> Bool
+    /// ⌘Enter: the other way of sending while an answer is coming (queue or steer).
+    var onSubmitAlternate: () -> Void = {}
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -23,6 +25,7 @@ struct AskComposerField: NSViewRepresentable {
         textView.onPasteImages = { context.coordinator.parent.onPasteImages($0) }
         textView.onRemoveLastImage = { context.coordinator.parent.onRemoveLastImage() }
         textView.onDropImages = { context.coordinator.parent.onPasteImages($0) }
+        textView.onSubmitAlternate = { context.coordinator.parent.onSubmitAlternate() }
         textView.isRichText = false
         textView.importsGraphics = false
         textView.isEditable = true
@@ -103,8 +106,21 @@ final class SubmitTextView: NSTextView {
     var onPasteImages: ((NSPasteboard) -> Bool)?
     var onDropImages: ((NSPasteboard) -> Bool)?
     var onRemoveLastImage: (() -> Bool)?
+    var onSubmitAlternate: (() -> Void)?
     private var lastImagePasteChange = -1
     private var lastImagePasteTime: TimeInterval = 0
+
+    /// ⌘Return arrives as a key equivalent, not as a newline command. Ignored while an input
+    /// method is composing, so it never cuts a Chinese candidate short.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let isReturn = event.keyCode == 36 || event.keyCode == 76
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if isReturn, flags == .command, window?.firstResponder === self, !hasMarkedText(), let onSubmitAlternate {
+            onSubmitAlternate()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(paste(_:)), ChatImages.containsImage(NSPasteboard.general) {

@@ -224,6 +224,9 @@ struct AskView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
+            if let chatID = session?.id, !model.queued(in: chatID).isEmpty {
+                ChatQueueList(model: model, chatID: chatID, onEdit: editQueued)
+            }
             if showsCloudNotice, let name = model.llmConfiguration.activeProfile?.name {
                 Text(hasScope
                     ? trf("会把所选会议和资料的文字发给 %@。", name)
@@ -257,13 +260,19 @@ struct AskView: View {
                         text: $draft,
                         placeholder: tr("问点什么…"),
                         focused: composerFocused && pageActive,
-                        onSubmit: send,
+                        onSubmit: { send(mode: BusySendMode.current) },
                         onPasteImages: addPastedImages,
-                        onRemoveLastImage: removeLastImage
+                        onRemoveLastImage: removeLastImage,
+                        onSubmitAlternate: { send(mode: BusySendMode.current.other) }
                     )
                     .frame(height: composerHeight)
                 }
-                sendButton
+                sendControls
+            }
+            if let busyHint {
+                Text(busyHint)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
             }
         }
         .padding(Space.s4)
@@ -402,22 +411,69 @@ struct AskView: View {
         return model.llmConfiguration.activeProfile == nil || model.apiModelChoices.isEmpty
     }
 
-    private var sendButton: some View {
-        let generating = model.chatGeneratingID == session?.id
-        return Button {
-            if generating { model.stopChat() } else { send() }
-        } label: {
-            Image(systemName: generating ? "stop.fill" : "arrow.up")
+    /// Stop while this chat is answering, and Send whenever there is something to send. While an
+    /// answer is coming, Send shows what Enter will do: queue the message or steer the answer.
+    private var sendControls: some View {
+        let generatingHere = session != nil && model.chatGeneratingID == session?.id
+        return HStack(spacing: 6) {
+            if generatingHere {
+                roundButton(symbol: "stop.fill", label: tr("停止"), active: true) { model.stopChat() }
+            }
+            if !generatingHere || hasDraft {
+                roundButton(symbol: sendSymbol, label: sendLabel, active: canSend) { send(mode: BusySendMode.current) }
+                    .disabled(!canSend)
+            }
+        }
+    }
+
+    private func roundButton(symbol: String, label: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
                 .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(generating || canSend ? AppColor.onAccent : AppColor.textSecondary)
+                .foregroundStyle(active ? AppColor.onAccent : AppColor.textSecondary)
                 .frame(width: 32, height: 32)
-                .background(generating || canSend ? AppColor.accent : AppColor.surface, in: Circle())
-                .overlay(Circle().strokeBorder(generating || canSend ? Color.clear : AppColor.separator, lineWidth: 1))
+                .background(active ? AppColor.accent : AppColor.surface, in: Circle())
+                .overlay(Circle().strokeBorder(active ? Color.clear : AppColor.separator, lineWidth: 1))
         }
         .buttonStyle(.plain.clicking())
-        .disabled(!generating && !canSend)
-        .help(generating ? tr("停止") : tr("发送"))
-        .accessibilityLabel(generating ? tr("停止") : tr("发送"))
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    /// What Enter does right now, as the action the composer will take.
+    private var busyAction: BusySendMode? {
+        guard let running = model.chatGeneratingID else { return nil }
+        let mode = BusySendMode.current
+        // Steering only applies to this chat's own answer; another chat's answer means queueing.
+        return mode == .steer && running == session?.id ? .steer : .queue
+    }
+
+    private var sendSymbol: String {
+        switch busyAction {
+        case .none: "arrow.up"
+        case .queue: "text.line.last.and.arrowtriangle.forward"
+        case .steer: "arrow.uturn.right"
+        }
+    }
+
+    private var sendLabel: String {
+        switch busyAction {
+        case .none: tr("发送")
+        case .queue: tr("加入队列")
+        case .steer: tr("打断并发送")
+        }
+    }
+
+    private var busyHint: String? {
+        guard let running = model.chatGeneratingID else { return nil }
+        guard running == session?.id else { return tr("另一段对话正在回答，新消息会排队。") }
+        return BusySendMode.current == .queue
+            ? tr("Enter 排队 · ⌘Enter 立即打断")
+            : tr("Enter 立即打断 · ⌘Enter 排队")
+    }
+
+    private var hasDraft: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedImages.isEmpty
     }
 
     private var hasScope: Bool {
@@ -440,9 +496,9 @@ struct AskView: View {
         return min(96, max(36, CGFloat(lines) * 22 + 8))
     }
 
+    /// While an answer is coming the model is busy, but a message can still be queued or steer it.
     private var canSend: Bool {
-        let hasText = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return (hasText || !attachedImages.isEmpty) && model.canGenerateAssistant && model.chatGeneratingID == nil
+        hasDraft && (model.chatGeneratingID != nil || model.canGenerateAssistant)
     }
 
     private var showsCloudNotice: Bool {
@@ -562,11 +618,20 @@ struct AskView: View {
         !previous.isEmpty && !next.isEmpty && previous != next
     }
 
-    private func send() {
-        guard model.chatGeneratingID == nil, let id = composerChatID() else { return }
+    /// Puts a queued message back in the composer, after anything already typed there.
+    private func editQueued(_ item: QueuedPrompt) {
+        guard let taken = model.takeQueued(item.id) else { return }
+        let current = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = current.isEmpty ? taken.text : current + "\n" + taken.text
+        model.composerImages[taken.chatID, default: []].append(contentsOf: taken.images)
+        composerFocused = true
+    }
+
+    private func send(mode: BusySendMode) {
+        guard let id = composerChatID() else { return }
         let images = model.composerImages[id] ?? []
         let text = draft
-        guard model.ask(text, images: images, anchor: anchorMeetingID) else { return }
+        guard model.submit(text, images: images, anchor: anchorMeetingID, mode: mode) else { return }
         draft = ""
         model.composerImages[id] = []
         imageNotice = nil
@@ -785,6 +850,11 @@ private struct AskTurnRow: View, Equatable {
                     onOpenCitation(citation)
                 }
                 .frame(maxWidth: 680, alignment: .leading)
+            }
+            if turn.interrupted == true {
+                Label(tr("已打断"), systemImage: "arrow.uturn.right")
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
             }
             if let note = turn.memoryNote, !note.isEmpty {
                 memoryNote(note)

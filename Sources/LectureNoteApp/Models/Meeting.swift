@@ -26,6 +26,8 @@ struct Meeting: Identifiable, Equatable, Codable {
     var inputDeviceName: String? = nil
     /// File names inside `MeetingStore.audioDirectory(for: id)`, one per recording run.
     var audioFiles: [String]? = nil
+    /// The side panel's summary and questions, kept so they survive a restart.
+    var assistant: MeetingAssistantRecord? = nil
 
     var inputTitle: String { inputDeviceName ?? source.title }
 
@@ -73,5 +75,37 @@ struct Meeting: Identifiable, Equatable, Codable {
             isLive: true,
             inputDeviceName: inputDeviceName
         )
+    }
+}
+
+/// What the meeting side panel produced: its summary and the questions asked about this meeting.
+struct MeetingAssistantRecord: Codable, Equatable, Sendable {
+    struct Answer: Codable, Equatable, Sendable, Identifiable {
+        var id = UUID()
+        var question: String
+        var answer: String
+        var modelName: String
+        var createdAt: Date
+    }
+
+    /// Questions kept per meeting; older ones are dropped.
+    static let answerLimit = 50
+
+    var summary: String?
+    var summaryModelName: String?
+    var summaryAt: Date?
+    /// The transcript time the summary saw, to tell when the transcript has grown since.
+    var summaryCoversUntil: TimeInterval?
+    var answers: [Answer] = []
+
+    mutating func append(_ answer: Answer) {
+        answers.append(answer)
+        if answers.count > Self.answerLimit { answers.removeFirst(answers.count - Self.answerLimit) }
+    }
+
+    /// True when the transcript runs more than a minute past what the summary saw.
+    func summaryIsStale(transcriptEnd: TimeInterval) -> Bool {
+        guard summary != nil, let covered = summaryCoversUntil else { return false }
+        return transcriptEnd > covered + 60
     }
 }
