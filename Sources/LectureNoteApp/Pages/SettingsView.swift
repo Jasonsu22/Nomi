@@ -9,27 +9,27 @@ struct SettingsView: View {
     @AppStorage(MicrophonePrompt.key) private var microphonePrompt = MicrophonePrompt.ask.rawValue
 
     var body: some View {
-        PageScaffold(title: tr("设置")) {
+        PageScaffold(title: tr("设置"), columnWidth: PageColumnLayout.narrowWidth) {
             ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: Space.s5) {
-                    VStack(spacing: 0) {
-                        settingRow(tr("界面语言")) {
-                            valueMenu(
+                VStack(alignment: .leading, spacing: Space.s6) {
+                    SettingsSection(tr("通用")) {
+                        SettingsRow(tr("界面语言")) {
+                            SettingsPopUp(
                                 selection: $interfaceLanguage,
                                 options: InterfaceLanguage.allCases.map { ($0.rawValue, $0.title) }
                             )
                         }
-                        divider
-                        settingRow(tr("外观")) {
-                            valueMenu(
+                        SettingsRow(tr("外观")) {
+                            SettingsPopUp(
                                 selection: $appearance,
                                 options: InterfaceAppearance.allCases.map { ($0.rawValue, $0.title) }
                             )
                         }
-                        divider
-                        settingRow(tr("麦克风权限")) {
-                            valueMenu(
+                    }
+                    LocalModelsSection(model: model) {
+                        SettingsRow(tr("麦克风权限")) {
+                            SettingsPopUp(
                                 selection: $microphonePrompt,
                                 options: MicrophonePrompt.allCases.map { ($0.rawValue, $0.title) }
                             )
@@ -39,9 +39,6 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-
-                    LocalModelsSection(model: model)
                     LLMSettingsSection(model: model)
                     SearchSettingsSection(model: model)
                         .id("search-settings")
@@ -49,7 +46,7 @@ struct SettingsView: View {
                     MemorySettingsSection(model: model)
                         .id("memory-settings")
                 }
-                .pageColumn(maxWidth: 760)
+                .pageColumn(maxWidth: PageColumnLayout.narrowWidth)
                 .padding(.bottom, Space.s7)
             }
             .onAppear {
@@ -78,29 +75,6 @@ struct SettingsView: View {
         }
     }
 
-    private func settingRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack {
-            Text(title).font(AppFont.body).foregroundStyle(AppColor.textPrimary)
-            Spacer()
-            content()
-        }
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, 14)
-    }
-
-    private func valueMenu(selection: Binding<String>, options: [(value: String, title: String)]) -> some View {
-        let current = options.first { $0.value == selection.wrappedValue }?.title ?? ""
-        return Picker("", selection: selection) {
-            ForEach(options, id: \.value) { option in
-                Text(option.title).tag(option.value)
-            }
-        }
-        .labelsHidden()
-        .font(AppFont.secondary)
-        .clickCursor()
-        .selectedTextPickerWidth(current)
-    }
-
     private func allowMicrophoneNow() async {
         switch AVAudioApplication.shared.recordPermission {
         case .granted:
@@ -122,10 +96,6 @@ struct SettingsView: View {
             guard let url = URL(string: raw), NSWorkspace.shared.open(url) else { continue }
             return
         }
-    }
-
-    private var divider: some View {
-        Rectangle().fill(AppColor.separator).frame(height: 1).padding(.leading, Space.s4)
     }
 }
 

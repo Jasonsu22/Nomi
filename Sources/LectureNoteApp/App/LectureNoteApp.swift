@@ -70,6 +70,32 @@ struct LectureNoteApp: App {
     }
 
     private func applyPreview(_ name: String?) {
+        // Debug-only screenshots: LECTURE_PAGE picks a page (settings:search or settings:memory scrolls),
+        // LECTURE_WINDOW sets the window to WIDTHxHEIGHT or "full" for full screen.
+        let environment = ProcessInfo.processInfo.environment
+        if let page = environment["LECTURE_PAGE"] {
+            let parts = page.split(separator: ":").map(String.init)
+            if let target = AppPage(rawValue: parts[0]) { model.page = target }
+            if parts.count > 1 {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(600))
+                    if parts[1] == "search" { model.revealSearchSettings = true }
+                    if parts[1] == "memory" { model.revealMemorySettings = true }
+                }
+            }
+        }
+        if let size = environment["LECTURE_WINDOW"] {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                guard let window = NSApplication.shared.windows.first(where: { $0.isVisible }) else { return }
+                if size == "full" {
+                    window.toggleFullScreen(nil)
+                } else {
+                    let parts = size.split(separator: "x").compactMap { Double($0) }
+                    if parts.count == 2 { window.setFrame(NSRect(x: 40, y: 40, width: parts[0], height: parts[1]), display: true) }
+                }
+            }
+        }
         switch name {
         case "detail":
             if let meeting = model.meetings.first(where: { !$0.isLive }) {

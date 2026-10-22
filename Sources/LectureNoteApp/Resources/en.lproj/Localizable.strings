@@ -495,3 +495,7 @@
 "Enter 排队 · ⌘Enter 立即打断" = "Enter queues · ⌘Enter steers now";
 "Enter 立即打断 · ⌘Enter 排队" = "Enter steers now · ⌘Enter queues";
 "已打断" = "Interrupted";
+"通用" = "General";
+"录音与翻译" = "Recording & Translation";
+"选择一个已配置的服务用于联网搜索。密钥保存在钥匙串里。" = "Pick a configured service for web search. Keys are stored in the Keychain.";
+"Nomi 会从对话里记下你的偏好、课程和目标，只存在这台 Mac 上。使用 API 模型时，相关记忆会随问题发送。" = "Nomi learns your preferences, courses and goals from your chats and keeps them on this Mac. With an API model, related memories are sent along with your questions.";

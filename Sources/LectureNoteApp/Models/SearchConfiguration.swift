@@ -100,7 +100,11 @@ final class SearchConfiguration {
     private(set) var activeID: String?
     private(set) var guideDismissed: Bool
     private(set) var revision = 0
-    private var keyCache: [String: String] = [:]
+    @ObservationIgnored private var keyCache: [String: String] = [:]
+    /// Readiness per vendor for the current revision. Each answer costs a Keychain query,
+    /// and Settings asks for every vendor on each redraw.
+    @ObservationIgnored private var readyCache: [SearchVendor: Bool] = [:]
+    @ObservationIgnored private var readyRevision = -1
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -121,12 +125,19 @@ final class SearchConfiguration {
     var hasReadyProvider: Bool { SearchVendor.allCases.contains(where: isReady) }
 
     func isReady(_ vendor: SearchVendor) -> Bool {
-        _ = revision
-        if vendor.needsBaseURL {
-            guard let base = defaults.string(forKey: Self.baseKey(vendor.rawValue)) else { return false }
-            return (try? SearchURL.normalize(base)) != nil
+        if readyRevision != revision {
+            readyCache = [:]
+            readyRevision = revision
         }
-        return SearchKeychain.contains(vendor)
+        if let cached = readyCache[vendor] { return cached }
+        let ready: Bool
+        if vendor.needsBaseURL {
+            ready = defaults.string(forKey: Self.baseKey(vendor.rawValue)).flatMap { try? SearchURL.normalize($0) } != nil
+        } else {
+            ready = SearchKeychain.contains(vendor)
+        }
+        readyCache[vendor] = ready
+        return ready
     }
 
     func status(for vendor: SearchVendor) -> String {

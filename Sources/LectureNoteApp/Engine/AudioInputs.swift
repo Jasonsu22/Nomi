@@ -120,10 +120,20 @@ struct AudioInputPicker: View {
 
     var body: some View {
         if fitsSelectedText {
-            picker.selectedTextPickerWidth(inputs.selectionTitle)
+            SettingsPopUp(selection: $inputs.selectedUID, options: options)
+                .disabled(!enabled)
+                .accessibilityLabel(tr("输入源"))
         } else {
             picker.frame(maxWidth: 300, alignment: .trailing)
         }
+    }
+
+    private var options: [(value: String, title: String)] {
+        var options = [(AudioInputs.systemDefault, tr("系统默认"))] + inputs.devices.map { ($0.id, $0.name) }
+        if inputs.selectedUID != AudioInputs.systemDefault, inputs.selectedDevice == nil {
+            options.append((inputs.selectedUID, tr("设备已断开")))
+        }
+        return options
     }
 
     private var picker: some View {

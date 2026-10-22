@@ -6,73 +6,21 @@ struct PromptSettingsSection: View {
     @State private var editingSkill: PromptSkill?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            Text(tr("技能"))
-                .font(AppFont.sectionTitle)
-                .foregroundStyle(AppColor.textPrimary)
-            VStack(spacing: 0) {
-                HStack {
-                    Text(tr("默认回复语言"))
-                        .font(AppFont.body)
-                        .foregroundStyle(AppColor.textPrimary)
-                    Spacer()
-                    replyLanguageMenu
-                }
-                .padding(.horizontal, Space.s4)
-                .padding(.vertical, 14)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-
-            VStack(spacing: 0) {
-                ForEach(model.prompts.skills) { skill in
-                    skillRow(skill)
-                    Rectangle().fill(AppColor.separator).frame(height: 1).padding(.leading, Space.s4)
-                }
-                Button {
-                    editingSkill = PromptSkill()
-                } label: {
-                    Label(tr("添加技能"), systemImage: "plus")
-                        .font(AppFont.body)
-                        .foregroundStyle(AppColor.textPrimary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, Space.s4)
-                        .padding(.vertical, 14)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain.clicking())
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        SettingsSection(tr("技能")) {
+            ForEach(model.prompts.skills) { skill in skillRow(skill) }
+            SettingsAddRow(title: tr("添加技能")) { editingSkill = PromptSkill() }
+        } footer: {
             Text(tr("启用的技能会和系统提示词一起发给模型。"))
-                .font(AppFont.caption)
-                .foregroundStyle(AppColor.textSecondary)
         }
         .sheet(item: $editingSkill) { skill in
             SkillEditor(prompts: model.prompts, skill: skill)
         }
     }
 
-    private var replyLanguageMenu: some View {
-        Picker(tr("默认回复语言"), selection: Binding(
-            get: { model.prompts.replyLanguage },
-            set: { model.prompts.setReplyLanguage($0) }
-        )) {
-            Text(tr("跟随界面")).tag(PromptPreferences.followInterface)
-            ForEach(LectureLanguages.supported, id: \.self) { code in
-                Text(languageName(code)).tag(code)
-            }
-        }
-        .labelsHidden()
-        .font(AppFont.secondary)
-        .clickCursor()
-        .selectedTextPickerWidth(model.prompts.replyLanguageTitle)
-    }
-
     private func skillRow(_ skill: PromptSkill) -> some View {
         HStack(spacing: Space.s3) {
             Button { editingSkill = skill } label: {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(skill.name)
                         .font(AppFont.body)
                         .foregroundStyle(AppColor.textPrimary)
@@ -85,20 +33,12 @@ struct PromptSettingsSection: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain.clicking())
-            Toggle(isOn: Binding(
+            SettingsSwitch(label: trf("启用 %@", skill.name), isOn: Binding(
                 get: { skill.enabled },
                 set: { model.prompts.setEnabled($0, id: skill.id) }
-            )) {
-                EmptyView()
-            }
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .clickCursor()
-            .accessibilityLabel(trf("启用 %@", skill.name))
+            ))
         }
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, 14)
+        .settingsRowPadding()
     }
 }
 

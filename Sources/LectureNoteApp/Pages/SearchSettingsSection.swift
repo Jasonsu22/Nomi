@@ -3,84 +3,56 @@ import SwiftUI
 struct SearchSettingsSection: View {
     var model: AppModel
     @State private var editing: SearchVendor?
-    @State private var testing: SearchVendor?
-    @State private var noteVendor: SearchVendor?
-    @State private var note: String?
-    @State private var noteIsError = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            Text(tr("联网搜索")).font(AppFont.sectionTitle).foregroundStyle(AppColor.textPrimary)
-            VStack(alignment: .leading, spacing: Space.s3) {
-                ForEach(SearchVendor.allCases) { vendor in
-                    row(vendor)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Space.s4)
-            .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        SettingsSection(tr("联网搜索")) {
+            ForEach(SearchVendor.allCases) { vendor in row(vendor) }
+        } footer: {
+            Text(tr("选择一个已配置的服务用于联网搜索。密钥保存在钥匙串里。"))
         }
         .sheet(item: $editing) { vendor in
             SearchProviderEditor(vendor: vendor, model: model)
         }
     }
 
+    /// Click a configured row to use it; Set Up or Edit opens the editor, which also tests the connection.
     private func row(_ vendor: SearchVendor) -> some View {
         let ready = model.webSearch.isReady(vendor)
         let selected = model.webSearch.selected == vendor
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: Space.s3) {
-                Button { model.webSearch.select(vendor) } label: {
-                    Image(systemName: selected ? "circle.fill" : "circle")
-                        .foregroundStyle(ready ? AppColor.accent : AppColor.textSecondary)
-                }
-                .buttonStyle(.plain.clicking())
-                .disabled(!ready)
-                ProviderLogo(file: vendor.logoFile)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(vendor.title).font(AppFont.body).foregroundStyle(AppColor.textPrimary)
-                        if vendor == .tavily {
-                            Text(tr("推荐")).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+        return HStack(spacing: Space.s3) {
+            Button { model.webSearch.select(vendor) } label: {
+                HStack(spacing: Space.s3) {
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 15))
+                        .foregroundStyle(selected ? AppColor.accent : AppColor.textSecondary.opacity(ready ? 1 : 0.4))
+                    ProviderLogo(file: vendor.logoFile)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(vendor.title).font(AppFont.body).foregroundStyle(AppColor.textPrimary)
+                            if vendor == .tavily {
+                                Text(tr("推荐"))
+                                    .font(AppFont.caption)
+                                    .foregroundStyle(AppColor.accent)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 1)
+                                    .background(AppColor.accentSoft, in: Capsule())
+                            }
                         }
+                        Text(model.webSearch.status(for: vendor))
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .lineLimit(1)
                     }
-                    Text(model.webSearch.status(for: vendor))
-                        .font(AppFont.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .lineLimit(1)
+                    Spacer(minLength: Space.s3)
                 }
-                Spacer(minLength: Space.s2)
-                Button(ready ? tr("编辑") : tr("配置")) { editing = vendor }
-                    .clickCursor()
-                if ready {
-                    Button(tr("测试连接")) { Task { await test(vendor) } }
-                        .clickCursor()
-                        .disabled(testing == vendor)
-                    if testing == vendor { ProgressView().controlSize(.small) }
-                }
+                .contentShape(Rectangle())
             }
-            if noteVendor == vendor, let note {
-                Text(note)
-                    .font(AppFont.caption)
-                    .foregroundStyle(noteIsError ? Color.red : AppColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .buttonStyle(.plain.clicking())
+            .disabled(!ready)
+            Button(ready ? tr("编辑") : tr("配置")) { editing = vendor }
+                .clickCursor()
         }
-    }
-
-    private func test(_ vendor: SearchVendor) async {
-        testing = vendor
-        defer { testing = nil }
-        do {
-            let count = try await model.webSearch.testSaved(vendor)
-            noteVendor = vendor
-            note = trf("连上了，返回了 %d 条结果", count)
-            noteIsError = false
-        } catch {
-            noteVendor = vendor
-            note = error.localizedDescription
-            noteIsError = true
-        }
+        .settingsRowPadding()
     }
 }
 
@@ -98,7 +70,6 @@ private struct SearchProviderEditor: View {
     init(vendor: SearchVendor, model: AppModel) {
         self.vendor = vendor
         self.model = model
-        _key = State(initialValue: (try? SearchKeychain.read(vendor)) ?? "")
         _baseURL = State(initialValue: model.webSearch.endpoint(for: vendor))
     }
 
@@ -160,6 +131,7 @@ private struct SearchProviderEditor: View {
         }
         .padding(Space.s5)
         .frame(width: 640)
+        .onAppear { key = (try? SearchKeychain.read(vendor)) ?? "" }
         .alert(trf("删除 %@ 的搜索配置？", vendor.title), isPresented: $confirmingDelete) {
             Button(tr("删除"), role: .destructive) { remove() }
             Button(tr("取消"), role: .cancel) {}

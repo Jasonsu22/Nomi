@@ -35,7 +35,7 @@ struct ParagraphRow: View, Equatable {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if !translation.isEmpty {
                         Text(translation)
-                            .font(.system(size: max(12, fontSize - 2)))
+                            .font(.system(size: fontSize - 1))
                             .foregroundStyle(AppColor.textSecondary)
                             .lineSpacing(4)
                             .contentTransition(.interpolate)
