@@ -54,19 +54,11 @@ struct PromptSettingsSection: View {
     }
 
     private var replyLanguageMenu: some View {
-        Picker(tr("默认回复语言"), selection: Binding(
-            get: { model.prompts.replyLanguage },
-            set: { model.prompts.setReplyLanguage($0) }
-        )) {
-            Text(tr("跟随界面")).tag(PromptPreferences.followInterface)
-            ForEach(LectureLanguages.supported, id: \.self) { code in
-                Text(languageName(code)).tag(code)
-            }
-        }
-        .labelsHidden()
-        .font(AppFont.secondary)
-        .clickCursor()
-        .selectedTextPickerWidth(model.prompts.replyLanguageTitle)
+        SettingsPopUp(
+            selection: Binding(get: { model.prompts.replyLanguage }, set: { model.prompts.setReplyLanguage($0) }),
+            options: [(PromptPreferences.followInterface, tr("跟随界面"))] + LectureLanguages.supported.map { ($0, languageName($0)) }
+        )
+        .accessibilityLabel(tr("默认回复语言"))
     }
 
     private func skillRow(_ skill: PromptSkill) -> some View {

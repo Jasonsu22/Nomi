@@ -9,7 +9,7 @@ struct RecordingLanguagePicker: View {
         translationPicker
     }
 
-    fileprivate var inputPicker: some View {
+    private var inputPicker: some View {
         Picker(tr("输入语言"), selection: $source) {
             Text(languageName(LectureLanguages.automatic)).tag(LectureLanguages.automatic)
             ForEach(LectureLanguages.supported, id: \.self) { code in
@@ -19,7 +19,7 @@ struct RecordingLanguagePicker: View {
         .clickCursor()
     }
 
-    fileprivate var translationPicker: some View {
+    private var translationPicker: some View {
         Picker(tr("目标翻译语言"), selection: $target) {
             Text(tr("不翻译")).tag("none")
             ForEach(LectureLanguages.supported, id: \.self) { code in
@@ -55,14 +55,11 @@ struct RecordingSetupView: View {
                 }
                 divider
                 settingRow(tr("分类")) {
-                    Picker(tr("分类"), selection: $categoryID) {
-                        Text(tr("未分类")).tag(nil as UUID?)
-                        ForEach(model.categories) { category in
-                            Text(category.name).tag(Optional(category.id))
-                        }
-                    }
-                    .labelsHidden()
-                    .selectedTextPickerWidth(model.category(for: categoryID)?.name ?? tr("未分类"))
+                    SettingsPopUp(
+                        selection: $categoryID,
+                        options: [(nil as UUID?, tr("未分类"))] + model.categories.map { (Optional($0.id), $0.name) }
+                    )
+                    .accessibilityLabel(tr("分类"))
                 }
                 divider
                 settingRow(tr("输入源")) {
@@ -70,15 +67,19 @@ struct RecordingSetupView: View {
                 }
                 divider
                 settingRow(tr("输入语言")) {
-                    languages.inputPicker
-                        .labelsHidden()
-                        .selectedTextPickerWidth(languageName(model.recordingSourceLanguage))
+                    SettingsPopUp(
+                        selection: $model.recordingSourceLanguage,
+                        options: [(LectureLanguages.automatic, languageName(LectureLanguages.automatic))] + LectureLanguages.supported.map { ($0, languageName($0)) }
+                    )
+                    .accessibilityLabel(tr("输入语言"))
                 }
                 divider
                 settingRow(tr("目标翻译语言")) {
-                    languages.translationPicker
-                        .labelsHidden()
-                        .selectedTextPickerWidth(model.recordingTargetLanguage == "none" ? tr("不翻译") : languageName(model.recordingTargetLanguage))
+                    SettingsPopUp(
+                        selection: $model.recordingTargetLanguage,
+                        options: [("none", tr("不翻译"))] + LectureLanguages.supported.map { ($0, languageName($0)) }
+                    )
+                    .accessibilityLabel(tr("目标翻译语言"))
                 }
             }
             .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
@@ -111,10 +112,6 @@ struct RecordingSetupView: View {
                 categoryID = meeting.categoryID
             }
         }
-    }
-
-    private var languages: RecordingLanguagePicker {
-        RecordingLanguagePicker(source: $model.recordingSourceLanguage, target: $model.recordingTargetLanguage)
     }
 
     private func settingRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {

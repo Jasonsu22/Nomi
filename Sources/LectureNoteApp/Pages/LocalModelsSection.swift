@@ -76,17 +76,14 @@ struct LocalModelPicker: View {
                 model.localModels.refresh()
                 showingModels = true
             } label: {
-                HStack(spacing: Space.s3) {
+                SettingsPopUpLabel {
                     VStack(alignment: .trailing, spacing: 4) {
                         Text(current.name).font(AppFont.secondary.weight(.medium)).foregroundStyle(AppColor.textPrimary)
                         Text(status).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
                     }
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 11, weight: .medium)).foregroundStyle(AppColor.textSecondary)
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain.clicking())
+            .buttonStyle(.plain)
             .accessibilityLabel(trf("选择%@", role.title))
             .popover(isPresented: $showingModels, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 0) {

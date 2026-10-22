@@ -89,16 +89,7 @@ struct SettingsView: View {
     }
 
     private func valueMenu(selection: Binding<String>, options: [(value: String, title: String)]) -> some View {
-        let current = options.first { $0.value == selection.wrappedValue }?.title ?? ""
-        return Picker("", selection: selection) {
-            ForEach(options, id: \.value) { option in
-                Text(option.title).tag(option.value)
-            }
-        }
-        .labelsHidden()
-        .font(AppFont.secondary)
-        .clickCursor()
-        .selectedTextPickerWidth(current)
+        SettingsPopUp(selection: selection, options: options)
     }
 
     private func allowMicrophoneNow() async {
