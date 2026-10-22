@@ -24,8 +24,12 @@ struct TopBar: View {
                 Text("Nomi")
                     .font(.system(size: 19, weight: .semibold))
                     .foregroundStyle(AppColor.textPrimary)
+                    .fixedSize()
             }
-            .frame(width: leadingWidth, alignment: .leading)
+            .padding(.trailing, Space.s3)
+            // At least the page column's inset, so the status lines up with page titles,
+            // but never narrower than the logo and name.
+            .frame(minWidth: leadingWidth, alignment: .leading)
             HeaderStatus(
                 title: model.statusTitle,
                 live: model.statusIsLive,
@@ -54,8 +58,8 @@ struct TopBar: View {
     }
 }
 
-/// Errors stay put, in red. A ready engine shows for two seconds, then the
-/// words slide left and fade.
+/// Errors stay put, in red. A ready engine fades in, shows for two seconds, then fades out
+/// in place, so it never slides over the name.
 private struct HeaderStatus: View {
     var title: String
     var live: Bool
@@ -64,45 +68,26 @@ private struct HeaderStatus: View {
     var reduceMotion: Bool
 
     @State private var visible = false
-    @State private var offset: CGFloat = 0
-    @State private var opacity: Double = 1
     @State private var dismissTask: Task<Void, Never>?
 
     var body: some View {
         StatusChip(title: title, live: live, isError: isError)
-            .offset(x: offset)
-            .opacity(visible ? opacity : 0)
+            .opacity(visible ? 1 : 0)
             .accessibilityHidden(!visible)
-            .onAppear { sync(title, stays: stays) }
-            .onChange(of: title) { _, new in sync(new, stays: stays) }
-            .onChange(of: stays) { _, new in sync(title, stays: new) }
+            .onAppear { sync(stays: stays) }
+            .onChange(of: title) { _, _ in sync(stays: stays) }
+            .onChange(of: stays) { _, new in sync(stays: new) }
             .onDisappear { dismissTask?.cancel() }
     }
 
-    private func sync(_ title: String, stays: Bool) {
+    private func sync(stays: Bool) {
         dismissTask?.cancel()
-        var reset = Transaction()
-        reset.disablesAnimations = true
-        withTransaction(reset) {
-            visible = true
-            offset = 0
-            opacity = 1
-        }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { visible = true }
         guard !stays else { return }
         dismissTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
-            if reduceMotion {
-                visible = false
-                return
-            }
-            withAnimation(.easeInOut(duration: 0.32)) { offset = -20 }
-            try? await Task.sleep(for: .milliseconds(320))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) { opacity = 0 }
-            try? await Task.sleep(for: .milliseconds(200))
-            guard !Task.isCancelled else { return }
-            visible = false
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.45)) { visible = false }
         }
     }
 }

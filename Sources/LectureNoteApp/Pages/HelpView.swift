@@ -9,13 +9,13 @@ struct HelpView: View {
     static let contactEmail = "jasonsu210@gmail.com"
 
     var body: some View {
-        PageScaffold(title: tr("帮助")) {
+        PageScaffold(title: tr("帮助"), columnWidth: PageColumnLayout.narrowWidth) {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s5) {
                     appInfo
                     helpCard
                 }
-                .pageColumn(maxWidth: 760)
+                .pageColumn(maxWidth: PageColumnLayout.narrowWidth)
                 .padding(.bottom, Space.s7)
             }
         }

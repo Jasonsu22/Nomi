@@ -8,57 +8,27 @@ struct MemorySettingsSection: View {
     private var memory: UserMemory { model.memory }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            Text(tr("记忆"))
-                .font(AppFont.sectionTitle)
-                .foregroundStyle(AppColor.textPrimary)
-            VStack(spacing: 0) {
-                HStack {
-                    Text(tr("自动记忆"))
-                        .font(AppFont.body)
-                        .foregroundStyle(AppColor.textPrimary)
-                    Spacer()
-                    Toggle(tr("自动记忆"), isOn: Binding(get: { model.memoryEnabled }, set: { memory.setEnabled($0) }))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .clickCursor()
-                }
-                .padding(.horizontal, Space.s4)
-                .padding(.vertical, 14)
+        SettingsSection(tr("记忆")) {
+            SettingsRow(tr("自动记忆")) {
+                SettingsSwitch(label: tr("自动记忆"), isOn: Binding(get: { model.memoryEnabled }, set: { memory.setEnabled($0) }))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-
-            VStack(spacing: 0) {
-                if memory.items.isEmpty {
-                    Text(model.memoryEnabled ? tr("还没有记忆。多聊几次，Nomi 会慢慢了解你的习惯。") : tr("自动记忆已关闭。"))
-                        .font(AppFont.secondary)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, Space.s4)
-                        .padding(.vertical, 14)
-                } else {
-                    ForEach(sortedItems) { item in
-                        MemoryRow(item: item, memory: memory)
-                        if item.id != sortedItems.last?.id {
-                            Rectangle().fill(AppColor.separator).frame(height: 1).padding(.leading, Space.s4)
-                        }
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-
-            HStack(alignment: .top) {
-                Text(tr("Nomi 会从对话里自动记下你的偏好、课程和目标，让回答更合你的习惯。记忆只存在这台 Mac 上。整理记忆用的是当前选中的模型：本地模型不会发出任何内容；使用 API 模型时，最近几轮对话会发给它，和问题相关的记忆也会随问题发送，所以默认关闭。"))
-                    .font(AppFont.caption)
+            if memory.items.isEmpty {
+                Text(model.memoryEnabled ? tr("还没有记忆。多聊几次，Nomi 会慢慢了解你的习惯。") : tr("自动记忆已关闭。"))
+                    .font(AppFont.secondary)
                     .foregroundStyle(AppColor.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .settingsRowPadding()
+            } else {
+                ForEach(sortedItems) { item in MemoryRow(item: item, memory: memory) }
+            }
+        } footer: {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                Text(tr("Nomi 会从对话里记下你的偏好、课程和目标，只存在这台 Mac 上。使用 API 模型时，相关记忆会随问题发送。"))
                 Spacer(minLength: Space.s3)
                 if !memory.items.isEmpty {
                     Button(tr("清空记忆"), role: .destructive) { confirmingClear = true }
-                        .font(AppFont.caption)
-                        .clickCursor()
+                        .buttonStyle(.link.clicking())
+                        .foregroundStyle(.red)
                 }
             }
         }
@@ -114,8 +84,7 @@ private struct MemoryRow: View {
             .buttonStyle(.plain.clicking())
             .help(tr("删除这条记忆"))
         }
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, 12)
+        .settingsRowPadding()
         .onAppear { draft = item.text }
         .onChange(of: item.text) { _, text in if !editing { draft = text } }
     }

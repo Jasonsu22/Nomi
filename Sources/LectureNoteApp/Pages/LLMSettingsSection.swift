@@ -4,16 +4,14 @@ struct LLMSettingsSection: View {
     var model: AppModel
     @State private var editingProfile: LLMAPIProfile?
     @State private var confirmation: Confirmation?
-    @State private var error: String?
     @State private var busySend = BusySendMode.current
 
     private enum Confirmation {
-        case mode(LLMMode), activate(LLMAPIProfile), delete(LLMAPIProfile)
+        case mode(LLMMode), activate(LLMAPIProfile)
         var title: String {
             switch self {
             case .mode: tr("切换大模型来源？")
             case .activate: tr("使用此 API 配置？")
-            case .delete: tr("删除 API 配置？")
             }
         }
         var message: String {
@@ -21,79 +19,38 @@ struct LLMSettingsSection: View {
             case .mode(.local): tr("提问和摘要将使用本地模型。识别和翻译不受影响。")
             case .mode(.api): tr("提问和摘要会将相关会议文字发送到你选择的 API 服务。识别和翻译继续在本机运行。")
             case .activate(let profile): trf("后续提问和摘要将使用 %@（%@），相关会议文字会发送到此地址。", profile.name, profile.baseURL)
-            case .delete(let profile): trf("删除 %@ 的地址、模型选择和已保存的 API 密钥。此操作不会删除会议。", profile.name)
             }
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            Text(tr("提问与摘要大模型")).font(AppFont.sectionTitle).foregroundStyle(AppColor.textPrimary)
-            HStack {
+        SettingsSection(tr("提问与摘要大模型")) {
+            SettingsRow(tr("大模型来源")) {
                 Picker(tr("大模型来源"), selection: Binding(get: { model.llmConfiguration.mode }, set: { confirmation = .mode($0) })) {
                     ForEach(LLMMode.allCases) { mode in Text(mode.title).tag(mode) }
                 }
+                .labelsHidden()
                 .pickerStyle(.segmented)
                 .fixedSize()
                 .clickCursor()
                 .disabled(model.assistantIsBusy)
-                Spacer(minLength: 0)
             }
             if model.llmConfiguration.mode == .local {
                 LocalModelPicker(model: model, role: .assistant)
-                    .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                Text(tr("本地模型直接在这台 Mac 上运行。Qwen3.5 的模型文件可以与翻译共用。"))
-                    .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
             } else {
-                VStack(alignment: .leading, spacing: Space.s3) {
-                    ForEach(model.llmConfiguration.profiles) { profile in
-                        HStack(spacing: Space.s3) {
-                            Button { confirmation = .activate(profile) } label: {
-                                HStack(spacing: Space.s2) {
-                                    Image(systemName: model.llmConfiguration.activeID == profile.id ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(AppColor.accent)
-                                    ProviderLogo(file: LLMProviderPreset.logoFile(for: profile.providerID))
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(profile.name).font(AppFont.body).foregroundStyle(AppColor.textPrimary)
-                                        Text(profile.modelID).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain.clicking())
-                            Spacer()
-                            Button(tr("编辑")) { editingProfile = profile }
-                                .clickCursor()
-                            Button(role: .destructive) { confirmation = .delete(profile) } label: {
-                                Label(tr("删除"), systemImage: "trash")
-                                    .foregroundStyle(.red)
-                            }
-                            .clickCursor()
-                            .tint(.red)
-                        }
-                        .disabled(model.assistantIsBusy)
-                    }
-                    Button {
-                        editingProfile = LLMAPIProfile(providerID: "openai", name: "OpenAI", baseURL: "https://api.openai.com/v1")
-                    } label: { Label(tr("添加 API 配置"), systemImage: "plus") }
-                    .clickCursor()
-                    .disabled(model.assistantIsBusy)
-                    if model.llmConfiguration.activeProfile == nil {
-                        Text(tr("添加并选择一个 API 配置后，即可使用提问和摘要。"))
-                            .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                ForEach(model.llmConfiguration.profiles) { profile in profileRow(profile) }
+                SettingsAddRow(title: tr("添加 API 配置")) {
+                    editingProfile = LLMAPIProfile(providerID: "openai", name: "OpenAI", baseURL: "https://api.openai.com/v1")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Space.s4)
-                .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                .disabled(model.assistantIsBusy)
             }
-            Text(tr("此切换只用于提问和摘要，语音识别和翻译模型保持独立。"))
-                .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
-            if let error { Text(error).font(AppFont.caption).foregroundStyle(.red) }
-            HStack {
-                Text(tr("回答中发送新消息")).font(AppFont.body).foregroundStyle(AppColor.textPrimary)
-                Spacer()
+            SettingsRow(tr("默认回复语言")) {
+                SettingsPopUp(
+                    selection: Binding(get: { model.prompts.replyLanguage }, set: { model.prompts.setReplyLanguage($0) }),
+                    options: [(PromptPreferences.followInterface, tr("跟随界面"))] + LectureLanguages.supported.map { ($0, languageName($0)) }
+                )
+            }
+            SettingsRow(tr("回答中发送新消息")) {
                 Picker(tr("回答中发送新消息"), selection: $busySend) {
                     ForEach(BusySendMode.allCases) { mode in Text(mode.title).tag(mode) }
                 }
@@ -103,34 +60,53 @@ struct LLMSettingsSection: View {
                 .clickCursor()
                 .onChange(of: busySend) { _, mode in BusySendMode.current = mode }
             }
-            .padding(.horizontal, Space.s4)
-            .padding(.vertical, 14)
-            .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-            .padding(.top, Space.s2)
-            Text(tr("排队：等这条回答结束后依次发送。打断并引导：立即停下当前回答，保留已写的部分，按新消息继续。⌘Enter 使用另一种方式。"))
-                .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                if model.llmConfiguration.mode == .api, model.llmConfiguration.activeProfile == nil {
+                    Text(tr("添加并选择一个 API 配置后，即可使用提问和摘要。"))
+                }
+                Text(tr("此切换只用于提问和摘要，语音识别和翻译模型保持独立。"))
+                Text(tr("排队：等这条回答结束后依次发送。打断并引导：立即停下当前回答，保留已写的部分，按新消息继续。⌘Enter 使用另一种方式。"))
+            }
         }
         .sheet(item: $editingProfile) { profile in APIProfileEditor(profile: profile, configuration: model.llmConfiguration) }
         .alert(confirmation?.title ?? "", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }), presenting: confirmation) { action in
-            if case .delete = action {
-                Button(tr("删除"), role: .destructive) { apply(action) }
-            } else {
-                Button(tr("确认")) { apply(action) }
-            }
+            Button(tr("确认")) { apply(action) }
             Button(tr("取消"), role: .cancel) {}
         } message: { Text($0.message) }
     }
 
-    private func apply(_ action: Confirmation) {
-        error = nil
-        do {
-            switch action {
-            case .mode(let mode): model.llmConfiguration.setMode(mode)
-            case .activate(let profile): model.llmConfiguration.activate(profile.id)
-            case .delete(let profile): try model.llmConfiguration.delete(profile)
+    /// Click the row to switch to this profile; deleting lives in the editor.
+    private func profileRow(_ profile: LLMAPIProfile) -> some View {
+        let active = model.llmConfiguration.activeID == profile.id
+        return HStack(spacing: Space.s3) {
+            Button { if !active { confirmation = .activate(profile) } } label: {
+                HStack(spacing: Space.s3) {
+                    Image(systemName: active ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 15))
+                        .foregroundStyle(active ? AppColor.accent : AppColor.textSecondary)
+                    ProviderLogo(file: LLMProviderPreset.logoFile(for: profile.providerID))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(profile.name).font(AppFont.body).foregroundStyle(AppColor.textPrimary)
+                        Text(profile.modelID).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                    }
+                    Spacer(minLength: Space.s3)
+                }
+                .contentShape(Rectangle())
             }
-        } catch { self.error = error.localizedDescription }
+            .buttonStyle(.plain.clicking())
+            Button(tr("编辑")) { editingProfile = profile }
+                .clickCursor()
+        }
+        .settingsRowPadding()
+        .disabled(model.assistantIsBusy)
+    }
+
+    private func apply(_ action: Confirmation) {
+        switch action {
+        case .mode(let mode): model.llmConfiguration.setMode(mode)
+        case .activate(let profile): model.llmConfiguration.activate(profile.id)
+        }
     }
 }
 
@@ -145,11 +121,12 @@ private struct APIProfileEditor: View {
     @State private var error: String?
     @State private var confirmation: Action?
     private enum Action: Equatable { case save }
+    @State private var confirmingDelete = false
+    private var isSaved: Bool { configuration.profiles.contains { $0.id == draft.id } }
 
     init(profile: LLMAPIProfile, configuration: LLMConfiguration) {
         self.configuration = configuration
         _draft = State(initialValue: profile)
-        _key = State(initialValue: (try? LLMKeychain.read(profile)) ?? "")
     }
 
     var body: some View {
@@ -256,6 +233,8 @@ private struct APIProfileEditor: View {
             }
             .disabled(fetching)
             .onAppear {
+                // Read once when the sheet opens, not on every redraw of the page behind it.
+                key = (try? LLMKeychain.read(draft)) ?? ""
                 if !draft.modelID.isEmpty, !draft.savedModelIDs.contains(draft.modelID) {
                     draft.savedModelIDs.insert(draft.modelID, at: 0)
                 }
@@ -265,6 +244,10 @@ private struct APIProfileEditor: View {
                 Button(tr("获取模型列表")) { beginFetch() }
                     .clickCursor()
                     .disabled(fetching)
+                if isSaved {
+                    Button(tr("删除"), role: .destructive) { confirmingDelete = true }
+                        .clickCursor()
+                }
                 if fetching { ProgressView().controlSize(.small) }
                 Spacer()
                 Button(tr("取消")) { dismiss() }
@@ -282,6 +265,17 @@ private struct APIProfileEditor: View {
             Button(tr("取消"), role: .cancel) {}
         } message: {
             Text(trf("保存 %@（%@）及所选模型。使用 API 提问和摘要时，相关会议文字将发送到此地址。", draft.name, draft.baseURL))
+        }
+        .alert(tr("删除 API 配置？"), isPresented: $confirmingDelete) {
+            Button(tr("删除"), role: .destructive) {
+                do {
+                    if let saved = configuration.profiles.first(where: { $0.id == draft.id }) { try configuration.delete(saved) }
+                    dismiss()
+                } catch { self.error = error.localizedDescription }
+            }
+            Button(tr("取消"), role: .cancel) {}
+        } message: {
+            Text(trf("删除 %@ 的地址、模型选择和已保存的 API 密钥。此操作不会删除会议。", draft.name))
         }
     }
 

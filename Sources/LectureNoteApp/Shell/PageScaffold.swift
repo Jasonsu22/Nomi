@@ -2,6 +2,8 @@ import SwiftUI
 
 enum PageColumnLayout {
     static let maxWidth: CGFloat = 1200
+    /// Settings and Help: a centered column of rows, like System Settings.
+    static let narrowWidth: CGFloat = 760
     static let leading: CGFloat = 48
     static let trailing: CGFloat = 32
 
@@ -12,6 +14,8 @@ enum PageColumnLayout {
 
 struct PageScaffold<Content: View>: View {
     var title: String
+    /// The title sits on the same centered column as the page's content.
+    var columnWidth: CGFloat = PageColumnLayout.maxWidth
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -19,7 +23,7 @@ struct PageScaffold<Content: View>: View {
             Text(title)
                 .font(AppFont.pageTitle)
                 .foregroundStyle(AppColor.textPrimary)
-                .pageColumn()
+                .pageColumn(maxWidth: columnWidth)
                 .padding(.top, 28)
                 .padding(.bottom, Space.s5)
             content()

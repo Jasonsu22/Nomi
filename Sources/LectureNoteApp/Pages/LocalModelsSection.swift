@@ -1,38 +1,39 @@
 import AppKit
 import SwiftUI
 
-struct LocalModelsSection: View {
+/// Recording and translation: the microphone row passed in by Settings, then the two on-device models.
+struct LocalModelsSection<Leading: View>: View {
     var model: AppModel
+    var leading: Leading
+
+    init(model: AppModel, @ViewBuilder leading: () -> Leading) {
+        self.model = model
+        self.leading = leading()
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            Text(tr("本地模型"))
-                .font(AppFont.sectionTitle)
-                .foregroundStyle(AppColor.textPrimary)
-            VStack(spacing: 0) {
-                LocalModelPicker(model: model, role: .asr)
-                Rectangle().fill(AppColor.separator).frame(height: 1).padding(.leading, Space.s4)
-                LocalModelPicker(model: model, role: .translator)
-            }
-            .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-            HStack {
-                Text(tr("下载一次，即可在本机离线使用。"))
-                Spacer()
-                Button(tr("打开模型文件夹")) {
-                    let root = LocalModelDefinition.root
-                    try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-                    NSWorkspace.shared.open(root)
+        SettingsSection(tr("录音与翻译")) {
+            leading
+            LocalModelPicker(model: model, role: .asr)
+            LocalModelPicker(model: model, role: .translator)
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(tr("下载一次，即可在本机离线使用。"))
+                    Spacer()
+                    Button(tr("打开模型文件夹")) {
+                        let root = LocalModelDefinition.root
+                        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(root)
+                    }
+                    .buttonStyle(.link.clicking())
                 }
-                .buttonStyle(.link.clicking())
-            }
-            .font(AppFont.caption)
-            .foregroundStyle(AppColor.textSecondary)
-            if model.engine.session.phase != .idle {
-                Text(tr("录制结束后可以切换模型。"))
-                    .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                if model.engine.session.phase != .idle {
+                    Text(tr("录制结束后可以切换模型。"))
+                }
             }
         }
-        .onAppear { model.localModels.refresh() }
+        .onAppear { model.localModels.refreshInBackground() }
     }
 }
 
@@ -69,11 +70,9 @@ struct LocalModelPicker: View {
     }
 
     var body: some View {
-        HStack(spacing: Space.s4) {
-            Text(role.title).font(AppFont.body).foregroundStyle(AppColor.textPrimary)
-            Spacer()
+        SettingsRow(role.title) {
             Button {
-                model.localModels.refresh()
+                model.localModels.refreshInBackground()
                 showingModels = true
             } label: {
                 SettingsPopUpLabel {
@@ -107,8 +106,6 @@ struct LocalModelPicker: View {
                 .frame(width: 440)
             }
         }
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, 14)
         .alert(tr("删除本地模型？"), isPresented: Binding(get: { deletingModel != nil }, set: { if !$0 { deletingModel = nil } }), presenting: deletingModel) { item in
             Button(tr("删除"), role: .destructive) { Task { await model.deleteLocalModel(item) } }
             Button(tr("取消"), role: .cancel) {}
