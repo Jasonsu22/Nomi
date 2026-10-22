@@ -27,6 +27,11 @@ final class LocalEngine: TranscriptionEngine {
     var inputDeviceUID: String?
     var recordingURL: URL?
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
+    /// Called with the Mac microphone's name when the chosen input did not open and that one did.
+    var onInputFallback: (@MainActor (String) -> Void)?
+    private var preparingDeadline: Task<Void, Never>?
+    /// From pressing Start to the engine and microphone both running.
+    private static let preparingLimit: Duration = .seconds(15)
     private static let logger = Logger(subsystem: "local.nomi.preview", category: "Engine")
 
     var canStart: Bool {
@@ -68,10 +73,12 @@ final class LocalEngine: TranscriptionEngine {
         let id = recordingID
         openTask?.cancel()
         openTask = Task { await openSession(id: id) }
+        armPreparingDeadline(id: id)
     }
 
     func stop() {
         guard session.phase == .preparing || session.phase == .listening else { return }
+        preparingDeadline?.cancel()
         sendGate.closeGate()
         openTask?.cancel()
         microphone.stop()
@@ -208,7 +215,16 @@ final class LocalEngine: TranscriptionEngine {
         let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Nomi")
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("engine.log")
-        FileManager.default.createFile(atPath: url.path, contents: nil)
+        // Keep the last three launches, so a problem from before a restart can still be read.
+        let manager = FileManager.default
+        for index in stride(from: 2, through: 1, by: -1) {
+            let older = directory.appendingPathComponent("engine.\(index).log")
+            let newer = index == 1 ? url : directory.appendingPathComponent("engine.\(index - 1).log")
+            guard manager.fileExists(atPath: newer.path) else { continue }
+            try? manager.removeItem(at: older)
+            try? manager.moveItem(at: newer, to: older)
+        }
+        manager.createFile(atPath: url.path, contents: nil)
         return try? FileHandle(forWritingTo: url)
     }
 
@@ -416,10 +432,45 @@ final class LocalEngine: TranscriptionEngine {
             }
         }
         do {
-            try microphone.start(deviceUID: inputDeviceUID)
-            sendGate.openGate()
+            try await openMicrophone()
+        } catch is CancellationError {
+            return
         } catch {
+            guard recordingID == id, session.phase == .preparing || session.phase == .listening else { return }
             failStart(tr("打不开麦克风"))
+            return
+        }
+        guard recordingID == id, session.phase == .preparing || session.phase == .listening else { return }
+        sendGate.openGate()
+    }
+
+    /// The chosen input first; if it fails or does not answer in time (an iPhone that has not
+    /// reconnected yet), the Mac's own microphone, so the lecture is still recorded.
+    private func openMicrophone() async throws {
+        do {
+            try await microphone.start(deviceUID: inputDeviceUID)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            Self.logger.error("Chosen microphone did not open: \(String(describing: error), privacy: .public)")
+            guard let builtIn = AudioHardware.builtInInput(), builtIn.id != inputDeviceUID,
+                  inputDeviceUID != nil || AudioHardware.defaultInputID() != builtIn.deviceID else { throw error }
+            try await microphone.start(deviceUID: builtIn.id)
+            Self.logger.notice("Fell back to \(builtIn.name, privacy: .public)")
+            onInputFallback?(builtIn.name)
+        }
+    }
+
+    /// Ends a start that hangs, instead of leaving "Preparing" on screen with no way out.
+    private func armPreparingDeadline(id: UUID) {
+        preparingDeadline?.cancel()
+        preparingDeadline = Task { [weak self] in
+            try? await Task.sleep(for: Self.preparingLimit)
+            guard !Task.isCancelled, let self, self.recordingID == id else { return }
+            let stalled = self.session.phase == .preparing || (self.session.phase == .listening && !self.sendGate.isOpen && !self.session.isPaused)
+            guard stalled else { return }
+            Self.logger.error("Recording start timed out")
+            self.failStart(tr("麦克风或转录服务没有响应，请重试，或换一个输入源。"))
         }
     }
 
@@ -513,6 +564,7 @@ final class LocalEngine: TranscriptionEngine {
     }
 
     private func failStart(_ message: String) {
+        preparingDeadline?.cancel()
         openTask?.cancel()
         receiveTask?.cancel()
         loadError = message
@@ -631,65 +683,123 @@ func microphoneTapFormat(reported: AVAudioFormat, hardwareRate: Double?) -> AVAu
     return format
 }
 
+/// An engine that has started capturing, handed between the audio queue and the main actor.
+private struct RunningAudioEngine: @unchecked Sendable {
+    let engine: AVAudioEngine
+    let deviceID: AudioDeviceID
+    let format: AVAudioFormat
+}
+
+/// Opens and closes audio devices off the main thread, one at a time. Core Audio can block for
+/// seconds while an iPhone or Bluetooth microphone reconnects; on the main thread that froze the
+/// app on "Preparing".
+private let audioDeviceQueue = DispatchQueue(label: "local.nomi.audio-device", qos: .userInitiated)
+
+private final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if claimed { return false }
+        claimed = true
+        return true
+    }
+}
+
+/// Runs on `audioDeviceQueue`: picks the device, installs the tap and starts the engine.
+private func openAudioEngine(deviceUID: String?, processor: MicrophonePCMProcessor) throws -> RunningAudioEngine {
+    let engine = AVAudioEngine()
+    let input = engine.inputNode
+    let deviceID: AudioDeviceID
+    if let deviceUID {
+        guard let device = AudioHardware.inputs().first(where: { $0.id == deviceUID }) else {
+            throw MicrophoneError.unavailable
+        }
+        deviceID = device.deviceID
+    } else {
+        deviceID = AudioHardware.defaultInputID()
+    }
+    guard deviceID != 0 else { throw MicrophoneError.unavailable }
+    // Avoid reconfiguring an already selected device, which can stop the I/O unit.
+    if input.auAudioUnit.deviceID != deviceID {
+        try input.auAudioUnit.setDeviceID(deviceID)
+    }
+    let reported = input.inputFormat(forBus: 0)
+    guard reported.sampleRate > 0, reported.channelCount > 0 else { throw MicrophoneError.unavailable }
+    var format = microphoneTapFormat(reported: reported, hardwareRate: AudioHardware.inputSampleRate(deviceID))
+    do {
+        try installMicrophoneTap(on: input, format: format, processor: processor)
+    } catch MicrophoneError.tapRejected(let reason) {
+        // The device may have finished switching rates since the first read.
+        MicrophoneCapture.logger.error("Microphone tap rejected \(format.sampleRate) Hz: \(reason, privacy: .public)")
+        format = microphoneTapFormat(reported: input.inputFormat(forBus: 0), hardwareRate: AudioHardware.inputSampleRate(deviceID))
+        try installMicrophoneTap(on: input, format: format, processor: processor)
+    }
+    do {
+        engine.prepare()
+        try engine.start()
+    } catch {
+        input.removeTap(onBus: 0)
+        MicrophoneCapture.logger.error("Microphone failed to start: \(String(describing: error), privacy: .public)")
+        throw error
+    }
+    return RunningAudioEngine(engine: engine, deviceID: deviceID, format: format)
+}
+
+private func closeAudioEngine(_ running: RunningAudioEngine) {
+    running.engine.stop()
+    running.engine.inputNode.removeTap(onBus: 0)
+}
+
 @MainActor
 private final class MicrophoneCapture {
     var onSamples: (@Sendable (Data, Double) -> Void)?
     var onFailure: (@Sendable (String) -> Void)?
     /// Survives device-change restarts of the capture engine; released by `stop()`.
     var recorder: AudioFileRecorder?
-    private var engine: AVAudioEngine?
+    private var running: RunningAudioEngine?
     private var configurationObserver: NSObjectProtocol?
     private var watchdog: Task<Void, Never>?
-    private static let logger = Logger(subsystem: "local.nomi.preview", category: "AudioInput")
+    /// Bumped by every start and stop, so a slow open that finishes late is closed, not used.
+    private var generation = 0
+    nonisolated static let logger = Logger(subsystem: "local.nomi.preview", category: "AudioInput")
+    static let openTimeout: TimeInterval = 8
 
-    func start(deviceUID: String?) throws {
+    func start(deviceUID: String?) async throws {
         stopCapture()
-        let engine = AVAudioEngine()
-        let input = engine.inputNode
-        let deviceID: AudioDeviceID
-        if let deviceUID {
-            guard let device = AudioHardware.inputs().first(where: { $0.id == deviceUID }) else {
-                throw MicrophoneError.unavailable
-            }
-            deviceID = device.deviceID
-        } else {
-            deviceID = AudioHardware.defaultInputID()
-        }
-        guard deviceID != 0 else { throw MicrophoneError.unavailable }
-        // Avoid reconfiguring an already selected device, which can stop the I/O unit.
-        if input.auAudioUnit.deviceID != deviceID {
-            try input.auAudioUnit.setDeviceID(deviceID)
-        }
-        let reported = input.inputFormat(forBus: 0)
-        guard reported.sampleRate > 0, reported.channelCount > 0 else { throw MicrophoneError.unavailable }
-        var format = microphoneTapFormat(reported: reported, hardwareRate: AudioHardware.inputSampleRate(deviceID))
+        generation += 1
+        let generation = generation
         let processor = MicrophonePCMProcessor(onSamples: onSamples, onFailure: onFailure, recorder: recorder)
-        // The tap block is non-Sendable, so a closure formed on the main actor is
-        // isolated there. The audio thread then traps in swift_task_checkIsolated.
-        do {
-            try installMicrophoneTap(on: input, format: format, processor: processor)
-        } catch MicrophoneError.tapRejected(let reason) {
-            // The device may have finished switching rates since the first read.
-            Self.logger.error("Microphone tap rejected \(format.sampleRate) Hz: \(reason, privacy: .public)")
-            format = microphoneTapFormat(reported: input.inputFormat(forBus: 0), hardwareRate: AudioHardware.inputSampleRate(deviceID))
-            try installMicrophoneTap(on: input, format: format, processor: processor)
+        Self.logger.notice("Opening microphone \(deviceUID ?? "default", privacy: .public)")
+        let running: RunningAudioEngine = try await withCheckedThrowingContinuation { continuation in
+            let once = OnceFlag()
+            audioDeviceQueue.async {
+                let result = Result { try openAudioEngine(deviceUID: deviceUID, processor: processor) }
+                if once.claim() {
+                    continuation.resume(with: result)
+                } else if case .success(let late) = result {
+                    // The caller already gave up; release the device it finally opened.
+                    closeAudioEngine(late)
+                }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + Self.openTimeout) {
+                if once.claim() { continuation.resume(throwing: MicrophoneError.timedOut) }
+            }
         }
-        do {
-            engine.prepare()
-            try engine.start()
-        } catch {
-            input.removeTap(onBus: 0)
-            Self.logger.error("Microphone failed to start: \(String(describing: error), privacy: .public)")
-            throw error
+        guard generation == self.generation else {
+            audioDeviceQueue.async { closeAudioEngine(running) }
+            throw CancellationError()
         }
-        self.engine = engine
+        self.running = running
+        let engine = running.engine
         let engineID = ObjectIdentifier(engine)
-        Self.logger.info("Microphone started: device=\(deviceID), rate=\(format.sampleRate), channels=\(format.channelCount)")
+        Self.logger.notice("Microphone started: device=\(running.deviceID), rate=\(running.format.sampleRate), channels=\(running.format.channelCount)")
         configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
             Task { @MainActor in
-                guard let self, let engine = self.engine, ObjectIdentifier(engine) == engineID, !engine.isRunning else { return }
+                guard let self, let current = self.running, ObjectIdentifier(current.engine) == engineID, !current.engine.isRunning else { return }
                 do {
-                    try self.start(deviceUID: deviceUID)
+                    try await self.start(deviceUID: deviceUID)
                 } catch {
                     self.onFailure?(tr("音频设备连接已改变，请重新选择输入源。"))
                 }
@@ -697,7 +807,7 @@ private final class MicrophoneCapture {
         }
         watchdog = Task { [weak self] in
             try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, let self, let engine = self.engine, ObjectIdentifier(engine) == engineID, !processor.hasReceivedAudio else { return }
+            guard !Task.isCancelled, let self, let current = self.running, ObjectIdentifier(current.engine) == engineID, !processor.hasReceivedAudio else { return }
             Self.logger.error("Microphone started but did not deliver PCM buffers")
             self.onFailure?(tr("麦克风未收到音频数据，请重新选择输入源。"))
         }
@@ -710,15 +820,17 @@ private final class MicrophoneCapture {
     }
 
     private func stopCapture() {
+        generation += 1
         watchdog?.cancel()
         watchdog = nil
         if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
         configurationObserver = nil
-        if let engine {
-            engine.stop()
-            engine.inputNode.removeTap(onBus: 0)
+        if let running {
+            // Closing an iPhone microphone can block too; do it on the device queue.
+            audioDeviceQueue.async { closeAudioEngine(running) }
+            Self.logger.notice("Microphone closing: device=\(running.deviceID)")
         }
-        engine = nil
+        running = nil
     }
 }
 
@@ -789,6 +901,7 @@ private final class MicrophonePCMProcessor: @unchecked Sendable {
 private enum MicrophoneError: Error {
     case unavailable
     case tapRejected(String)
+    case timedOut
 }
 
 /// Encodes the 16 kHz mono stream to AAC on the tap thread. Writes are skipped

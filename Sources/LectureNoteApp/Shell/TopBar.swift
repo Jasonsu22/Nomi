@@ -5,9 +5,7 @@ struct TopBar: View {
     var reduceMotion: Bool
 
     var body: some View {
-        GeometryReader { proxy in
-            bar(leadingWidth: Rail.width + PageColumnLayout.leadingInset(in: proxy.size.width - Rail.width))
-        }
+        bar
         .frame(height: 52)
         .background {
             AppColor.canvas
@@ -15,7 +13,7 @@ struct TopBar: View {
         }
     }
 
-    private func bar(leadingWidth: CGFloat) -> some View {
+    private var bar: some View {
         HStack(spacing: 0) {
             HStack(spacing: 0) {
                 BrandLogo(side: 32)
@@ -26,10 +24,8 @@ struct TopBar: View {
                     .foregroundStyle(AppColor.textPrimary)
                     .fixedSize()
             }
+            // The status sits right after the name at every window width, full screen included.
             .padding(.trailing, Space.s3)
-            // At least the page column's inset, so the status lines up with page titles,
-            // but never narrower than the logo and name.
-            .frame(minWidth: leadingWidth, alignment: .leading)
             HeaderStatus(
                 title: model.statusTitle,
                 live: model.statusIsLive,
