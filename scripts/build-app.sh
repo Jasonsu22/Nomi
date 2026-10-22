@@ -52,6 +52,17 @@ rm -rf "$app" "$root/build/LectureNote.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 
 cp "$binary" "$app/Contents/MacOS/Nomi"
+
+# Sparkle (auto-update) ships as a framework next to the executable.
+sparkle="$root/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+if [[ ! -d "$sparkle" ]]; then
+    echo "缺少 Sparkle.framework，先运行 swift package resolve。" >&2
+    exit 1
+fi
+mkdir -p "$app/Contents/Frameworks"
+rm -rf "$app/Contents/Frameworks/Sparkle.framework"
+ditto "$sparkle" "$app/Contents/Frameworks/Sparkle.framework"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$app/Contents/MacOS/Nomi" 2>/dev/null || true
 for bundle in "$bin_dir"/*.bundle; do
     [[ -d "$bundle" ]] || continue
     cp -R "$bundle" "$app/Contents/Resources/"
@@ -82,9 +93,17 @@ cat > "$app/Contents/Info.plist" <<'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.2</string>
+    <string>0.3</string>
     <key>CFBundleVersion</key>
-    <string>4</string>
+    <string>5</string>
+    <key>SUFeedURL</key>
+    <string>https://github.com/Jasonsu22/Nomi/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>4D8hKp8gvQHZMGNmcGkzmQE5Iri0XgIg+6a4kTYpNUI=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
     <key>LSMinimumSystemVersion</key>
     <string>26.0</string>
     <key>NSHighResolutionCapable</key>

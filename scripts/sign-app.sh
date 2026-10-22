@@ -54,6 +54,19 @@ sign_app() {
         [[ "$name" == "Nomi" ]] && continue
         codesign --force --sign "$identity" --timestamp=none "$bin"
     done
+    # Sparkle's helpers are signed inside-out, then the framework, so the app's seal covers them.
+    local sparkle="$app/Contents/Frameworks/Sparkle.framework"
+    if [[ -d "$sparkle" ]]; then
+        local part
+        for part in "$sparkle/Versions/B/XPCServices/Installer.xpc" \
+                    "$sparkle/Versions/B/XPCServices/Downloader.xpc" \
+                    "$sparkle/Versions/B/Autoupdate" \
+                    "$sparkle/Versions/B/Updater.app" \
+                    "$sparkle"; do
+            [[ -e "$part" ]] || continue
+            codesign --force --sign "$identity" --timestamp=none --preserve-metadata=entitlements "$part"
+        done
+    fi
     codesign --force --sign "$identity" --timestamp=none "$app"
     codesign --verify --strict --verbose=2 "$app" >/dev/null
 }
