@@ -27,6 +27,7 @@ struct AppShell: View {
                 allowsCompactFrame: $model.windowAllowsCompact
             )
         }
+        .background(RecordingWindowLevel(recording: model.engine.session.phase != .idle))
         .overlay {
             if let image = model.enlargedImage {
                 ChatImageLightbox(image: image, name: model.enlargedImageName, fileURL: model.enlargedImageURL, reduceMotion: reduce) {

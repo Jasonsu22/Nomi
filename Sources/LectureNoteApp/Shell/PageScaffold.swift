@@ -6,10 +6,6 @@ enum PageColumnLayout {
     static let narrowWidth: CGFloat = 760
     static let leading: CGFloat = 48
     static let trailing: CGFloat = 32
-
-    static func leadingInset(in availableWidth: CGFloat) -> CGFloat {
-        leading + max(0, (availableWidth - maxWidth - leading - trailing) / 2)
-    }
 }
 
 struct PageScaffold<Content: View>: View {

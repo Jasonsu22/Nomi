@@ -499,3 +499,4 @@
 "录音与翻译" = "Recording & Translation";
 "选择一个已配置的服务用于联网搜索。密钥保存在钥匙串里。" = "Pick a configured service for web search. Keys are stored in the Keychain.";
 "Nomi 会从对话里记下你的偏好、课程和目标，只存在这台 Mac 上。使用 API 模型时，相关记忆会随问题发送。" = "Nomi learns your preferences, courses and goals from your chats and keeps them on this Mac. With an API model, related memories are sent along with your questions.";
+"麦克风或转录服务没有响应，请重试，或换一个输入源。" = "The microphone or transcription service didn't respond. Try again, or pick another input.";

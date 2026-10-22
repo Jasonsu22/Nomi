@@ -16,7 +16,9 @@ struct TranscriptCard: View {
     @State private var copied = false
     @State private var followsLatest = false
     @State private var userScrolling = false
-    @State private var distanceFromBottom: CGFloat = 0
+    /// Whether the view is at the newest line. A plain box, not view state, so scrolling
+    /// never rebuilds the whole transcript; only a change of `followsLatest` does.
+    @State private var scrollEdge = ScrollEdge()
 
     var body: some View {
         let paragraphs = paragraphs
@@ -139,22 +141,20 @@ struct TranscriptCard: View {
                 case .idle:
                     let wasDragging = userScrolling
                     userScrolling = false
-                    if wasDragging {
-                        followsLatest = distanceFromBottom < 72
+                    if wasDragging, followsLatest != scrollEdge.atBottom {
+                        followsLatest = scrollEdge.atBottom
                     }
                 case .animating:
                     break
                 }
             }
-            .onScrollGeometryChange(for: CGFloat.self) { geo in
-                geo.contentSize.height - geo.visibleRect.maxY
-            } action: { _, distance in
-                distanceFromBottom = distance
-                guard userScrolling else { return }
-                let atBottom = distance < 72
-                if atBottom != followsLatest {
-                    followsLatest = atBottom
-                }
+            // Reports only when "at the bottom" flips, not on every scrolled frame.
+            .onScrollGeometryChange(for: Bool.self) { geo in
+                geo.contentSize.height - geo.visibleRect.maxY < 72
+            } action: { _, atBottom in
+                scrollEdge.atBottom = atBottom
+                guard userScrolling, atBottom != followsLatest else { return }
+                followsLatest = atBottom
             }
             .onChange(of: jump?.token, initial: true) { _, _ in
                 guard let jump, jump.isFresh else { return }
@@ -230,4 +230,8 @@ private struct LiveScrollerGate: NSViewRepresentable {
             scroll.hasVerticalScroller = shown
         }
     }
+}
+
+private final class ScrollEdge {
+    var atBottom = true
 }

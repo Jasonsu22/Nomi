@@ -203,6 +203,10 @@ final class AppModel {
         engine.onFinished = { [weak self] paragraphs, duration in
             self?.finishLiveMeeting(paragraphs: paragraphs, duration: duration)
         }
+        (engine as? LocalEngine)?.onInputFallback = { [weak self] name in
+            guard let self, let id = self.liveMeetingID, let index = self.meetings.firstIndex(where: { $0.id == id }) else { return }
+            self.meetings[index].inputDeviceName = name
+        }
         engine.transcript.onCommitted = { [weak self] in
             self?.schedulePersistence()
         }

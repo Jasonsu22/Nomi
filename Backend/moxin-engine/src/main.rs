@@ -436,7 +436,8 @@ async fn session(State(app): State<App>, headers: HeaderMap, upgrade: WebSocketU
 
 async fn handle_session(mut socket: WebSocket, app: App) {
     let _release = Release(app.busy.clone(), Job::Recording);
-    if let Some(pid) = app.busy.lock().expect("busy").assistant_pid {
+    let assistant = app.busy.lock().expect("busy").assistant_pid;
+    if let Some(pid) = assistant {
         set_background(pid, true);
     }
     let mut started = false;
@@ -533,7 +534,11 @@ async fn handle_session(mut socket: WebSocket, app: App) {
             _ => {}
         }
     }
-    if let Some(pid) = app.busy.lock().expect("busy").assistant_pid {
+    // Read the pid into a local first. As the function's last expression, a guard taken in the
+    // `if let` would outlive `_release`, whose drop locks `busy` again: a self-deadlock that froze
+    // every later request, so the next recording hung on "Preparing".
+    let assistant = app.busy.lock().expect("busy").assistant_pid;
+    if let Some(pid) = assistant {
         set_background(pid, false);
     }
 }

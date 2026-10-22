@@ -300,7 +300,17 @@ impl Pipeline {
 
     pub fn push_audio(&mut self, samples: &[f32]) -> Vec<OutEvent> {
         let mut events = Vec::new();
+        let before = self.clock;
         self.clock += samples.len() as f64 / 16_000.0;
+        if (self.clock / 30.0).floor() > (before / 30.0).floor() {
+            // One line per 30 s of audio, so a quiet room or a stalled gate shows up in engine.log.
+            let db = |value: f32| 20.0 * value.max(1e-6).log10();
+            let (start, _) = self.vad.thresholds();
+            eprintln!(
+                "audio {:.0}s: background {:.0} dB, speech gate {:.0} dB, phrases sent {}",
+                self.clock, db(self.vad.noise_floor()), db(start), self.next_request
+            );
+        }
         if self.clock - self.last_level >= 0.05 {
             self.last_level = self.clock;
             events.push(OutEvent::Level { rms: rms(samples) });
@@ -344,7 +354,7 @@ impl Pipeline {
             let language = voice_core::asr_language(&self.source_language);
             let response = self.asr.as_mut().unwrap().request(
                 WorkerRequest::Transcribe { id, language },
-                &pcm_to_bytes(&segment.samples),
+                &pcm_to_bytes(&boost(&segment.samples)),
             );
             let text = match response {
                 Ok(WorkerEvent::Result { text, .. }) => text,
@@ -507,6 +517,45 @@ fn weights_ready(path: &Path) -> bool {
             });
     }
     nonempty_file(&path.join("model.safetensors"))
+}
+
+/// Raises a quiet phrase toward a normal speaking level before recognition, at most +18 dB
+/// and never past the clipping point. Loud phrases pass through unchanged. Only the copy sent
+/// to the speech model is changed; the recording on disk keeps the original level.
+fn boost(samples: &[f32]) -> Vec<f32> {
+    const TARGET_RMS: f32 = 0.08;
+    const MAX_GAIN: f32 = 8.0;
+    let level = rms(samples);
+    let peak = samples.iter().fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+    if level <= 0.0 || peak <= 0.0 {
+        return samples.to_vec();
+    }
+    let gain = (TARGET_RMS / level).clamp(1.0, MAX_GAIN).min(0.95 / peak).max(1.0);
+    if gain <= 1.01 {
+        return samples.to_vec();
+    }
+    samples.iter().map(|sample| sample * gain).collect()
+}
+
+#[cfg(test)]
+mod boost_tests {
+    use super::{boost, rms};
+
+    #[test]
+    fn quiet_speech_is_raised_and_loud_speech_is_not() {
+        let quiet: Vec<f32> = (0..1600).map(|i| 0.01 * (i as f32 * 0.1).sin()).collect();
+        let raised = boost(&quiet);
+        assert!(rms(&raised) > rms(&quiet) * 7.0);
+        let loud: Vec<f32> = (0..1600).map(|i| 0.3 * (i as f32 * 0.1).sin()).collect();
+        assert_eq!(boost(&loud), loud);
+    }
+
+    #[test]
+    fn a_boost_never_clips() {
+        let mut quiet: Vec<f32> = vec![0.005; 1600];
+        quiet[10] = 0.5;
+        assert!(boost(&quiet).iter().all(|sample| sample.abs() <= 0.95 + 1e-6));
+    }
 }
 
 fn rms(samples: &[f32]) -> f32 {
