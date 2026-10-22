@@ -10,13 +10,15 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/mgriebling/SwiftMath.git", from: "1.7.3"),
+        // Auto-update: daily checks, EdDSA-signed updates from GitHub Releases.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"),
     ],
     targets: [
         // Objective-C boundary for AVFoundation calls that raise NSException.
         .target(name: "NomiObjCSupport"),
         .executableTarget(
             name: "LectureNoteApp",
-            dependencies: ["SwiftMath", "NomiObjCSupport"],
+            dependencies: ["SwiftMath", "NomiObjCSupport", .product(name: "Sparkle", package: "Sparkle")],
             resources: [
                 .copy("Fixtures"),
                 .process("Resources"),

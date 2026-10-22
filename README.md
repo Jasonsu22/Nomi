@@ -141,9 +141,10 @@ To package a release, build without `NOMI_DEV_KEYS`, then make the DMG:
 ```sh
 bash scripts/build-app.sh release
 bash scripts/build-dmg.sh
+bash scripts/make-appcast.sh release-notes.md
 ```
 
-`build-dmg.sh` writes `build/Nomi-<version>-arm64.dmg` with the installer background and the first-launch guide from `Design/DMG/`. It installs [dmgbuild](https://github.com/dmgbuild/dmgbuild) into `build/.dmgbuild-venv` on first use, and refuses debug and dev-key builds. Attach the DMG to a GitHub release as `Nomi-arm64.dmg` so the website's download link picks it up.
+`build-dmg.sh` writes `build/Nomi-<version>-arm64.dmg` with the installer background and the first-launch guide from `Design/DMG/`. It installs [dmgbuild](https://github.com/dmgbuild/dmgbuild) into `build/.dmgbuild-venv` on first use, and refuses debug and dev-key builds. `make-appcast.sh` signs it for automatic updates and writes `build/updates/`. Attach `build/updates/Nomi-arm64.dmg` and `build/updates/appcast.xml` to a GitHub release tagged `v<version>` and mark it Latest: the website's download link and the in-app updater (Sparkle, checking once a day) both read the latest release. Updates are signed with an EdDSA key kept in the login Keychain, so releases must be made on the Mac that holds it.
 
 </details>
 

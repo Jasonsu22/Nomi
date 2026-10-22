@@ -29,6 +29,10 @@ struct LectureNoteApp: App {
         .restorationBehavior(.disabled)
         .defaultSize(width: 1180, height: 780)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button(tr("检查更新…")) { model.updater.checkForUpdates() }
+                    .disabled(!model.updater.canCheck)
+            }
             CommandGroup(replacing: .newItem) {
                 Button(tr("开始转录")) {
                     model.prepareRecording()

@@ -141,9 +141,10 @@ NOMI_DEV_KEYS=1 bash scripts/build-app.sh release
 ```sh
 bash scripts/build-app.sh release
 bash scripts/build-dmg.sh
+bash scripts/make-appcast.sh release-notes.md
 ```
 
-`build-dmg.sh` 会生成 `build/Nomi-<版本>-arm64.dmg`，带上 `Design/DMG/` 里的安装背景和第一次打开的说明。第一次运行时会把 [dmgbuild](https://github.com/dmgbuild/dmgbuild) 装进 `build/.dmgbuild-venv`，并拒绝打包调试版和开发密钥模式的版本。把 DMG 以 `Nomi-arm64.dmg` 的名字附到 GitHub Release 上，网站的下载链接就会指向它。
+`build-dmg.sh` 会生成 `build/Nomi-<版本>-arm64.dmg`，带上 `Design/DMG/` 里的安装背景和第一次打开的说明。第一次运行时会把 [dmgbuild](https://github.com/dmgbuild/dmgbuild) 装进 `build/.dmgbuild-venv`，并拒绝打包调试版和开发密钥模式的版本。`make-appcast.sh` 会为自动更新签名，并写出 `build/updates/`。把 `build/updates/Nomi-arm64.dmg` 和 `build/updates/appcast.xml` 附到标签为 `v<版本>` 的 GitHub Release，并设为 Latest：网站的下载链接和应用内的自动更新（Sparkle，每天检查一次）都读取最新的 Release。更新用存放在登录钥匙串里的 EdDSA 密钥签名，所以发布只能在保存这把密钥的 Mac 上进行。
 
 </details>
 

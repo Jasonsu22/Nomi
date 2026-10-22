@@ -85,6 +85,7 @@ final class AppModel {
     let localModels = LocalModelLibrary()
     let llmConfiguration = LLMConfiguration()
     let prompts = PromptPreferences()
+    let updater = AppUpdater()
     /// What Nomi has learned about the student. Kept on disk only for the real app, not previews and tests.
     private(set) var memory = UserMemory(file: nil)
     /// Each meeting's Q&A tab, loaded when first needed. The tab observes the object itself.

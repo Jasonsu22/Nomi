@@ -5,6 +5,7 @@ import SwiftUI
 struct HelpView: View {
     var model: AppModel
     @Environment(\.appReduceMotion) private var reduceMotion
+    @State private var checksAutomatically = true
 
     static let contactEmail = "jasonsu210@gmail.com"
 
@@ -14,6 +15,7 @@ struct HelpView: View {
                 VStack(alignment: .leading, spacing: Space.s5) {
                     appInfo
                     helpCard
+                    updatesSection
                 }
                 .pageColumn(maxWidth: PageColumnLayout.narrowWidth)
                 .padding(.bottom, Space.s7)
@@ -55,6 +57,36 @@ struct HelpView: View {
             contactRow
         }
         .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+    }
+
+    /// Version, automatic checks and a manual check. Hidden when Sparkle is not running (`swift run`).
+    @ViewBuilder
+    private var updatesSection: some View {
+        if model.updater.isAvailable {
+            SettingsSection(tr("更新")) {
+                SettingsRow(tr("当前版本")) {
+                    Text(model.updater.version)
+                        .font(AppFont.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .monospacedDigit()
+                }
+                SettingsRow(tr("自动检查更新"), detail: tr("每天检查一次，有新版本时会提示你安装。")) {
+                    SettingsSwitch(label: tr("自动检查更新"), isOn: Binding(
+                        get: { checksAutomatically },
+                        set: { value in
+                            checksAutomatically = value
+                            model.updater.automaticallyChecks = value
+                        }
+                    ))
+                }
+                SettingsRow(tr("检查更新")) {
+                    Button(tr("立即检查")) { model.updater.checkForUpdates() }
+                        .clickCursor()
+                        .disabled(!model.updater.canCheck)
+                }
+            }
+            .onAppear { checksAutomatically = model.updater.automaticallyChecks }
+        }
     }
 
     private var contactRow: some View {
