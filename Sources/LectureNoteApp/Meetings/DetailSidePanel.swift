@@ -117,6 +117,11 @@ struct DetailSidePanel: View {
         .onChange(of: tab) { _, newValue in
             if newValue == .ask { onPreferredSideWidth(480) }
         }
+        .onChange(of: model.detailTabRequest?.token, initial: true) { _, _ in
+            guard let request = model.detailTabRequest, request.meetingID == meeting.id, tabs.contains(request.tab) else { return }
+            withAnimation(Motion.page(reduceMotion)) { tab = request.tab }
+            model.detailTabRequest = nil
+        }
         .alert(tr("删除这场会议？"), isPresented: $confirmingDelete) {
             Button(tr("删除"), role: .destructive) {
                 let id = meeting.id

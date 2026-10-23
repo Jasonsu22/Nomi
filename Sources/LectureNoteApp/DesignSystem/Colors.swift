@@ -10,6 +10,8 @@ enum AppColor {
     static let accent = Color(light: 0x004A77, dark: 0x7CC4F2)
     static let onAccent = Color(light: 0xFFFFFF, dark: 0x0F1216)
     static let accentSoft = Color(light: 0xE3F3FF, dark: 0x1A2C3A)
+    /// The leaf green, for "live" markers such as the question pop-up's dot.
+    static let accentGreen = Color(light: 0x20B68A, dark: 0x34C99B)
     static let textPrimary = Color(light: 0x111418, dark: 0xE6E8EB)
     static let nsTextPrimary = NSColor.nomi(light: 0x111418, dark: 0xE6E8EB)
     static let textSecondary = Color(

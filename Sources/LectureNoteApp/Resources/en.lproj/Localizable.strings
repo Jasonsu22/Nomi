@@ -507,3 +507,13 @@
 "每天检查一次，有新版本时会提示你安装。" = "Checks once a day and asks before installing a new version.";
 "检查更新" = "Check for Updates";
 "立即检查" = "Check Now";
+"老师提问" = "Teacher asked";
+"正在回答" = "Answering";
+"已回答" = "Answered";
+"没能回答" = "Couldn't answer";
+"稍后" = "Later";
+"现在回答" = "Answer now";
+"在 Q&A 中查看" = "Open in Q&A";
+"跳到这一刻" = "Jump to this moment";
+"录音时弹出老师的提问" = "Show the Teacher's Questions While Recording";
+"老师问了真正的问题时，它会在窗口上浮出几秒，你可以马上回答或稍后再看。" = "When the teacher asks a real question, it floats over the window for a few seconds. Answer it now or look at it later.";

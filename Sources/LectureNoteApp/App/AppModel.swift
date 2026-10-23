@@ -98,6 +98,14 @@ final class AppModel {
     @ObservationIgnored var questionWorkGenerating = false
     /// Scrolls a meeting's transcript to a moment, from the Q&A tab.
     var transcriptJump: TranscriptJump?
+    /// The teacher's question shown over the window while recording, and those waiting behind it.
+    var questionPopup: QuestionPopup?
+    @ObservationIgnored var questionPopupQueue: [QuestionPopup] = []
+    /// Answered before anything else in the Q&A queue (Answer now in the pop-up).
+    @ObservationIgnored var urgentQuestionID: UUID?
+    @ObservationIgnored var quickQuestionCheck: Task<Void, Never>?
+    /// Asks a meeting's side panel to switch tab (Open in Q&A).
+    var detailTabRequest: DetailTabRequest?
     /// Work that runs after an answer (chat summary, then memory), if it is waiting or running.
     @ObservationIgnored var afterAnswerTask: Task<Void, Never>?
     /// That work has started generating, so a local question waits for it instead of cancelling it.
@@ -210,6 +218,7 @@ final class AppModel {
         }
         engine.transcript.onCommitted = { [weak self] in
             self?.schedulePersistence()
+            self?.checkLatestLineForQuestion()
         }
     }
 
