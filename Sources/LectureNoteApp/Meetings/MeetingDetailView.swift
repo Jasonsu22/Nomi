@@ -82,6 +82,11 @@ struct MeetingDetailView: View {
         .onChange(of: pageActive) { _, active in
             if active { model.audioInputs.refresh() }
         }
+        // Open in Q&A from the question pop-up shows the side panel; the panel then picks the tab.
+        .onChange(of: model.detailTabRequest?.token) { _, _ in
+            guard let request = model.detailTabRequest, request.meetingID == model.openMeetingID else { return }
+            withAnimation(Motion.layout(reduceMotion)) { sidePreference = true }
+        }
     }
 
     private func header(_ meeting: Meeting, width: CGFloat, showSide: Bool) -> some View {

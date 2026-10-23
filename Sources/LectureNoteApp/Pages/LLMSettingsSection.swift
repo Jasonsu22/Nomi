@@ -5,6 +5,7 @@ struct LLMSettingsSection: View {
     @State private var editingProfile: LLMAPIProfile?
     @State private var confirmation: Confirmation?
     @State private var busySend = BusySendMode.current
+    @AppStorage(QuestionPopupPreference.key) private var questionPopups = true
 
     private enum Confirmation {
         case mode(LLMMode), activate(LLMAPIProfile)
@@ -59,6 +60,9 @@ struct LLMSettingsSection: View {
                 .fixedSize()
                 .clickCursor()
                 .onChange(of: busySend) { _, mode in BusySendMode.current = mode }
+            }
+            SettingsRow(tr("录音时弹出老师的提问"), detail: tr("老师问了真正的问题时，它会在窗口上浮出几秒，你可以马上回答或稍后再看。")) {
+                SettingsSwitch(label: tr("录音时弹出老师的提问"), isOn: $questionPopups)
             }
         } footer: {
             VStack(alignment: .leading, spacing: 4) {

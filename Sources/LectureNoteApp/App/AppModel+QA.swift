@@ -33,10 +33,10 @@ extension AppModel {
     // MARK: Transcript
 
     /// The transcript as timed lines. A recording in progress uses its finished paragraphs only.
-    func transcriptLines(_ meetingID: UUID) -> [QuestionFinder.Line] {
+    func transcriptLines(_ meetingID: UUID, includingOpen: Bool = false) -> [QuestionFinder.Line] {
         guard let meeting = meetings.first(where: { $0.id == meetingID }) else { return [] }
         let live = meetingID == recordingMeetingID
-        let paragraphs = live ? engine.transcript.paragraphs.filter(\.closed) : meeting.paragraphs
+        let paragraphs = live ? engine.transcript.paragraphs.filter { $0.closed || includingOpen } : meeting.paragraphs
         return paragraphs.compactMap { paragraph in
             let text = paragraph.renderedSource(language: meeting.sourceLanguage).trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : QuestionFinder.Line(at: paragraph.openedAt, text: text)
@@ -61,12 +61,32 @@ extension AppModel {
     func finishQuestionScan(_ meetingID: UUID) {
         questionScanTask?.cancel()
         questionScanTask = nil
+        quickQuestionCheck?.cancel()
+        settleQuestionPopups()
         guard meetings.contains(where: { $0.id == meetingID }) else { return }
         Task { [weak self] in await self?.findQuestions(meetingID) }
     }
 
+    /// Called for each committed line while recording. When the newest sentence reads like a
+    /// question, the recent transcript is checked a few seconds later instead of at the next
+    /// two-minute pass, so the pop-up appears while the teacher is still on that question.
+    func checkLatestLineForQuestion() {
+        guard let id = recordingMeetingID, QuestionPopupPreference.isOn else { return }
+        let state = qa(for: id)
+        let fresh = transcriptLines(id, includingOpen: true).filter { $0.at > state.scannedThrough }.suffix(2)
+        guard !QuestionFinder.candidates(in: Array(fresh)).isEmpty else { return }
+        quickQuestionCheck?.cancel()
+        quickQuestionCheck = Task { [weak self] in
+            // Let the sentence finish, and fold a burst of commits into one check.
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, !Task.isCancelled, self.recordingMeetingID == id else { return }
+            await self.findQuestions(id, includingOpen: true)
+        }
+    }
+
     /// Reads transcript not read before, in passes, and adds the questions found.
-    func findQuestions(_ meetingID: UUID, fromStart: Bool = false) async {
+    /// `includingOpen` also reads the paragraph still being spoken, without marking it read.
+    func findQuestions(_ meetingID: UUID, fromStart: Bool = false, includingOpen: Bool = false) async {
         guard canRunBackgroundWork else { return }
         let state = qa(for: meetingID)
         guard !state.scanning else { return }
@@ -74,13 +94,17 @@ extension AppModel {
         state.scanError = nil
         defer { state.scanning = false }
         if fromStart { state.scannedThrough = -1 }
-        let fresh = transcriptLines(meetingID).filter { $0.at > state.scannedThrough }
+        let closed = transcriptLines(meetingID)
+        let fresh = transcriptLines(meetingID, includingOpen: includingOpen).filter { $0.at > state.scannedThrough }
+        // The open paragraph keeps growing; only finished ones count as read.
+        let readUpTo = { (at: TimeInterval) in min(at, closed.last?.at ?? state.scannedThrough) }
+        let live = meetingID == recordingMeetingID && QuestionPopupPreference.isOn
         let language = prompts.modelLanguageName
         for chunk in QuestionFinder.chunks(fresh) {
             guard let last = chunk.last, state.questions.count < QuestionFinder.perMeeting else { break }
             // Most of a lecture asks nothing; skip the model call when no sentence looks like a question.
             guard !QuestionFinder.candidates(in: chunk).isEmpty else {
-                state.scannedThrough = last.at
+                state.scannedThrough = max(state.scannedThrough, readUpTo(last.at))
                 continue
             }
             let mode = llmConfiguration.mode
@@ -98,10 +122,12 @@ extension AppModel {
                 state.scanError = tr("暂时没能找出问题，稍后会再试。")
                 break
             }
-            let found = QuestionFinder.parse(reply, lines: chunk, existing: state.questions, status: state.autoAnswer ? .queued : .waiting)
+            // While recording, the pop-up decides first; a question left alone follows Auto-answer then.
+            let found = QuestionFinder.parse(reply, lines: chunk, existing: state.questions, status: live ? .waiting : (state.autoAnswer ? .queued : .waiting))
             state.questions.append(contentsOf: found)
-            state.scannedThrough = last.at
+            state.scannedThrough = max(state.scannedThrough, readUpTo(last.at))
             saveQA(state)
+            if live { found.forEach { showQuestionPopup(QuestionPopup(meetingID: meetingID, questionID: $0.id)) } }
         }
         saveQA(state)
         if state.questions.contains(where: { $0.status == .queued }) { kickQuestionQueue() }
@@ -135,12 +161,21 @@ extension AppModel {
                 if local { self.questionWorkGenerating = true }
                 await self.answer(next.id, in: next.state)
                 self.questionWorkGenerating = false
+                // Still queued means it could not start (no model, or its meeting is gone).
+                // Stop instead of retrying in a tight loop that freezes the app; the next ask restarts the queue.
+                if next.state.questions.first(where: { $0.id == next.id })?.status == .queued { break }
             }
             self?.questionQueueTask = nil
         }
     }
 
     private func nextQueuedQuestion() -> (state: MeetingQA, id: UUID)? {
+        if let urgent = urgentQuestionID {
+            for state in qaStates.values where state.questions.contains(where: { $0.id == urgent && $0.status == .queued }) {
+                return (state, urgent)
+            }
+            urgentQuestionID = nil
+        }
         for state in qaStates.values {
             if let question = state.questions.first(where: { $0.status == .queued }) { return (state, question.id) }
         }
@@ -313,3 +348,93 @@ struct TranscriptJump: Equatable {
     /// A transcript that appears later (reopening the meeting) should not jump again.
     var isFresh: Bool { Date.now.timeIntervalSince(createdAt) < 3 }
 }
+
+// MARK: - Live question pop-up
+
+extension AppModel {
+    func showQuestionPopup(_ popup: QuestionPopup) {
+        guard questionPopup?.questionID != popup.questionID,
+              !questionPopupQueue.contains(where: { $0.questionID == popup.questionID }) else { return }
+        if questionPopup == nil {
+            questionPopup = popup
+        } else {
+            questionPopupQueue.append(popup)
+        }
+    }
+
+    func question(for popup: QuestionPopup) -> MeetingQuestion? {
+        qa(for: popup.meetingID).questions.first { $0.id == popup.questionID }
+    }
+
+    /// Answer now: first in the queue, and the pop-up stays to show the answer.
+    func answerPopupQuestionNow() {
+        guard let popup = questionPopup else { return }
+        urgentQuestionID = popup.questionID
+        askQuestion(popup.questionID, in: popup.meetingID)
+        questionPopup?.answering = true
+    }
+
+    /// Later: the question waits in the Q&A tab until the student asks for it.
+    func answerPopupQuestionLater() {
+        closeQuestionPopup()
+    }
+
+    /// Nobody chose: the question follows the meeting's Auto-answer switch.
+    func questionPopupTimedOut() {
+        guard let popup = questionPopup else { return }
+        let state = qa(for: popup.meetingID)
+        if !popup.answering, state.autoAnswer,
+           state.questions.first(where: { $0.id == popup.questionID })?.status == .waiting {
+            askQuestion(popup.questionID, in: popup.meetingID)
+        }
+        closeQuestionPopup()
+    }
+
+    /// The pop-up belongs to the recording. When it ends, unanswered cards are treated as left alone.
+    func settleQuestionPopups() {
+        while let popup = questionPopup {
+            if popup.answering {
+                closeQuestionPopup()
+            } else {
+                questionPopupTimedOut()
+            }
+        }
+    }
+
+    func closeQuestionPopup() {
+        questionPopup = questionPopupQueue.isEmpty ? nil : questionPopupQueue.removeFirst()
+    }
+
+    /// Open in Q&A: the meeting, its side panel on the Q&A tab, and the moment in the transcript.
+    func openPopupQuestionInQA() {
+        guard let popup = questionPopup, let question = question(for: popup) else { return }
+        page = .meetings
+        openMeetingID = popup.meetingID
+        detailTabRequest = DetailTabRequest(meetingID: popup.meetingID, tab: .qa)
+        jumpTranscript(popup.meetingID, to: question.at)
+        closeQuestionPopup()
+    }
+}
+
+/// One question the pop-up is showing.
+struct QuestionPopup: Equatable, Identifiable {
+    var meetingID: UUID
+    var questionID: UUID
+    /// The student pressed Answer now; the card stays to show the answer.
+    var answering = false
+    var id: UUID { questionID }
+}
+
+/// Asks a meeting's side panel to show a tab; a new token repeats the request.
+struct DetailTabRequest: Equatable {
+    var meetingID: UUID
+    var tab: DetailTab
+    var token = UUID()
+}
+
+/// Settings › Questions & Summaries › question pop-ups while recording. On by default.
+enum QuestionPopupPreference {
+    static let key = "lecturenote.questionPopups"
+    static var isOn: Bool { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
+}
+
