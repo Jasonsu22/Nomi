@@ -47,7 +47,8 @@ if [[ ! -x "$binary" || ! -d "$app_bundle" || ! -f "$engine_dir/mlx.metallib" ]]
     exit 1
 fi
 
-app="$root/build/Nomi.app"
+# NOMI_APP_PATH builds elsewhere, so a running copy is not replaced mid-recording.
+app="${NOMI_APP_PATH:-$root/build/Nomi.app}"
 rm -rf "$app" "$root/build/LectureNote.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 
@@ -93,9 +94,9 @@ cat > "$app/Contents/Info.plist" <<'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.3</string>
+    <string>0.4</string>
     <key>CFBundleVersion</key>
-    <string>5</string>
+    <string>6</string>
     <key>SUFeedURL</key>
     <string>https://github.com/Jasonsu22/Nomi/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key>

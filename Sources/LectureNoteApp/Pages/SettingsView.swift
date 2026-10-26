@@ -7,7 +7,7 @@ struct SettingsView: View {
     @AppStorage(InterfaceLanguage.key) private var interfaceLanguage = InterfaceLanguage.system.rawValue
     @AppStorage(InterfaceAppearance.key) private var appearance = InterfaceAppearance.system.rawValue
     @AppStorage(MicrophonePrompt.key) private var microphonePrompt = MicrophonePrompt.ask.rawValue
-    @AppStorage(ClassroomMicPreference.key) private var classroomMic = false
+    @AppStorage(ClassroomMicPreference.key) private var classroomMic = true
 
     var body: some View {
         PageScaffold(title: tr("设置"), columnWidth: PageColumnLayout.narrowWidth) {

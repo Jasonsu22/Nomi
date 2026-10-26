@@ -14,7 +14,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-app="$root/build/Nomi.app"
+app="${NOMI_APP_PATH:-$root/build/Nomi.app}"
 tools="$root/.build/artifacts/sparkle/Sparkle/bin"
 notes="${1:-}"
 

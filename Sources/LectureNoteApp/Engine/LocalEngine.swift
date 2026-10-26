@@ -985,8 +985,8 @@ private final class AudioFileRecorder: @unchecked Sendable {
     }
 }
 
-/// Settings › Recording & Translation › Classroom mic. Off by default.
+/// Settings › Recording & Translation › Classroom mic. On by default.
 enum ClassroomMicPreference {
     static let key = "lecturenote.classroomMic"
-    static var isOn: Bool { UserDefaults.standard.bool(forKey: key) }
+    static var isOn: Bool { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
 }
