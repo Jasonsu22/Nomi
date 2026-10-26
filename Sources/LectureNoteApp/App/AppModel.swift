@@ -175,8 +175,11 @@ final class AppModel {
         recordingSourceLanguage = pair.source
         recordingTargetLanguage = pair.target
         // A crash or force-quit while preparing used to leave empty "0 sec" meetings behind.
-        self.meetings = meetings ?? snapshot?.meetings.filter { !$0.paragraphs.isEmpty || $0.duration > 0 } ?? SampleMeetings.make()
-        self.categories = categories ?? snapshot?.categories ?? SampleMeetings.categories()
+        // Sample lectures only fill the preview build, which has no engine to record with; a real
+        // first launch starts with an empty library.
+        let preview = engine is ReplayEngine
+        self.meetings = meetings ?? snapshot?.meetings.filter { !$0.paragraphs.isEmpty || $0.duration > 0 } ?? (preview ? SampleMeetings.make() : [])
+        self.categories = categories ?? snapshot?.categories ?? (preview ? SampleMeetings.categories() : [])
         self.filter = CategoryFilter.load()
         self.grouping = MeetingGrouping.load()
         if case .failure = stored {

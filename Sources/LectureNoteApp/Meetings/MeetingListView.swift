@@ -45,7 +45,9 @@ struct MeetingListView: View {
                 header
                 SearchField(text: $model.query, isFocused: $searchFocused)
                 chips
-                if visible.isEmpty {
+                if model.meetings.isEmpty {
+                    firstMeetingPrompt
+                } else if visible.isEmpty {
                     Text(tr("没有匹配的会议"))
                         .font(AppFont.secondary)
                         .foregroundStyle(AppColor.textSecondary)
@@ -194,6 +196,35 @@ struct MeetingListView: View {
                 .background(selected ? AppColor.selection : Color.clear, in: Capsule())
         }
         .buttonStyle(.plain.clicking())
+    }
+
+    /// A new library: say what goes here and how to make the first one.
+    private var firstMeetingPrompt: some View {
+        VStack(spacing: Space.s3) {
+            Image(systemName: "waveform")
+                .font(.system(size: 26, weight: .medium))
+                .foregroundStyle(AppColor.accent)
+                .frame(width: 64, height: 64)
+                .background(AppColor.accentSoft, in: Circle())
+            Text(tr("还没有会议"))
+                .font(AppFont.sectionTitle)
+                .foregroundStyle(AppColor.textPrimary)
+            Text(tr("上课时点「开始转录」，录下的课堂和转写都会出现在这里。"))
+                .font(AppFont.secondary)
+                .foregroundStyle(AppColor.textSecondary)
+                .multilineTextAlignment(.center)
+            Button {
+                model.prepareRecording()
+            } label: {
+                Label(tr("开始转录"), systemImage: "waveform")
+            }
+            .buttonStyle(.borderedProminent.clicking())
+            .disabled(!model.canStart)
+            .padding(.top, Space.s2)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Space.s7)
+        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
     }
 
     private var chips: some View {

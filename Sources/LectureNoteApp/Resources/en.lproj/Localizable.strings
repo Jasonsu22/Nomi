@@ -559,3 +559,5 @@
 "设置向导" = "Setup Guide";
 "下载语音识别和翻译模型，允许麦克风。" = "Download the speech and translation models and allow the microphone.";
 "打开设置向导，下载语音识别和翻译模型" = "Open the setup guide to download the speech and translation models";
+"还没有会议" = "No Meetings Yet";
+"上课时点「开始转录」，录下的课堂和转写都会出现在这里。" = "When class begins, press Start Transcription. Your recorded classes and transcripts will appear here.";
