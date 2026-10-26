@@ -196,8 +196,7 @@ extension AppModel {
 
         // The moment the teacher asked it comes first, then the rest of the lecture and its files by relevance.
         let lines = transcriptLines(meeting.id)
-        var lecture = meeting
-        if meeting.id == recordingMeetingID { lecture.paragraphs = engine.transcript.paragraphs.filter(\.closed) }
+        let lecture = current(meeting)
         let linked = sources.filter { meetingLinks[meeting.id]?.contains($0.id) == true }
         var blocks = QuestionFinder.moment(question, in: lines, meetingID: meeting.id, title: meeting.title)
         let around = Set(blocks.map(\.body))

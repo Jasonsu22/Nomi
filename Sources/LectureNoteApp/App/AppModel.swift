@@ -912,4 +912,14 @@ final class AppModel {
 
     /// The meeting being recorded, if any.
     var recordingMeetingID: UUID? { liveMeetingID }
+
+    /// A meeting as it reads right now. While it records, its transcript lives in the engine and
+    /// `meetings` still holds the copy from before the recording started, so anything that reads
+    /// the class (chat, summaries, library search, Q&A) must go through this.
+    func current(_ meeting: Meeting) -> Meeting {
+        guard meeting.id == recordingMeetingID else { return meeting }
+        var live = meeting
+        live.paragraphs = engine.transcript.snapshot(at: engine.session.elapsed)
+        return live
+    }
 }

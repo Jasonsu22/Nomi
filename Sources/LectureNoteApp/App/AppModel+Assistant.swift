@@ -24,7 +24,7 @@ extension AppModel {
     }
 
     func generateAssistant(for meetingID: UUID, question: String? = nil) {
-        guard canGenerateAssistant, let meeting = meetings.first(where: { $0.id == meetingID }) else { return }
+        guard canGenerateAssistant, let meeting = meetings.first(where: { $0.id == meetingID }).map(current) else { return }
         let state: MeetingAssistantState
         if let existing = assistantStates[meetingID] { state = existing }
         else { state = MeetingAssistantState(record: meeting.assistant); assistantStates[meetingID] = state }

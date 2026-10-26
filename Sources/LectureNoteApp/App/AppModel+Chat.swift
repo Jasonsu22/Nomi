@@ -266,7 +266,7 @@ extension AppModel {
         if let boundMeeting {
             chosenMeetings = [boundMeeting]
             chosenSources = Set(meetingLinks[boundMeeting] ?? [])
-            let meeting = meetings.first { $0.id == boundMeeting }
+            let meeting = meetings.first { $0.id == boundMeeting }.map(current)
             let hasText = meeting?.paragraphs.contains {
                 !$0.renderedSource(language: meeting?.sourceLanguage ?? "zh").isEmpty
             } ?? false
@@ -285,7 +285,8 @@ extension AppModel {
         let remembered = memoryPrompt(for: question)
         let history = session.turns
         let chatSummary = session.summary
-        let pickedMeetings = meetings.filter { chosenMeetings.contains($0.id) }
+        // The class being recorded is read from the live transcript, not the copy from before it started.
+        let pickedMeetings = meetings.filter { chosenMeetings.contains($0.id) }.map(current)
         let pickedSources = sources.filter { chosenSources.contains($0.id) }
         mutate(id) {
             $0.modelMode = mode.rawValue
@@ -746,13 +747,13 @@ extension AppModel {
 
     /// Whether there is anything besides the current chat that a library search could find.
     var hasLibrary: Bool {
-        !sources.isEmpty || meetings.contains { !$0.paragraphs.isEmpty } || chats.contains { $0.turns.count > 0 && $0.id != chatGeneratingID }
+        !sources.isEmpty || meetings.contains { !current($0).paragraphs.isEmpty } || chats.contains { $0.turns.count > 0 && $0.id != chatGeneratingID }
     }
 
     /// The student's recorded lectures, earlier chats and imported files, minus what this question already includes.
     private func libraryDocuments(excluding excluded: LibraryExclusions) async -> [LibraryDocument] {
         var documents: [LibraryDocument] = []
-        for meeting in meetings where !excluded.meetings.contains(meeting.id) {
+        for meeting in meetings.map(current) where !excluded.meetings.contains(meeting.id) {
             let language = meeting.sourceLanguage
             documents += LibrarySearch.meetingDocuments(
                 id: meeting.id,
