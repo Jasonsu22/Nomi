@@ -41,6 +41,8 @@ final class AppModel {
     var page: AppPage = .meetings
     /// The quick tutorial's current tip, or nil when it is not running.
     var tutorialStep: TutorialStop?
+    /// The first-start guide is showing.
+    var onboardingPresented = false
     var revealSearchSettings = false
     var revealMemorySettings = false
     let webSearch = SearchConfiguration()

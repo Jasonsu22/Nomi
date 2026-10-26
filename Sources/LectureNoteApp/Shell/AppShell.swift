@@ -45,6 +45,14 @@ struct AppShell: View {
                 }
             }
         }
+        .sheet(isPresented: $model.onboardingPresented) {
+            OnboardingView(model: model)
+                .interactiveDismissDisabled()
+        }
+        .onAppear {
+            // First launch only; afterwards the top bar and Help reopen it.
+            if !OnboardingPreference.done, model.engine is LocalEngine { model.onboardingPresented = true }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .nomiEnlargeImage)) { note in
             guard let image = note.userInfo?["image"] as? NSImage else { return }
             var transaction = Transaction()

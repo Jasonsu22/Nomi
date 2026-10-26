@@ -54,6 +54,10 @@ struct HelpView: View {
                 withAnimation(Motion.layout(reduceMotion)) { model.startTutorial() }
             }
             Divider().padding(.horizontal, Space.s4)
+            row(title: tr("设置向导"), detail: tr("下载语音识别和翻译模型，允许麦克风。")) {
+                model.onboardingPresented = true
+            }
+            Divider().padding(.horizontal, Space.s4)
             contactRow
         }
         .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))

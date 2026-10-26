@@ -26,13 +26,27 @@ struct TopBar: View {
             }
             // The status sits right after the name at every window width, full screen included.
             .padding(.trailing, Space.s3)
-            HeaderStatus(
-                title: model.statusTitle,
-                live: model.statusIsLive,
-                stays: model.statusStays,
-                isError: model.statusIsError,
-                reduceMotion: reduceMotion
-            )
+            if model.engine.readiness == .asrMissing, model.engine.session.phase == .idle {
+                // Without the speech model nothing works; say what to do, not only what is wrong.
+                Button { model.onboardingPresented = true } label: {
+                    Label(tr("下载模型"), systemImage: "arrow.down.circle.fill")
+                        .font(AppFont.secondary.weight(.semibold))
+                        .foregroundStyle(Color.red)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.red.opacity(0.1), in: Capsule())
+                }
+                .buttonStyle(.plain.clicking())
+                .help(tr("打开设置向导，下载语音识别和翻译模型"))
+            } else {
+                HeaderStatus(
+                    title: model.statusTitle,
+                    live: model.statusIsLive,
+                    stays: model.statusStays,
+                    isError: model.statusIsError,
+                    reduceMotion: reduceMotion
+                )
+            }
             Spacer(minLength: Space.s3)
             SessionControl(
                 session: model.engine.session,
