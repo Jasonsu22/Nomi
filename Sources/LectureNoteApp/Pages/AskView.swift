@@ -350,29 +350,39 @@ struct AskView: View {
     }
 
     private var modelMenu: some View {
-        Menu {
-            if model.llmConfiguration.mode == .local {
-                ForEach(localChatModels) { item in
-                    Button {
-                        Task { await model.selectLocalModel(item, for: .assistant) }
-                    } label: {
-                        if item.id == LocalModelDefinition.selected(for: .assistant).id {
-                            Label(item.name, systemImage: "checkmark")
-                        } else {
-                            Text(item.name)
+        // Both kinds are always listed, so a chat can move to the local model mid-recording.
+        // The loaded local model is a mode switch and works any time; another one means
+        // loading it, which waits for the recording to end.
+        let local = model.llmConfiguration.mode == .local
+        let loaded = LocalModelDefinition.selected(for: .assistant).id
+        return Menu {
+            if !localChatModels.isEmpty {
+                Section(tr("本地模型")) {
+                    ForEach(localChatModels) { item in
+                        Button {
+                            useLocal(item)
+                        } label: {
+                            if local, item.id == loaded {
+                                Label(item.name, systemImage: "checkmark")
+                            } else {
+                                Text(item.name)
+                            }
                         }
+                        .disabled(item.id != loaded && !model.canSwitchModels)
                     }
-                    .disabled(!model.canSwitchModels)
                 }
-            } else if let profile = model.llmConfiguration.activeProfile {
-                ForEach(model.apiModelChoices, id: \.self) { modelID in
-                    Button {
-                        model.useAPIModel(modelID)
-                    } label: {
-                        if modelID == profile.modelID {
-                            Label(modelID, systemImage: "checkmark")
-                        } else {
-                            Text(modelID)
+            }
+            if let profile = model.llmConfiguration.activeProfile, !model.apiModelChoices.isEmpty {
+                Section("API") {
+                    ForEach(model.apiModelChoices, id: \.self) { modelID in
+                        Button {
+                            model.useAPIModel(modelID)
+                        } label: {
+                            if !local, modelID == profile.modelID {
+                                Label(modelID, systemImage: "checkmark")
+                            } else {
+                                Text(modelID)
+                            }
                         }
                     }
                 }
@@ -407,8 +417,18 @@ struct AskView: View {
     }
 
     private var modelMenuIsEmpty: Bool {
-        if model.llmConfiguration.mode == .local { return localChatModels.isEmpty }
-        return model.llmConfiguration.activeProfile == nil || model.apiModelChoices.isEmpty
+        localChatModels.isEmpty && (model.llmConfiguration.activeProfile == nil || model.apiModelChoices.isEmpty)
+    }
+
+    private func useLocal(_ item: LocalModelDefinition) {
+        guard item.id != LocalModelDefinition.selected(for: .assistant).id else {
+            model.useLocalChatModel()
+            return
+        }
+        Task {
+            await model.selectLocalModel(item, for: .assistant)
+            if LocalModelDefinition.selected(for: .assistant).id == item.id { model.useLocalChatModel() }
+        }
     }
 
     /// Stop while this chat is answering, and Send whenever there is something to send. While an

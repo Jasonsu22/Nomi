@@ -17,12 +17,14 @@ struct MeetingQAPanel: View {
                 empty(qa)
             } else {
                 ScrollView {
+                    // Newest first: the question the teacher just asked is the one to read.
+                    let shown = Array(qa.questions.reversed())
                     VStack(alignment: .leading, spacing: Space.s3) {
-                        ForEach(Array(qa.questions.enumerated()), id: \.element.id) { index, question in
+                        ForEach(Array(shown.enumerated()), id: \.element.id) { index, question in
                             QuestionCard(
                                 question: question,
                                 isFirst: index == 0,
-                                isLast: index == qa.questions.count - 1,
+                                isLast: index == shown.count - 1,
                                 model: model,
                                 meetingID: meeting.id,
                                 onContinueInChat: {
@@ -270,9 +272,10 @@ private struct QuestionCard: View {
                 Button(tr("重新回答")) { model.askQuestion(question.id, in: meetingID) }
             }
             Divider()
-            Button(tr("上移")) { model.moveQuestion(question.id, in: meetingID, by: -1) }
+            // The list shows the newest first, so up on screen is later in the stored order.
+            Button(tr("上移")) { model.moveQuestion(question.id, in: meetingID, by: 1) }
                 .disabled(isFirst)
-            Button(tr("下移")) { model.moveQuestion(question.id, in: meetingID, by: 1) }
+            Button(tr("下移")) { model.moveQuestion(question.id, in: meetingID, by: -1) }
                 .disabled(isLast)
             Divider()
             Button(tr("删除"), role: .destructive) { model.deleteQuestion(question.id, in: meetingID) }

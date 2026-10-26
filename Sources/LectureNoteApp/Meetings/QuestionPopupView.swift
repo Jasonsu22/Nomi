@@ -7,9 +7,10 @@ struct QuestionPopupView: View {
     var model: AppModel
     var popup: QuestionPopup
     var reduceMotion: Bool
+    /// Fixed over the full window; nil fills the compact window's width.
+    var width: CGFloat? = 380
 
     @State private var hovering = false
-    @State private var remaining: Double = 1
     @State private var pulsing = false
 
     static let askSeconds: TimeInterval = 8
@@ -57,15 +58,22 @@ struct QuestionPopupView: View {
         .padding(.horizontal, 18)
         .padding(.top, 16)
         .padding(.bottom, 14)
-        .frame(width: 380, alignment: .leading)
+        .frame(width: width, alignment: .leading)
+        .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
         .background(AppColor.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(AppColor.separator)
         }
-        .overlay(alignment: .bottom) { countdownBar(phase: phase) }
+        .overlay(alignment: .bottom) {
+            if phase != .answering {
+                CountdownBar(seconds: phase == .asking ? Self.askSeconds : Self.answeredSeconds, paused: hovering) {
+                    if phase == .asking { model.questionPopupTimedOut() } else { model.closeQuestionPopup() }
+                }
+                .id(phase)
+            }
+        }
         .shadow(color: .black.opacity(0.18), radius: 26, x: 0, y: 14)
         .onHover { hovering = $0 }
-        .task(id: phase) { await runCountdown(for: phase) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(tr("老师提问"))
     }
@@ -162,41 +170,48 @@ struct QuestionPopupView: View {
         .controlSize(.regular)
         .padding(.top, 12)
     }
+}
 
-    @ViewBuilder
-    private func countdownBar(phase: Phase) -> some View {
-        if phase == .asking || phase == .answered || phase == .failed {
-            GeometryReader { proxy in
-                Capsule()
-                    .fill(AppColor.accent.opacity(0.35))
-                    .frame(width: proxy.size.width * remaining, height: 3)
+/// The time left before the pop-up lets the question go. It redraws on its own, so the card
+/// above it is not rebuilt twenty times a second, and it holds still while the pointer is on the card.
+private struct CountdownBar: View {
+    var seconds: TimeInterval
+    var paused: Bool
+    var onFinish: () -> Void
+
+    @State private var elapsed: TimeInterval = 0
+    @State private var resumedAt: Date?
+
+    var body: some View {
+        TimelineView(.animation(paused: paused)) { context in
+            let left = max(0, 1 - total(at: context.date) / seconds)
+            Capsule()
+                .fill(AppColor.accent.opacity(0.35))
+                .frame(height: 3)
+                .scaleEffect(x: left, anchor: .leading)
+        }
+        .frame(height: 3)
+        .padding(.horizontal, 18)
+        .padding(.bottom, 1)
+        .onAppear { if !paused { resumedAt = .now } }
+        .onChange(of: paused) { _, now in
+            if now {
+                elapsed = total(at: .now)
+                resumedAt = nil
+            } else {
+                resumedAt = .now
             }
-            .frame(height: 3)
-            .padding(.horizontal, 18)
-            .padding(.bottom, 1)
+        }
+        .task(id: paused) {
+            guard !paused else { return }
+            let left = seconds - total(at: .now)
+            try? await Task.sleep(for: .seconds(max(0, left)))
+            if !Task.isCancelled { onFinish() }
         }
     }
 
-    /// Counts down while the pointer is away, then lets the question go.
-    private func runCountdown(for phase: Phase) async {
-        let length: TimeInterval
-        switch phase {
-        case .asking: length = Self.askSeconds
-        case .answered, .failed: length = Self.answeredSeconds
-        case .answering:
-            remaining = 0
-            return
-        }
-        remaining = 1
-        var elapsed: TimeInterval = 0
-        let step: TimeInterval = 0.05
-        while elapsed < length {
-            try? await Task.sleep(for: .milliseconds(50))
-            if Task.isCancelled { return }
-            if !hovering { elapsed += step }
-            remaining = max(0, 1 - elapsed / length)
-        }
-        if phase == .asking { model.questionPopupTimedOut() } else { model.closeQuestionPopup() }
+    private func total(at date: Date) -> TimeInterval {
+        elapsed + (resumedAt.map { date.timeIntervalSince($0) } ?? 0)
     }
 }
 

@@ -186,6 +186,7 @@ extension AppModel {
     }
 
     func useAPIModel(_ modelID: String) {
+        llmConfiguration.setMode(.api)
         llmConfiguration.selectModel(modelID)
         ensureChat()
         guard let id = currentChatID else { return }

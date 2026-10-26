@@ -29,14 +29,18 @@ struct AppShell: View {
         }
         .background(RecordingWindowLevel(recording: model.engine.session.phase != .idle))
         .overlay(alignment: .bottomTrailing) {
-            if let popup = model.questionPopup, model.engine.session.phase != .idle {
-                QuestionPopupView(model: model, popup: popup, reduceMotion: reduce)
-                    .id(popup.id)
-                    .padding(24)
-                    .transition(reduce ? .opacity : .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
+            // Animated on its own, so the window underneath does not move along with it.
+            ZStack(alignment: .bottomTrailing) {
+                // The compact window places its own, above the transcript.
+                if !compact, let popup = model.questionPopup, model.engine.session.phase != .idle {
+                    QuestionPopupView(model: model, popup: popup, reduceMotion: reduce)
+                        .id(popup.id)
+                        .padding(24)
+                        .transition(reduce ? .opacity : .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
+                }
             }
+            .animation(reduce ? .easeOut(duration: 0.25) : .spring(response: 0.45, dampingFraction: 0.82), value: model.questionPopup?.id)
         }
-        .animation(reduce ? .easeOut(duration: 0.25) : .spring(response: 0.45, dampingFraction: 0.82), value: model.questionPopup?.id)
         .overlay {
             if let image = model.enlargedImage {
                 ChatImageLightbox(image: image, name: model.enlargedImageName, fileURL: model.enlargedImageURL, reduceMotion: reduce) {

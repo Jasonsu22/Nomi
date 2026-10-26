@@ -177,7 +177,8 @@ extension AppModel {
             urgentQuestionID = nil
         }
         for state in qaStates.values {
-            if let question = state.questions.first(where: { $0.status == .queued }) { return (state, question.id) }
+            // Newest first, matching the Q&A tab: the question just asked matters most in class.
+            if let question = state.questions.last(where: { $0.status == .queued }) { return (state, question.id) }
         }
         return nil
     }

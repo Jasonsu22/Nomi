@@ -15,12 +15,11 @@ struct CompactMeetingView: View {
 
     private func content(_ meeting: Meeting) -> some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            if meeting.isLive || model.engine.session.phase != .idle {
-                HStack {
-                    Spacer(minLength: 0)
-                    sessionControl
-                    Spacer(minLength: 0)
-                }
+            // Always here, so a stopped meeting can continue recording without leaving this window.
+            HStack {
+                Spacer(minLength: 0)
+                sessionControl
+                Spacer(minLength: 0)
             }
             HStack(spacing: Space.s2) {
                 Button {
@@ -71,6 +70,18 @@ struct CompactMeetingView: View {
                 showsClose: false
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Over the older lines under the tabs, so the newest transcript at the bottom stays readable.
+            .overlay(alignment: .top) {
+                ZStack(alignment: .top) {
+                    if let popup = model.questionPopup, model.engine.session.phase != .idle {
+                        QuestionPopupView(model: model, popup: popup, reduceMotion: reduceMotion, width: nil)
+                            .id(popup.id)
+                            .padding(.top, 40)
+                            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.9), value: model.questionPopup?.id)
+            }
         }
         .padding(Space.s4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
