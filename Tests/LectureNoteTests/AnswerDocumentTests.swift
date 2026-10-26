@@ -263,6 +263,27 @@ struct AnswerDocumentTests {
         #expect(partial.visible == "先看结论。")
     }
 
+    @Test func anOpenToolTagIsHiddenNotShown() {
+        // A small local model wrote the call first and never closed it.
+        let raw = """
+        <tool name="create_demo">
+        展示一个与非门。
+        - 输入控件：两个开关 A 和 B。
+
+        与非门只有在 A 和 B 都为 1 时输出 0。
+        """
+        let parsed = ChatTools.parse(raw, streaming: false)
+        #expect(!parsed.visible.contains("<tool"))
+        #expect(!parsed.visible.contains("输入控件"))
+        #expect(parsed.visible.contains("都为 1 时输出 0"))
+        #expect(parsed.calls.map(\.name) == [ChatTools.createDemo])
+        #expect(parsed.calls[0].body.contains("两个开关"))
+
+        let fenced = ChatTools.parse("<tool name=\"create_demo\">做一个开关页面\n```html\n<div></div>\n```", streaming: false)
+        #expect(fenced.visible.hasPrefix("```html"))
+        #expect(fenced.calls[0].body == "做一个开关页面")
+    }
+
     @Test func textAfterASearchCallWaitsForTheResults() {
         let raw = """
         我先查一下。

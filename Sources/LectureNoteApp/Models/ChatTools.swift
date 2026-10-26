@@ -39,15 +39,23 @@ enum ChatTools {
             let open = raw[start.lowerBound...openEnd]
             let name = attribute("name", in: String(open))?.lowercased() ?? ""
             let bodyStart = raw.index(after: openEnd)
-            guard let close = raw.range(of: "</tool>", options: .caseInsensitive, range: bodyStart..<raw.endIndex) else {
-                if !streaming, !searching { visible += raw[start.lowerBound...] }
-                break
+            let bodyEnd: String.Index
+            if let close = raw.range(of: "</tool>", options: .caseInsensitive, range: bodyStart..<raw.endIndex) {
+                bodyEnd = close.lowerBound
+                index = close.upperBound
+            } else {
+                // While streaming, the closing tag may still be coming.
+                if streaming { break }
+                // Small local models often leave the tag open. The call then ends at the next code fence,
+                // blank line or tool tag, or at the end of the reply, and is hidden instead of shown as raw text.
+                let rest = bodyStart..<raw.endIndex
+                bodyEnd = ["```", "\n\n", "<tool"].compactMap { raw.range(of: $0, options: .caseInsensitive, range: rest)?.lowerBound }.min() ?? raw.endIndex
+                index = bodyEnd
             }
-            let body = String(raw[bodyStart..<close.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let body = String(raw[bodyStart..<bodyEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
             if !name.isEmpty, !body.isEmpty, !searching || lookups.contains(name) {
                 calls.append(Call(name: name, body: body))
             }
-            index = close.upperBound
             if stopAtSearch, lookups.contains(name), !body.isEmpty { searching = true }
         }
         if streaming { visible = droppingOpenTag(visible) }

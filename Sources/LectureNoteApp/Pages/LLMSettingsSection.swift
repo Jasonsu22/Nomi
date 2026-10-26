@@ -8,76 +8,64 @@ struct LLMSettingsSection: View {
     @AppStorage(QuestionPopupPreference.key) private var questionPopups = true
 
     private enum Confirmation {
-        case mode(LLMMode), activate(LLMAPIProfile)
-        var title: String {
-            switch self {
-            case .mode: tr("切换大模型来源？")
-            case .activate: tr("使用此 API 配置？")
-            }
-        }
+        case activate(LLMAPIProfile)
+        var title: String { tr("使用此 API 配置？") }
         var message: String {
             switch self {
-            case .mode(.local): tr("提问和摘要将使用本地模型。识别和翻译不受影响。")
-            case .mode(.api): tr("提问和摘要会将相关会议文字发送到你选择的 API 服务。识别和翻译继续在本机运行。")
             case .activate(let profile): trf("后续提问和摘要将使用 %@（%@），相关会议文字会发送到此地址。", profile.name, profile.baseURL)
             }
         }
     }
 
+    /// Two boxes, one per source; which one answers is chosen in the chat's model menu.
+    /// A Group, so the three sections sit in the page's own stack with its spacing.
     var body: some View {
-        SettingsSection(tr("提问与摘要大模型")) {
-            SettingsRow(tr("大模型来源")) {
-                Picker(tr("大模型来源"), selection: Binding(get: { model.llmConfiguration.mode }, set: { confirmation = .mode($0) })) {
-                    ForEach(LLMMode.allCases) { mode in Text(mode.title).tag(mode) }
+        Group {
+            SettingsSection(tr("提问与摘要大模型")) {
+                SettingsRow(tr("默认回复语言")) {
+                    SettingsPopUp(
+                        selection: Binding(get: { model.prompts.replyLanguage }, set: { model.prompts.setReplyLanguage($0) }),
+                        options: [(PromptPreferences.followInterface, tr("跟随界面"))] + LectureLanguages.supported.map { ($0, languageName($0)) }
+                    )
                 }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .fixedSize()
-                .clickCursor()
-                .disabled(model.assistantIsBusy)
+                SettingsRow(tr("回答中发送新消息")) {
+                    Picker(tr("回答中发送新消息"), selection: $busySend) {
+                        ForEach(BusySendMode.allCases) { mode in Text(mode.title).tag(mode) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                    .clickCursor()
+                    .onChange(of: busySend) { _, mode in BusySendMode.current = mode }
+                }
+                SettingsRow(tr("录音时弹出老师的提问"), detail: tr("老师问了真正的问题时，它会在窗口上浮出几秒，你可以马上回答或稍后再看。")) {
+                    SettingsSwitch(label: tr("录音时弹出老师的提问"), isOn: $questionPopups)
+                }
+            } footer: {
+                Text(tr("排队：等这条回答结束后依次发送。打断并引导：立即停下当前回答，保留已写的部分，按新消息继续。⌘Enter 使用另一种方式。"))
             }
-            if model.llmConfiguration.mode == .local {
+            SettingsSection(tr("本地大模型")) {
                 LocalModelPicker(model: model, role: .assistant)
-            } else {
+            } footer: {
+                Text(tr("在提问框的模型菜单里选择用本地模型还是 API，提问、摘要和 Q&A 都会跟随。"))
+            }
+            SettingsSection("API") {
                 ForEach(model.llmConfiguration.profiles) { profile in profileRow(profile) }
                 SettingsAddRow(title: tr("添加 API 配置")) {
                     editingProfile = LLMAPIProfile(providerID: "openai", name: "OpenAI", baseURL: "https://api.openai.com/v1")
                 }
                 .disabled(model.assistantIsBusy)
-            }
-            SettingsRow(tr("默认回复语言")) {
-                SettingsPopUp(
-                    selection: Binding(get: { model.prompts.replyLanguage }, set: { model.prompts.setReplyLanguage($0) }),
-                    options: [(PromptPreferences.followInterface, tr("跟随界面"))] + LectureLanguages.supported.map { ($0, languageName($0)) }
-                )
-            }
-            SettingsRow(tr("回答中发送新消息")) {
-                Picker(tr("回答中发送新消息"), selection: $busySend) {
-                    ForEach(BusySendMode.allCases) { mode in Text(mode.title).tag(mode) }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .fixedSize()
-                .clickCursor()
-                .onChange(of: busySend) { _, mode in BusySendMode.current = mode }
-            }
-            SettingsRow(tr("录音时弹出老师的提问"), detail: tr("老师问了真正的问题时，它会在窗口上浮出几秒，你可以马上回答或稍后再看。")) {
-                SettingsSwitch(label: tr("录音时弹出老师的提问"), isOn: $questionPopups)
-            }
-        } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                if model.llmConfiguration.mode == .api, model.llmConfiguration.activeProfile == nil {
+            } footer: {
+                if model.llmConfiguration.activeProfile == nil {
                     Text(tr("添加并选择一个 API 配置后，即可使用提问和摘要。"))
                 }
-                Text(tr("此切换只用于提问和摘要，语音识别和翻译模型保持独立。"))
-                Text(tr("排队：等这条回答结束后依次发送。打断并引导：立即停下当前回答，保留已写的部分，按新消息继续。⌘Enter 使用另一种方式。"))
             }
+            .sheet(item: $editingProfile) { profile in APIProfileEditor(profile: profile, configuration: model.llmConfiguration) }
+            .alert(confirmation?.title ?? "", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }), presenting: confirmation) { action in
+                Button(tr("确认")) { apply(action) }
+                Button(tr("取消"), role: .cancel) {}
+            } message: { Text($0.message) }
         }
-        .sheet(item: $editingProfile) { profile in APIProfileEditor(profile: profile, configuration: model.llmConfiguration) }
-        .alert(confirmation?.title ?? "", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }), presenting: confirmation) { action in
-            Button(tr("确认")) { apply(action) }
-            Button(tr("取消"), role: .cancel) {}
-        } message: { Text($0.message) }
     }
 
     /// Click the row to switch to this profile; deleting lives in the editor.
@@ -108,8 +96,9 @@ struct LLMSettingsSection: View {
 
     private func apply(_ action: Confirmation) {
         switch action {
-        case .mode(let mode): model.llmConfiguration.setMode(mode)
-        case .activate(let profile): model.llmConfiguration.activate(profile.id)
+        case .activate(let profile):
+            model.llmConfiguration.activate(profile.id)
+            model.llmConfiguration.setMode(.api)
         }
     }
 }

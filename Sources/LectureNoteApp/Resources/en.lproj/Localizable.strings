@@ -561,3 +561,4 @@
 "打开设置向导，下载语音识别和翻译模型" = "Open the setup guide to download the speech and translation models";
 "还没有会议" = "No Meetings Yet";
 "上课时点「开始转录」，录下的课堂和转写都会出现在这里。" = "When class begins, press Start Transcription. Your recorded classes and transcripts will appear here.";
+"在提问框的模型菜单里选择用本地模型还是 API，提问、摘要和 Q&A 都会跟随。" = "Choose the local model or an API model in the chat box's model menu. Questions, summaries and Q&A all follow that choice.";

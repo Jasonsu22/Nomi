@@ -170,15 +170,41 @@ fn collect_response<E: std::fmt::Display>(
         ids.push(id);
         // Decode the whole sequence so a token boundary cannot split a character, then send the new visible text.
         let decoded = tokenizer.decode(&ids, true).map_err(|error| anyhow!("解码失败：{error:?}"))?;
-        let visible = visible_answer(&decoded);
+        let mut visible = visible_answer(&decoded);
+        // Greedy decoding can fall into a loop that repeats one block until the token limit.
+        // Every few tokens, look for it; keep the text up to the first copy and stop.
+        let looped = ids.len() % 16 == 0 && trim_loop(&mut visible);
         if visible != sent {
             emit(&visible).map_err(|error| anyhow!("写出文字失败：{error}"))?;
             sent = visible;
         }
+        if looped { return Ok(sent.trim().to_string()); }
     }
     let decoded = tokenizer.decode(&ids, true).map_err(|error| anyhow!("解码失败：{error:?}"))?;
-    let visible = visible_answer(&decoded).trim().to_string();
+    let mut visible = visible_answer(&decoded);
+    trim_loop(&mut visible);
+    let visible = visible.trim().to_string();
     if visible.is_empty() { Ok(decoded.trim().to_string()) } else { Ok(visible) }
+}
+
+/// True when the text ends in one block repeated at least three times over 240+ characters.
+/// Digits are compared as equal, so "step 19, step 20, …" counts as a loop too.
+/// The repeats are cut, leaving the first copy.
+fn trim_loop(text: &mut String) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    let shape: Vec<char> = chars.iter().map(|c| if c.is_ascii_digit() { '0' } else { *c }).collect();
+    let n = chars.len();
+    for unit in 4..=400.min(n / 3) {
+        let mut copies = 1;
+        while (copies + 1) * unit <= n && shape[n - (copies + 1) * unit..n - copies * unit] == shape[n - unit..] {
+            copies += 1;
+        }
+        if copies >= 3 && copies * unit >= 240 {
+            *text = chars[..n - (copies - 1) * unit].iter().collect();
+            return true;
+        }
+    }
+    false
 }
 
 fn visible_answer(text: &str) -> String {
@@ -261,4 +287,35 @@ fn argument_value(name: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod loop_tests {
+    use super::trim_loop;
+
+    #[test]
+    fn cuts_a_repeating_block() {
+        let block = "       +----+\n       |    |\n       |    v\n";
+        let mut text = format!("结构图\n{}", block.repeat(12));
+        assert!(trim_loop(&mut text));
+        assert_eq!(text, format!("结构图\n{block}"));
+    }
+
+    #[test]
+    fn cuts_a_counting_loop() {
+        let mut text = String::from("迭代过程：\n");
+        for step in 10..30 {
+            text += &format!("- **第 {step} 步**：\n  - 梯度：$(0, 0)$\n  - 结果：$(0, 0)$\n");
+        }
+        assert!(trim_loop(&mut text));
+        assert!(text.ends_with("- **第 10 步**：\n  - 梯度：$(0, 0)$\n  - 结果：$(0, 0)$\n"));
+    }
+
+    #[test]
+    fn leaves_normal_text_alone() {
+        let mut text = "梯度下降沿负梯度方向更新参数。\n\n1. 计算梯度\n2. 更新参数\n3. 重复直到收敛\n".to_string();
+        assert!(!trim_loop(&mut text));
+        let mut table = "| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n".to_string();
+        assert!(!trim_loop(&mut table));
+    }
 }
