@@ -517,3 +517,5 @@
 "跳到这一刻" = "Jump to this moment";
 "录音时弹出老师的提问" = "Show the Teacher's Questions While Recording";
 "老师问了真正的问题时，它会在窗口上浮出几秒，你可以马上回答或稍后再看。" = "When the teacher asks a real question, it floats over the window for a few seconds. Answer it now or look at it later.";
+"课堂麦克风（实验）" = "Classroom Mic (Experimental)";
+"用 Mac 自带麦克风录音时，降低教室噪音并自动调整音量。如果老师离得远、声音反而变小，就关掉。下一次开始录音时生效。" = "When recording with the Mac's own microphone, reduces classroom noise and evens out the volume. If a distant teacher gets quieter, turn it off. Takes effect the next time you start recording.";

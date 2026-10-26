@@ -28,8 +28,10 @@ impl Default for VadConfig {
             end_rms: 0.010,
             min_start_rms: 0.0045,
             min_end_rms: 0.0028,
-            start_over_floor: 3.0,
-            end_over_floor: 1.8,
+            // About 7.6 dB over the room to start and 3.5 dB to keep going. A laptop across a
+            // classroom hears speech only 8-10 dB over the room, which a stricter gate mostly missed.
+            start_over_floor: 2.4,
+            end_over_floor: 1.5,
             start_frames: 5,
             end_silence_samples: rate * 420 / 1000,
             min_segment_samples: rate * 420 / 1000,
