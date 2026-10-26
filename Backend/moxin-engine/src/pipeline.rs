@@ -357,7 +357,8 @@ impl Pipeline {
                 &pcm_to_bytes(&boost(&segment.samples)),
             );
             let text = match response {
-                Ok(WorkerEvent::Result { text, .. }) => text,
+                // A noise burst that opened the gate comes back empty or as stock filler; drop it.
+                Ok(WorkerEvent::Result { text, .. }) => if is_noise_transcript(&text) { String::new() } else { text },
                 Ok(WorkerEvent::Failed { message, .. }) => {
                     events.push(OutEvent::Error { code: "asr_failed".into(), message });
                     continue;
@@ -517,6 +518,46 @@ fn weights_ready(path: &Path) -> bool {
             });
     }
     nonempty_file(&path.join("model.safetensors"))
+}
+
+/// What speech models write for a burst of room noise: nothing readable, or stock video filler.
+/// Real short replies ("Yes.", "对。") are kept.
+fn is_noise_transcript(text: &str) -> bool {
+    let folded: String = text
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect::<String>()
+        .to_lowercase();
+    let words = folded.split_whitespace().collect::<Vec<_>>().join(" ");
+    if words.is_empty() {
+        return true;
+    }
+    const FILLER: &[&str] = &[
+        "thank you", "thanks", "thank you for watching", "thanks for watching", "thank you very much",
+        "please subscribe", "subscribe", "you", "bye", "bye bye",
+        "谢谢", "谢谢观看", "谢谢大家", "感谢观看", "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目",
+        "字幕由amaraorg社区提供", "中文字幕", "ご視聴ありがとうございました", "시청해 주셔서 감사합니다",
+    ];
+    FILLER.contains(&words.as_str()) || words.starts_with("字幕") || words.contains("amaraorg")
+}
+
+#[cfg(test)]
+mod noise_transcript_tests {
+    use super::is_noise_transcript;
+
+    #[test]
+    fn filler_and_empty_results_are_dropped() {
+        for text in ["", "  ", "...", "。", "Thank you.", "Thanks for watching!", "谢谢观看。", "字幕由Amara.org社区提供"] {
+            assert!(is_noise_transcript(text), "{text:?} should be dropped");
+        }
+    }
+
+    #[test]
+    fn real_short_speech_is_kept() {
+        for text in ["Yes.", "对。", "Okay, let's start.", "Thank you for the question, that's a good one."] {
+            assert!(!is_noise_transcript(text), "{text:?} should be kept");
+        }
+    }
 }
 
 /// Raises a quiet phrase toward a normal speaking level before recognition, at most +18 dB

@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage(InterfaceLanguage.key) private var interfaceLanguage = InterfaceLanguage.system.rawValue
     @AppStorage(InterfaceAppearance.key) private var appearance = InterfaceAppearance.system.rawValue
     @AppStorage(MicrophonePrompt.key) private var microphonePrompt = MicrophonePrompt.ask.rawValue
+    @AppStorage(ClassroomMicPreference.key) private var classroomMic = false
 
     var body: some View {
         PageScaffold(title: tr("设置"), columnWidth: PageColumnLayout.narrowWidth) {
@@ -37,6 +38,9 @@ struct SettingsView: View {
                                 guard value == MicrophonePrompt.allow.rawValue else { return }
                                 Task { await allowMicrophoneNow() }
                             }
+                        }
+                        SettingsRow(tr("课堂麦克风（实验）"), detail: tr("用 Mac 自带麦克风录音时，降低教室噪音并自动调整音量。如果老师离得远、声音反而变小，就关掉。下一次开始录音时生效。")) {
+                            SettingsSwitch(label: tr("课堂麦克风（实验）"), isOn: $classroomMic)
                         }
                     }
                     LLMSettingsSection(model: model)

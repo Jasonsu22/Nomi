@@ -708,7 +708,21 @@ private final class OnceFlag: @unchecked Sendable {
 }
 
 /// Runs on `audioDeviceQueue`: picks the device, installs the tap and starts the engine.
-private func openAudioEngine(deviceUID: String?, processor: MicrophonePCMProcessor) throws -> RunningAudioEngine {
+/// Runs on `audioDeviceQueue`. With Classroom mic on, the Mac's own microphone goes through Apple's
+/// voice processing (noise suppression and automatic level). If that mode will not start, the plain
+/// microphone is used instead, so a recording never fails because of the setting.
+private func openAudioEngine(deviceUID: String?, processor: MicrophonePCMProcessor, classroom: Bool) throws -> RunningAudioEngine {
+    if classroom {
+        do {
+            return try openAudioEngine(deviceUID: deviceUID, processor: processor, voiceProcessing: true)
+        } catch {
+            MicrophoneCapture.logger.error("Classroom mic did not start, using the plain microphone: \(String(describing: error), privacy: .public)")
+        }
+    }
+    return try openAudioEngine(deviceUID: deviceUID, processor: processor, voiceProcessing: false)
+}
+
+private func openAudioEngine(deviceUID: String?, processor: MicrophonePCMProcessor, voiceProcessing: Bool) throws -> RunningAudioEngine {
     let engine = AVAudioEngine()
     let input = engine.inputNode
     let deviceID: AudioDeviceID
@@ -725,15 +739,28 @@ private func openAudioEngine(deviceUID: String?, processor: MicrophonePCMProcess
     if input.auAudioUnit.deviceID != deviceID {
         try input.auAudioUnit.setDeviceID(deviceID)
     }
+    // Only the built-in microphone: iPhone and headset microphones already process their sound.
+    let processed = voiceProcessing && AudioHardware.builtInInput()?.deviceID == deviceID
+    if processed {
+        try input.setVoiceProcessingEnabled(true)
+        // Leave other apps' sound alone; voice processing would otherwise duck it.
+        input.voiceProcessingOtherAudioDuckingConfiguration = AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: false, duckingLevel: .min)
+        // Voice processing runs input and output as one unit. The output node must exist, but the
+        // main mixer must not be touched: with it in the graph the input delivers no audio.
+        _ = engine.outputNode
+    }
+    // The processed voice is channel 0 of a multichannel input; the rest are raw microphones.
+    processor.firstChannelOnly = processed
     let reported = input.inputFormat(forBus: 0)
     guard reported.sampleRate > 0, reported.channelCount > 0 else { throw MicrophoneError.unavailable }
-    var format = microphoneTapFormat(reported: reported, hardwareRate: AudioHardware.inputSampleRate(deviceID))
+    // Voice processing sets its own rate; the hardware rate only applies to the plain microphone.
+    var format = processed ? reported : microphoneTapFormat(reported: reported, hardwareRate: AudioHardware.inputSampleRate(deviceID))
     do {
         try installMicrophoneTap(on: input, format: format, processor: processor)
     } catch MicrophoneError.tapRejected(let reason) {
         // The device may have finished switching rates since the first read.
         MicrophoneCapture.logger.error("Microphone tap rejected \(format.sampleRate) Hz: \(reason, privacy: .public)")
-        format = microphoneTapFormat(reported: input.inputFormat(forBus: 0), hardwareRate: AudioHardware.inputSampleRate(deviceID))
+        format = processed ? input.inputFormat(forBus: 0) : microphoneTapFormat(reported: input.inputFormat(forBus: 0), hardwareRate: AudioHardware.inputSampleRate(deviceID))
         try installMicrophoneTap(on: input, format: format, processor: processor)
     }
     do {
@@ -744,6 +771,7 @@ private func openAudioEngine(deviceUID: String?, processor: MicrophonePCMProcess
         MicrophoneCapture.logger.error("Microphone failed to start: \(String(describing: error), privacy: .public)")
         throw error
     }
+    if processed { MicrophoneCapture.logger.notice("Classroom mic on: voice processing at \(format.sampleRate) Hz") }
     return RunningAudioEngine(engine: engine, deviceID: deviceID, format: format)
 }
 
@@ -775,7 +803,7 @@ private final class MicrophoneCapture {
         let running: RunningAudioEngine = try await withCheckedThrowingContinuation { continuation in
             let once = OnceFlag()
             audioDeviceQueue.async {
-                let result = Result { try openAudioEngine(deviceUID: deviceUID, processor: processor) }
+                let result = Result { try openAudioEngine(deviceUID: deviceUID, processor: processor, classroom: ClassroomMicPreference.isOn) }
                 if once.claim() {
                     continuation.resume(with: result)
                 } else if case .success(let late) = result {
@@ -840,7 +868,10 @@ private final class MicrophonePCMProcessor: @unchecked Sendable {
     private let recorder: AudioFileRecorder?
     private let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
     private var converter: AVAudioConverter?
+    private var mono: AVAudioFormat?
     private var reportedFailure = false
+    /// Set before the tap starts when voice processing delivers its result on channel 0.
+    var firstChannelOnly = false
     private let lock = NSLock()
     private var receivedAudio = false
 
@@ -856,8 +887,9 @@ private final class MicrophonePCMProcessor: @unchecked Sendable {
         self.recorder = recorder
     }
 
-    func convert(_ buffer: AVAudioPCMBuffer) {
-        guard buffer.frameLength > 0 else { return }
+    func convert(_ incoming: AVAudioPCMBuffer) {
+        guard incoming.frameLength > 0 else { return }
+        let buffer = firstChannelOnly ? (channelZero(incoming) ?? incoming) : incoming
         if converter?.inputFormat != buffer.format {
             converter = AVAudioConverter(from: buffer.format, to: target)
         }
@@ -889,6 +921,19 @@ private final class MicrophonePCMProcessor: @unchecked Sendable {
             energy += sample * sample
         }
         onSamples?(Data(bytes: channel, count: count * MemoryLayout<Float>.size), (energy / Double(count)).squareRoot())
+    }
+
+    /// Channel 0 of a multichannel float buffer as a mono buffer at the same rate.
+    private func channelZero(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard buffer.format.channelCount > 1, let source = buffer.floatChannelData?[0] else { return nil }
+        if mono?.sampleRate != buffer.format.sampleRate {
+            mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: buffer.format.sampleRate, channels: 1, interleaved: false)
+        }
+        guard let mono, let copy = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength),
+              let target = copy.floatChannelData?[0] else { return nil }
+        copy.frameLength = buffer.frameLength
+        target.update(from: source, count: Int(buffer.frameLength))
+        return copy
     }
 
     private func fail() {
@@ -938,4 +983,10 @@ private final class AudioFileRecorder: @unchecked Sendable {
         file?.close()
         file = nil
     }
+}
+
+/// Settings › Recording & Translation › Classroom mic. Off by default.
+enum ClassroomMicPreference {
+    static let key = "lecturenote.classroomMic"
+    static var isOn: Bool { UserDefaults.standard.bool(forKey: key) }
 }

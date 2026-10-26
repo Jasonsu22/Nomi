@@ -581,6 +581,8 @@ enum AnswerInline {
     ) -> AttributedString {
         var result = AttributedString()
         var index = source.startIndex
+        // Sources already cited in this paragraph or list item; a repeat adds no chip.
+        var citedSources = Set<String>()
         while index < source.endIndex {
             if source[index] == "`" {
                 let content = source.index(after: index)
@@ -617,7 +619,7 @@ enum AnswerInline {
                     index = linked.next
                     continue
                 }
-                if let cited = citation(source, from: index, size: size, citations: citations) {
+                if let cited = citationRun(source, from: index, size: size, citations: citations, shown: &citedSources) {
                     result.append(cited.text)
                     index = cited.next
                     continue
@@ -709,12 +711,8 @@ enum AnswerInline {
         return nil
     }
 
-    private static func citation(
-        _ source: String,
-        from start: String.Index,
-        size: CGFloat,
-        citations: [Int: ChatCitation]
-    ) -> (text: AttributedString, next: String.Index)? {
+    /// One marker, [3] or 【3】, but not a Markdown link like [3](…).
+    private static func marker(_ source: String, from start: String.Index) -> (number: Int, next: String.Index)? {
         let opener = source[start]
         let closer: Character = opener == "【" ? "】" : "]"
         guard opener == "[" || opener == "【" else { return nil }
@@ -724,17 +722,65 @@ enum AnswerInline {
         while index < source.endIndex, source[index].isNumber {
             index = source.index(after: index)
         }
-        guard index > digitsStart, index < source.endIndex, source[index] == closer else { return nil }
+        guard index > digitsStart, index < source.endIndex, source[index] == closer,
+              let number = Int(source[digitsStart..<index]) else { return nil }
         let next = source.index(after: index)
         if opener == "[", next < source.endIndex, source[next] == "(" { return nil }
-        guard let number = Int(source[digitsStart..<index]),
-              let citation = citations[number],
-              !citation.inlineLabel.isEmpty,
-              let url = citation.inlineURL else { return nil }
-        var text = styled(citation.inlineLabel, size: max(size - 1, 12), weight: .medium)
-        text.foregroundColor = AppColor.accent
-        text.link = url
+        return (number, next)
+    }
+
+    /// Most sources a single run of markers shows.
+    static let chipsPerRun = 2
+
+    /// A run of markers such as [3][4][7] or [3], [4] becomes one chip per source, at most two,
+    /// and a source already cited earlier in the same paragraph is left out. When every citation
+    /// comes from one meeting, chips name the moment (8:41) instead of repeating the meeting title.
+    private static func citationRun(
+        _ source: String,
+        from start: String.Index,
+        size: CGFloat,
+        citations: [Int: ChatCitation],
+        shown: inout Set<String>
+    ) -> (text: AttributedString, next: String.Index)? {
+        guard let first = marker(source, from: start) else { return nil }
+        var numbers = [first.number]
+        var next = first.next
+        while true {
+            var probe = next
+            while probe < source.endIndex, source[probe] == " " || ",，、".contains(source[probe]) {
+                probe = source.index(after: probe)
+            }
+            guard probe < source.endIndex, let more = marker(source, from: probe) else { break }
+            numbers.append(more.number)
+            next = more.next
+        }
+        let resolved = numbers.compactMap { citations[$0] }.filter { !$0.inlineLabel.isEmpty && $0.inlineURL != nil }
+        guard !resolved.isEmpty else { return nil }
+        let meetings = Set(citations.values.compactMap(\.meetingID))
+        let oneMeeting = meetings.count == 1 && citations.values.allSatisfy { $0.meetingID != nil }
+        var text = AttributedString()
+        var added = 0
+        for citation in resolved where added < chipsPerRun {
+            let key = citationSourceKey(citation)
+            guard shown.insert(key).inserted else { continue }
+            let moment = citation.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = oneMeeting && !moment.isEmpty ? moment : citation.inlineLabel
+            var chip = styled(label, size: max(size - 1, 12), weight: .medium)
+            chip.foregroundColor = AppColor.accent
+            chip.link = citation.inlineURL
+            text.append(chip)
+            added += 1
+        }
         return (text, next)
+    }
+
+    /// What counts as the same source: one meeting, one file, one earlier chat, or one web page.
+    static func citationSourceKey(_ citation: ChatCitation) -> String {
+        if let id = citation.meetingID { return "meeting:\(id)" }
+        if let id = citation.sourceID { return "source:\(id)" }
+        if let id = citation.chatID { return "chat:\(id)" }
+        if let url = citation.url { return "url:\(url)" }
+        return "title:\(citation.title)"
     }
 
     private static func bareLink(
