@@ -17,11 +17,15 @@ final class LocalEngine: TranscriptionEngine {
     private(set) var readiness: EngineReadiness = .preparing
     private(set) var modelStatus: LocalModelRuntimeStatus?
     private(set) var isChangingModel = false
-    private(set) var isGenerating = false
-    /// A memory pass is running. It does not make the assistant look busy; chat waits for it instead.
-    @ObservationIgnored private var isGeneratingInBackground = false
-    /// Counts cancel requests, so a reply that was cut short throws instead of returning part of an answer.
-    @ObservationIgnored private var cancelRequests = 0
+    /// Chat replies coming in. Each runs in its own engine worker, so separate chats answer side by side.
+    private(set) var activeReplies = 0
+    var isGenerating: Bool { activeReplies > 0 }
+    /// Background replies (memory, summaries, Q&A) by id. They do not make the assistant look busy.
+    @ObservationIgnored private var backgroundReplies: Set<String> = []
+    /// Replies that were cancelled, so one cut short throws instead of returning part of an answer.
+    @ObservationIgnored private var cancelledReplies: Set<String> = []
+    /// The engine runs at most this many replies at once.
+    static let maxReplies = 3
     var sourceLanguage = "zh"
     var targetLanguage = "en"
     var inputDeviceUID: String?
@@ -303,16 +307,19 @@ final class LocalEngine: TranscriptionEngine {
     }
 
     func generate(system: String, prompt: String, maxTokens: Int = 2048, background: Bool = false, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
-        guard !isGenerating, !isGeneratingInBackground, !isChangingModel else { throw llmError(tr("请等待录制或本地模型操作结束。")) }
+        guard !isChangingModel else { throw llmError(tr("请等待本地模型切换结束。")) }
         guard let port, let token else { throw llmError(tr("引擎还没准备好")) }
-        if background { isGeneratingInBackground = true } else { isGenerating = true }
-        defer { if background { isGeneratingInBackground = false } else { isGenerating = false } }
-        let cancelsAtStart = cancelRequests
+        let replyID = UUID().uuidString
+        if background { backgroundReplies.insert(replyID) } else { activeReplies += 1 }
+        defer {
+            if background { backgroundReplies.remove(replyID) } else { activeReplies -= 1 }
+            cancelledReplies.remove(replyID)
+        }
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/assistant/generate")!, timeoutInterval: 300)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["system": system, "prompt": prompt, "max_tokens": maxTokens])
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["system": system, "prompt": prompt, "max_tokens": maxTokens, "reply_id": replyID])
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 else {
@@ -344,22 +351,26 @@ final class LocalEngine: TranscriptionEngine {
         }
         accumulator.finished = true
         // A cancelled reply ends early with what it had written; that is not an answer.
-        if cancelRequests != cancelsAtStart { throw CancellationError() }
+        if cancelledReplies.contains(replyID) { throw CancellationError() }
         let answer = accumulator.answer
         guard !answer.isEmpty else { throw llmError(tr("模型未返回文字，请重试。")) }
         if answer != shown { onUpdate(answer) }
         return answer
     }
 
-    /// Stops the local reply in progress, chat or background, within about one token. Stopping by
-    /// cancelling the request's task also works: the engine stops a reply whose request went away.
-    func cancelGeneration() async {
-        guard isGenerating || isGeneratingInBackground, let port, let token else { return }
-        cancelRequests += 1
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/assistant/cancel")!, timeoutInterval: 5)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        _ = try? await URLSession.shared.data(for: request)
+    /// Stops the background replies in progress within about one token, leaving chat replies alone.
+    /// A chat reply stops by cancelling its request's task: the engine stops a reply whose request went away.
+    func cancelBackgroundGeneration() async {
+        guard let port, let token else { return }
+        for replyID in backgroundReplies {
+            cancelledReplies.insert(replyID)
+            var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/assistant/cancel")!, timeoutInterval: 5)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: ["reply_id": replyID])
+            _ = try? await URLSession.shared.data(for: request)
+        }
     }
 
     private func modelRequest(path: String, body: [String: Any]) async throws -> Data {

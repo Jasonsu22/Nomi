@@ -239,14 +239,18 @@ impl Pipeline {
         Ok((self.assistant.take(), self.assistant_status.path.clone(), id))
     }
 
-    /// Takes the worker back after a reply. A worker for a model that was switched
-    /// or unloaded meanwhile is shut down instead.
-    pub fn checkin_assistant(&mut self, worker: Worker, path: &Path) {
+    /// Takes the worker back after a reply. One idle worker is kept; an extra one (from replies
+    /// that ran side by side) or one for a model switched meanwhile is handed back to be shut
+    /// down once the pipeline lock is released, so live transcription does not wait on it.
+    #[must_use]
+    pub fn checkin_assistant(&mut self, worker: Worker, path: &Path) -> Option<Worker> {
         if self.assistant.is_none() && self.assistant_status.path == path && self.assistant_status.files_ready {
             self.assistant = Some(worker);
             self.assistant_status.loaded = true;
             self.assistant_status.error = None;
+            return None;
         }
+        Some(worker)
     }
 
     pub fn unload_path(&mut self, path: &Path) {

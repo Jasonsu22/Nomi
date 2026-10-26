@@ -6,31 +6,52 @@ struct SteerTests {
     @MainActor @Test func steeringStopsThisChatsAnswerAndHoldsTheMessage() async {
         let model = AppModel(engine: ReplayEngine(), meetings: [], categories: [])
         let chat = UUID()
-        model.chatGeneratingID = chat
+        model.chatRuns[chat] = ChatRun(question: "q", images: [], mode: .api)
         let running = Task<Void, Never> { try? await Task.sleep(for: .seconds(30)) }
-        model.chatTask = running
+        model.chatTasks[chat] = running
         #expect(model.steer("换个角度讲", images: [], chatID: chat))
         #expect(running.isCancelled)
-        #expect(model.pendingSteer?.text == "换个角度讲")
+        #expect(model.pendingSteers[chat]?.text == "换个角度讲")
         #expect(model.queued(in: chat).isEmpty)
     }
 
-    @MainActor @Test func steeringAnotherChatsAnswerQueuesInstead() {
+    @MainActor @Test func stoppingOneChatLeavesAnotherAnswering() {
         let model = AppModel(engine: ReplayEngine(), meetings: [], categories: [])
-        model.chatGeneratingID = UUID()
+        let first = UUID(), second = UUID()
+        let one = Task<Void, Never> { try? await Task.sleep(for: .seconds(30)) }
+        let two = Task<Void, Never> { try? await Task.sleep(for: .seconds(30)) }
+        model.chatRuns[first] = ChatRun(question: "a", images: [], mode: .api)
+        model.chatRuns[second] = ChatRun(question: "b", images: [], mode: .api)
+        model.chatTasks[first] = one
+        model.chatTasks[second] = two
+        model.stopChat(first)
+        #expect(one.isCancelled)
+        #expect(!two.isCancelled)
+        two.cancel()
+    }
+
+    @MainActor @Test func aFullLocalModelQueuesOtherChats() {
+        let model = AppModel(engine: ReplayEngine(), meetings: [], categories: [])
+        model.llmConfiguration.setMode(.local)
+        for _ in 0..<LocalEngine.maxReplies {
+            model.chatRuns[UUID()] = ChatRun(question: "q", images: [], mode: .local)
+        }
+        #expect(!model.canStartAnotherAnswer)
         let mine = UUID()
         #expect(model.steer("问题", images: [], chatID: mine))
-        #expect(model.pendingSteer == nil)
+        #expect(model.pendingSteers[mine] == nil)
         #expect(model.queued(in: mine).map(\.text) == ["问题"])
+        model.llmConfiguration.setMode(.api)
+        #expect(model.canStartAnotherAnswer)
     }
 
     @MainActor @Test func aSteerThatArrivesAsTheAnswerFinishesGoesFirstInTheQueue() {
         let model = AppModel(engine: ReplayEngine(), meetings: [], categories: [])
         let chat = UUID()
         model.enqueue("早先排队的", images: [], chatID: chat)
-        model.pendingSteer = QueuedPrompt(chatID: chat, text: "打断的", images: [])
+        model.pendingSteers[chat] = QueuedPrompt(chatID: chat, text: "打断的", images: [])
         model.chatDidEnd(chat, succeeded: true)
-        #expect(model.pendingSteer == nil)
+        #expect(model.pendingSteers[chat] == nil)
         #expect(model.queued(in: chat).map(\.text).first == "打断的")
     }
 

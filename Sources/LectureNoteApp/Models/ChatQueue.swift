@@ -26,6 +26,15 @@ enum BusySendMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// One chat's answer while it is coming in.
+struct ChatRun: Equatable {
+    var question: String
+    var images: [ChatImageDraft]
+    var mode: LLMMode
+    var answer = ""
+    var citations: [ChatCitation] = []
+}
+
 /// A message sent while another answer was still coming, waiting for its turn.
 struct QueuedPrompt: Identifiable, Equatable {
     var id = UUID()

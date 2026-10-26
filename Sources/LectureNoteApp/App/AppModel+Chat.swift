@@ -58,7 +58,7 @@ extension AppModel {
                 chatFocusRequest += 1
                 return
             }
-            let removing = chats.filter { $0.anchorMeetingID == anchor && $0.turns.isEmpty && $0.id != chatGeneratingID }.map(\.id)
+            let removing = chats.filter { $0.anchorMeetingID == anchor && $0.turns.isEmpty && chatRuns[$0.id] == nil }.map(\.id)
             discardComposerImages(removing)
             chats.removeAll { removing.contains($0.id) }
             let session = ChatSession(anchorMeetingID: anchor)
@@ -73,7 +73,7 @@ extension AppModel {
             return
         }
         let scope = (currentChat?.anchorMeetingID == nil ? currentChat?.scope : nil) ?? ChatScope()
-        let removing = chats.filter { $0.anchorMeetingID == nil && $0.turns.isEmpty && $0.id != chatGeneratingID }.map(\.id)
+        let removing = chats.filter { $0.anchorMeetingID == nil && $0.turns.isEmpty && chatRuns[$0.id] == nil }.map(\.id)
         discardComposerImages(removing)
         chats.removeAll { removing.contains($0.id) }
         let session = ChatSession(scope: scope)
@@ -96,7 +96,7 @@ extension AppModel {
     }
 
     func deleteChat(_ id: UUID) {
-        guard chatGeneratingID != id else { return }
+        guard chatRuns[id] == nil else { return }
         if let session = chats.first(where: { $0.id == id }) {
             for turn in session.turns {
                 visualTasks[turn.id]?.cancel()
@@ -253,7 +253,7 @@ extension AppModel {
             if let anchor { ensureMeetingChat(anchor) } else { ensureChat() }
         }
         let resolvedID = chatID ?? anchor.flatMap { meetingChatID[$0] } ?? currentChatID
-        guard chatGeneratingID == nil, canGenerateAssistant, let id = resolvedID,
+        guard let id = resolvedID, chatRuns[id] == nil, canStartAnotherAnswer, canGenerateAssistant,
               let session = chats.first(where: { $0.id == id }) else {
             chatError = tr("现在不能提问。")
             return false
@@ -293,21 +293,12 @@ extension AppModel {
             $0.modelMode = mode.rawValue
             $0.profileID = mode == .api ? profile?.id : nil
         }
-        pendingQuestion = question
-        pendingImageDrafts = images
-        pendingAnswer = ""
-        chatGeneratingID = id
-        chatTask = Task { [weak self] in
+        chatRuns[id] = ChatRun(question: question, images: images, mode: mode)
+        chatTasks[id] = Task { [weak self] in
             guard let self else { return }
             defer {
-                if self.chatGeneratingID == id {
-                    self.chatGeneratingID = nil
-                    self.pendingQuestion = nil
-                    self.pendingAnswer = ""
-                    self.pendingCitations = []
-                    self.pendingImageDrafts = []
-                    self.chatTask = nil
-                }
+                self.chatRuns[id] = nil
+                self.chatTasks[id] = nil
             }
             do {
                 let contextBudget = ContextBudget.current(mode: mode, profile: profile)
@@ -418,8 +409,8 @@ extension AppModel {
                     ) { [weak self] partial in
                         let shown = ChatTools.parse(ChatContext.streamingDisplay(partial), streaming: true, stopAtSearch: mayStillSearch).visible
                         let combined = self?.joinedAnswer(carried, shown) ?? shown
-                        self?.pendingAnswer = combined
-                        self?.pendingCitations = ChatContext.citations(in: combined, blocks: cited)
+                        self?.chatRuns[id]?.answer = combined
+                        self?.chatRuns[id]?.citations = ChatContext.citations(in: combined, blocks: cited)
                     }
                     try Task.checkCancellation()
                     let parsed = ChatTools.parse(ChatContext.splitVisual(text, streaming: false).text, streaming: false, stopAtSearch: mayStillSearch)
@@ -450,8 +441,7 @@ extension AppModel {
                 }
                 let stored = self.storedImages(images)
                 let turnID = self.finishChat(id, question: question, answer: answer, modelName: name, citations: ChatContext.citations(in: answer, blocks: blocks), error: nil, images: stored)
-                self.pendingAnswer = ""
-                self.pendingCitations = []
+                self.chatRuns[id] = nil
                 if let webNotice { self.chatError = webNotice }
                 self.scheduleAfterAnswerWork(chatID: id)
                 // One demo per answer: the last brief has seen the search results. Without a brief, API models still get a demo when the answer is substantial.
@@ -490,8 +480,8 @@ extension AppModel {
         return true
     }
 
-    func stopChat() {
-        chatTask?.cancel()
+    func stopChat(_ chatID: UUID) {
+        chatTasks[chatID]?.cancel()
     }
 
     private func joinedAnswer(_ current: String, _ next: String) -> String {
@@ -566,7 +556,8 @@ extension AppModel {
             }
             do {
                 if mode == .local {
-                    while self.chatGeneratingID != nil || self.localVisualBusy || (self.engine as? LocalEngine)?.isGenerating == true {
+                    // A demo takes one of the local engine's workers; it waits for a free one.
+                    while self.localVisualBusy || self.chatRuns.values.filter({ $0.mode == .local }).count >= LocalEngine.maxReplies {
                         try await Task.sleep(for: .milliseconds(200))
                     }
                     self.localVisualBusy = true
@@ -657,16 +648,16 @@ extension AppModel {
     /// A stopped answer. Stop puts the question back in the composer and pauses the queue; a steer
     /// keeps what was shown as an interrupted turn and sends the new message once this task ends.
     private func chatWasStopped(_ id: UUID, question: String, images: [ChatImageDraft], modelName: String) {
-        guard let steer = pendingSteer, steer.chatID == id else {
+        guard let steer = pendingSteers.removeValue(forKey: id) else {
             restoreDraft(id, question: question, images: images)
             chatDidEnd(id, succeeded: false)
             return
         }
-        pendingSteer = nil
-        let shown = pendingAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let run = chatRuns[id]
+        let shown = (run?.answer ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         // Nothing shown yet: the question is simply replaced, unless it carried images worth keeping.
         if !shown.isEmpty || !images.isEmpty {
-            let turnID = finishChat(id, question: question, answer: shown, modelName: modelName, citations: pendingCitations, error: nil, images: storedImages(images))
+            let turnID = finishChat(id, question: question, answer: shown, modelName: modelName, citations: run?.citations ?? [], error: nil, images: storedImages(images))
             if let turnID, let chatIndex = chats.firstIndex(where: { $0.id == id }),
                let turnIndex = chats[chatIndex].turns.firstIndex(where: { $0.id == turnID }) {
                 chats[chatIndex].turns[turnIndex].interrupted = true
@@ -680,7 +671,7 @@ extension AppModel {
         } else {
             images.forEach(ChatImages.discard)
         }
-        // Runs after this answer's task has cleared `chatGeneratingID`.
+        // Runs after this answer's task has cleared its run.
         Task { @MainActor [weak self] in
             guard let self else { return }
             if !self.ask(steer.text, images: steer.images, chatID: id, steered: true) {
@@ -707,8 +698,6 @@ extension AppModel {
             }
             session.turns.append(turn)
         }
-        pendingQuestion = nil
-        pendingImageDrafts = []
         return turn.id
     }
 
@@ -748,7 +737,7 @@ extension AppModel {
 
     /// Whether there is anything besides the current chat that a library search could find.
     var hasLibrary: Bool {
-        !sources.isEmpty || meetings.contains { !current($0).paragraphs.isEmpty } || chats.contains { $0.turns.count > 0 && $0.id != chatGeneratingID }
+        !sources.isEmpty || meetings.contains { !current($0).paragraphs.isEmpty } || chats.contains { $0.turns.count > 0 && chatRuns[$0.id] == nil }
     }
 
     /// The student's recorded lectures, earlier chats and imported files, minus what this question already includes.

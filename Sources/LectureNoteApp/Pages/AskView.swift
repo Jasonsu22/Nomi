@@ -137,11 +137,11 @@ struct AskView: View {
                                         }
                                     }
                                 }
-                                if model.chatGeneratingID == session.id, let question = model.pendingQuestion {
+                                if let run = model.chatRuns[session.id] {
                                     if let previous = session.turns.last?.modelName, modelDidChange(previous, model.assistantModelName) {
                                         ModelChangeNote(from: previous, to: model.assistantModelName)
                                     }
-                                    pendingView(question)
+                                    pendingView(run)
                                 } else if let previous = session.turns.last?.modelName, modelDidChange(previous, model.assistantModelName) {
                                     ModelChangeNote(from: previous, to: model.assistantModelName)
                                 }
@@ -171,7 +171,7 @@ struct AskView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .topTrailing)))
                 }
             }
-            if let error = model.chatError, model.chatGeneratingID == nil {
+            if let error = model.chatError, !model.isAnswering(session?.id) {
                 Text(error)
                     .font(AppFont.secondary)
                     .foregroundStyle(.red)
@@ -184,8 +184,7 @@ struct AskView: View {
     }
 
     private var showEmpty: Bool {
-        let pending = model.chatGeneratingID == session?.id && model.pendingQuestion != nil
-        return (session?.turns.isEmpty ?? true) && !pending
+        (session?.turns.isEmpty ?? true) && !model.isAnswering(session?.id)
     }
 
     private var emptyState: some View {
@@ -404,7 +403,7 @@ struct AskView: View {
         .frame(maxWidth: embedded ? .infinity : nil, alignment: .trailing)
         .fixedSize(horizontal: !embedded, vertical: true)
         .clickCursor()
-        .disabled(model.chatGeneratingID != nil || modelMenuIsEmpty)
+        .disabled(model.isAnswering(session?.id) || modelMenuIsEmpty)
     }
 
     private var localChatModels: [LocalModelDefinition] {
@@ -434,10 +433,10 @@ struct AskView: View {
     /// Stop while this chat is answering, and Send whenever there is something to send. While an
     /// answer is coming, Send shows what Enter will do: queue the message or steer the answer.
     private var sendControls: some View {
-        let generatingHere = session != nil && model.chatGeneratingID == session?.id
+        let generatingHere = model.isAnswering(session?.id)
         return HStack(spacing: 6) {
-            if generatingHere {
-                roundButton(symbol: "stop.fill", label: tr("停止"), active: true) { model.stopChat() }
+            if generatingHere, let id = session?.id {
+                roundButton(symbol: "stop.fill", label: tr("停止"), active: true) { model.stopChat(id) }
             }
             if !generatingHere || hasDraft {
                 roundButton(symbol: sendSymbol, label: sendLabel, active: canSend) { send(mode: BusySendMode.current) }
@@ -462,10 +461,9 @@ struct AskView: View {
 
     /// What Enter does right now, as the action the composer will take.
     private var busyAction: BusySendMode? {
-        guard let running = model.chatGeneratingID else { return nil }
-        let mode = BusySendMode.current
-        // Steering only applies to this chat's own answer; another chat's answer means queueing.
-        return mode == .steer && running == session?.id ? .steer : .queue
+        // Only this chat's own answer holds its messages back, or the local model being full.
+        if model.isAnswering(session?.id) { return BusySendMode.current == .steer ? .steer : .queue }
+        return model.canStartAnotherAnswer ? nil : .queue
     }
 
     private var sendSymbol: String {
@@ -485,8 +483,9 @@ struct AskView: View {
     }
 
     private var busyHint: String? {
-        guard let running = model.chatGeneratingID else { return nil }
-        guard running == session?.id else { return tr("另一段对话正在回答，新消息会排队。") }
+        guard model.isAnswering(session?.id) else {
+            return model.canStartAnotherAnswer ? nil : tr("本地模型正在回答其他几段对话，新消息会排队。")
+        }
         return BusySendMode.current == .queue
             ? tr("Enter 排队 · ⌘Enter 立即打断")
             : tr("Enter 立即打断 · ⌘Enter 排队")
@@ -518,12 +517,12 @@ struct AskView: View {
 
     /// While an answer is coming the model is busy, but a message can still be queued or steer it.
     private var canSend: Bool {
-        hasDraft && (model.chatGeneratingID != nil || model.canGenerateAssistant)
+        hasDraft && (busyAction != nil || model.canGenerateAssistant)
     }
 
     private var showsCloudNotice: Bool {
         guard model.llmConfiguration.mode == .api, let profile = model.llmConfiguration.activeProfile, !profile.isLoopback else { return false }
-        return (session?.turns.isEmpty ?? true) && model.pendingQuestion == nil
+        return (session?.turns.isEmpty ?? true) && !model.isAnswering(session?.id)
     }
 
     private var showsSearchGuide: Bool {
@@ -555,13 +554,15 @@ struct AskView: View {
             : tr("先在设置里配置一个搜索服务")
     }
 
-    private func pendingView(_ question: String) -> some View {
+    private func pendingView(_ run: ChatRun) -> some View {
+        let question = run.question
+        return
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
                 Spacer(minLength: 80)
                 VStack(alignment: .trailing, spacing: Space.s2) {
-                    if !model.pendingImageDrafts.isEmpty {
-                        ChatImageStrip(items: model.pendingImageDrafts)
+                    if !run.images.isEmpty {
+                        ChatImageStrip(items: run.images)
                     }
                     if !question.isEmpty {
                         Text(question)
@@ -573,7 +574,7 @@ struct AskView: View {
                     }
                 }
             }
-            if model.pendingAnswer.isEmpty {
+            if run.answer.isEmpty {
                 HStack(spacing: Space.s2) {
                     ProgressView().controlSize(.small)
                     Text(tr("正在回答…"))
@@ -581,7 +582,7 @@ struct AskView: View {
                         .foregroundStyle(AppColor.textSecondary)
                 }
             } else {
-                AnswerBody(source: model.pendingAnswer, streaming: true, citations: model.pendingCitations) { citation in
+                AnswerBody(source: run.answer, streaming: true, citations: run.citations) { citation in
                     model.openCitation(citation)
                 }
                     .frame(maxWidth: 680, alignment: .leading)

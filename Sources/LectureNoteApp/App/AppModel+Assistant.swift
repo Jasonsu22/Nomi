@@ -2,14 +2,14 @@ import Foundation
 
 extension AppModel {
     var assistantIsBusy: Bool {
-        chatGeneratingID != nil || assistantStates.values.contains { $0.isGenerating } || (engine as? LocalEngine)?.isGenerating == true
+        !chatRuns.isEmpty || assistantStates.values.contains { $0.isGenerating } || (engine as? LocalEngine)?.isGenerating == true
     }
 
-    /// Chat runs during a recording too: API models are remote, and the local engine
-    /// gives the chat its own worker at a lower priority than live transcription.
+    /// Whether the chosen model can answer. Chat runs during a recording too: API models are remote,
+    /// and the local engine gives each answering chat its own worker at a lower priority than live
+    /// transcription. Separate chats answer side by side; `canStartAnotherAnswer` caps the local ones.
     var canGenerateAssistant: Bool {
-        guard !assistantIsBusy,
-              localModels.switchingID == nil, localModels.deletingID == nil else { return false }
+        guard localModels.switchingID == nil, localModels.deletingID == nil else { return false }
         if llmConfiguration.mode == .api { return llmConfiguration.activeProfile != nil }
         return engine is LocalEngine && engine.readiness != .preparing
             && LocalModelFiles.isComplete(LocalModelDefinition.selected(for: .assistant))
@@ -24,7 +24,8 @@ extension AppModel {
     }
 
     func generateAssistant(for meetingID: UUID, question: String? = nil) {
-        guard canGenerateAssistant, let meeting = meetings.first(where: { $0.id == meetingID }).map(current) else { return }
+        guard canGenerateAssistant, assistantStates[meetingID]?.isGenerating != true,
+              let meeting = meetings.first(where: { $0.id == meetingID }).map(current) else { return }
         let state: MeetingAssistantState
         if let existing = assistantStates[meetingID] { state = existing }
         else { state = MeetingAssistantState(record: meeting.assistant); assistantStates[meetingID] = state }

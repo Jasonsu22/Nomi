@@ -53,7 +53,7 @@ extension AppModel {
         guard let task = afterAnswerTask else { return }
         task.cancel()
         if afterAnswerGenerating {
-            await (engine as? LocalEngine)?.cancelGeneration()
+            await (engine as? LocalEngine)?.cancelBackgroundGeneration()
             await task.value
         }
     }
@@ -65,7 +65,7 @@ extension AppModel {
 
     private func mayStartBackgroundJob(local: Bool) -> Bool {
         guard !Task.isCancelled else { return false }
-        return !local || (chatGeneratingID == nil && !assistantIsBusy && !questionWorkGenerating)
+        return !local || (!isChatAnswering && !assistantIsBusy && !questionWorkGenerating)
     }
 
     /// The summary pass a chat needs now, or nil.

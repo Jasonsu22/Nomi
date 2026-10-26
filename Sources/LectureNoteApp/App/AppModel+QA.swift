@@ -140,7 +140,7 @@ extension AppModel {
     private func waitUntilQuiet(local: Bool, forChat: Bool) async -> Bool {
         while true {
             if Task.isCancelled { return false }
-            let chatting = chatGeneratingID != nil || assistantStates.values.contains { $0.isGenerating }
+            let chatting = isChatAnswering || assistantStates.values.contains { $0.isGenerating }
             let busyLocally = local && (assistantIsBusy || afterAnswerGenerating || questionWorkGenerating)
             if !(forChat ? chatting || busyLocally : busyLocally) { return true }
             try? await Task.sleep(for: .seconds(2))

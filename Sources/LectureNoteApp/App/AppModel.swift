@@ -125,18 +125,16 @@ final class AppModel {
         didSet { persistMeetingLinks() }
     }
     private var meetingLinksReady = false
-    var chatGeneratingID: UUID?
-    var pendingQuestion: String?
-    var pendingAnswer = ""
-    var pendingCitations: [ChatCitation] = []
-    var pendingImageDrafts: [ChatImageDraft] = []
+    /// Answers coming in right now, one per chat. API chats answer side by side; the local model
+    /// has one worker, so its chats take turns.
+    var chatRuns: [UUID: ChatRun] = [:]
     var composerImages: [UUID: [ChatImageDraft]] = [:]
     /// Messages sent while an answer was coming, for every chat, oldest first. Kept in memory only.
     var chatQueue: [QueuedPrompt] = []
     /// Chats whose queue waits for the student after a Stop or an error.
     var queuePaused: Set<UUID> = []
-    /// A message waiting for the answer it interrupts to stop.
-    @ObservationIgnored var pendingSteer: QueuedPrompt?
+    /// Messages waiting for the answer they interrupt to stop, by chat.
+    @ObservationIgnored var pendingSteers: [UUID: QueuedPrompt] = [:]
     var enlargedImage: NSImage?
     var enlargedImageName = "image.png"
     var enlargedImageURL: URL?
@@ -145,7 +143,7 @@ final class AppModel {
     var chatError: String?
     var chatDraftRestore: String?
     var chatFocusRequest = 0
-    @ObservationIgnored var chatTask: Task<Void, Never>?
+    @ObservationIgnored var chatTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored var visualTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored var localVisualBusy = false
     var chatsReady = false

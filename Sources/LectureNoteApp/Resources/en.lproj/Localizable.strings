@@ -562,3 +562,5 @@
 "还没有会议" = "No Meetings Yet";
 "上课时点「开始转录」，录下的课堂和转写都会出现在这里。" = "When class begins, press Start Transcription. Your recorded classes and transcripts will appear here.";
 "在提问框的模型菜单里选择用本地模型还是 API，提问、摘要和 Q&A 都会跟随。" = "Choose the local model or an API model in the chat box's model menu. Questions, summaries and Q&A all follow that choice.";
+"本地模型正在回答其他几段对话，新消息会排队。" = "The local model is answering several other chats; new messages are queued.";
+"请等待本地模型切换结束。" = "Wait for the local model to finish switching.";

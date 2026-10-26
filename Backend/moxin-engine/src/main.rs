@@ -9,6 +9,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use pipeline::{read_wav, OutEvent, Pipeline, Worker};
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -23,15 +24,21 @@ struct App {
     busy: Arc<Mutex<Busy>>,
 }
 
-/// What the engine is doing. A recording and a chat reply may run together;
-/// switching or unloading a model waits until both are idle.
+/// Replies that may run at once. Each has its own worker process, so separate chats answer
+/// side by side; the cap keeps memory in check. The app starts at most three chats at once,
+/// which leaves room for a demo page or a background job.
+const MAX_REPLIES: usize = 4;
+
+/// What the engine is doing. A recording and chat replies may run together;
+/// switching or unloading a model waits until all are idle.
 #[derive(Default)]
 struct Busy {
     recording: bool,
-    assistant: bool,
+    replies: usize,
     model: bool,
-    /// The chat worker answering right now, so a recording can lower its priority.
-    assistant_pid: Option<u32>,
+    /// The chat workers answering right now, by reply id, so a recording can lower their
+    /// priority and Stop reaches only its own reply.
+    reply_pids: HashMap<String, u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -45,25 +52,29 @@ impl Busy {
     fn claim(&mut self, job: Job) -> bool {
         let free = match job {
             Job::Recording => !self.recording && !self.model,
-            Job::Assistant => !self.assistant && !self.model,
-            Job::Model => !self.recording && !self.assistant && !self.model,
+            Job::Assistant => self.replies < MAX_REPLIES && !self.model,
+            Job::Model => !self.recording && self.replies == 0 && !self.model,
         };
         if free {
-            *self.flag(job) = true;
+            match job {
+                Job::Recording => self.recording = true,
+                Job::Assistant => self.replies += 1,
+                Job::Model => self.model = true,
+            }
         }
         free
     }
 
     fn release(&mut self, job: Job) {
-        *self.flag(job) = false;
+        match job {
+            Job::Recording => self.recording = false,
+            Job::Assistant => self.replies = self.replies.saturating_sub(1),
+            Job::Model => self.model = false,
+        }
     }
 
-    fn flag(&mut self, job: Job) -> &mut bool {
-        match job {
-            Job::Recording => &mut self.recording,
-            Job::Assistant => &mut self.assistant,
-            Job::Model => &mut self.model,
-        }
+    fn reply_pids(&self) -> Vec<u32> {
+        self.reply_pids.values().copied().collect()
     }
 }
 
@@ -78,12 +89,26 @@ impl Drop for Release {
     }
 }
 
-/// Stops the chat reply in progress. The worker ends at its next token and returns what it wrote.
-async fn cancel_assistant(State(app): State<App>, headers: HeaderMap) -> axum::response::Response {
+#[derive(Deserialize, Default)]
+struct CancelRequest {
+    reply_id: Option<String>,
+}
+
+/// Stops a chat reply: the one named by `reply_id`, or all of them. The worker ends at its next
+/// token and returns what it wrote.
+async fn cancel_assistant(State(app): State<App>, headers: HeaderMap, body: axum::body::Bytes) -> axum::response::Response {
     if !authorized(&headers, &app.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    if let Some(pid) = app.busy.lock().expect("busy").assistant_pid {
+    let request: CancelRequest = serde_json::from_slice(&body).unwrap_or_default();
+    let pids = {
+        let busy = app.busy.lock().expect("busy");
+        match request.reply_id {
+            Some(id) => busy.reply_pids.get(&id).copied().into_iter().collect(),
+            None => busy.reply_pids(),
+        }
+    };
+    for pid in pids {
         cancel_reply(pid);
     }
     StatusCode::NO_CONTENT.into_response()
@@ -321,15 +346,16 @@ async fn unload_path(State(app): State<App>, headers: HeaderMap, axum::Json(mode
 }
 
 #[derive(Deserialize)]
-struct AssistantRequest { system: String, prompt: String, max_tokens: usize }
+struct AssistantRequest { system: String, prompt: String, max_tokens: usize, reply_id: Option<String> }
 
 async fn generate_assistant(State(app): State<App>, headers: HeaderMap, axum::Json(request): axum::Json<AssistantRequest>) -> axum::response::Response {
     if !authorized(&headers, &app.token) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
     if !app.busy.lock().expect("busy").claim(Job::Assistant) {
-        return (StatusCode::CONFLICT, "上一条回答还没结束，或本地模型正在切换，请稍后再试").into_response();
+        return (StatusCode::CONFLICT, "同时回答的对话太多，或本地模型正在切换，请稍后再试").into_response();
     }
+    let reply_id = request.reply_id.clone().unwrap_or_else(random_token);
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let busy = app.busy.clone();
     let pipeline = app.pipeline.clone();
@@ -349,7 +375,7 @@ async fn generate_assistant(State(app): State<App>, headers: HeaderMap, axum::Js
             let pid = worker.pid();
             {
                 let mut state = busy.lock().expect("busy");
-                state.assistant_pid = Some(pid);
+                state.reply_pids.insert(reply_id.clone(), pid);
                 set_background(pid, state.recording);
             }
             let mut stopped = false;
@@ -364,11 +390,12 @@ async fn generate_assistant(State(app): State<App>, headers: HeaderMap, axum::Js
                     cancel_reply(pid);
                 }
             });
-            busy.lock().expect("busy").assistant_pid = None;
+            busy.lock().expect("busy").reply_pids.remove(&reply_id);
             set_background(pid, false);
             // A worker that failed mid-reply may be out of step; start a fresh one next time.
             if result.is_ok() {
-                pipeline.lock().expect("pipeline").checkin_assistant(worker, &path);
+                let spare = pipeline.lock().expect("pipeline").checkin_assistant(worker, &path);
+                drop(spare);
             }
             result
         })();
@@ -436,8 +463,8 @@ async fn session(State(app): State<App>, headers: HeaderMap, upgrade: WebSocketU
 
 async fn handle_session(mut socket: WebSocket, app: App) {
     let _release = Release(app.busy.clone(), Job::Recording);
-    let assistant = app.busy.lock().expect("busy").assistant_pid;
-    if let Some(pid) = assistant {
+    let replies = app.busy.lock().expect("busy").reply_pids();
+    for pid in replies {
         set_background(pid, true);
     }
     let mut started = false;
@@ -537,8 +564,8 @@ async fn handle_session(mut socket: WebSocket, app: App) {
     // Read the pid into a local first. As the function's last expression, a guard taken in the
     // `if let` would outlive `_release`, whose drop locks `busy` again: a self-deadlock that froze
     // every later request, so the next recording hung on "Preparing".
-    let assistant = app.busy.lock().expect("busy").assistant_pid;
-    if let Some(pid) = assistant {
+    let replies = app.busy.lock().expect("busy").reply_pids();
+    for pid in replies {
         set_background(pid, false);
     }
 }
@@ -585,18 +612,23 @@ fn random_token() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Busy, Job};
+    use super::{Busy, Job, MAX_REPLIES};
 
     #[test]
-    fn a_chat_reply_and_a_recording_run_together() {
+    fn chat_replies_and_a_recording_run_together() {
         let mut busy = Busy::default();
         assert!(busy.claim(Job::Recording));
-        assert!(busy.claim(Job::Assistant));
+        for _ in 0..MAX_REPLIES {
+            assert!(busy.claim(Job::Assistant), "separate chats answer side by side");
+        }
+        assert!(!busy.claim(Job::Assistant), "replies are capped");
         assert!(!busy.claim(Job::Recording), "only one recording at a time");
-        assert!(!busy.claim(Job::Assistant), "only one chat reply at a time");
-        assert!(!busy.claim(Job::Model), "models stay put while either runs");
+        assert!(!busy.claim(Job::Model), "models stay put while anything runs");
         busy.release(Job::Recording);
-        assert!(!busy.claim(Job::Model));
+        for _ in 0..MAX_REPLIES - 1 {
+            busy.release(Job::Assistant);
+        }
+        assert!(!busy.claim(Job::Model), "one reply still running");
         busy.release(Job::Assistant);
         assert!(busy.claim(Job::Model));
         assert!(!busy.claim(Job::Recording), "a model change blocks a new recording");
