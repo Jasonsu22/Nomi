@@ -138,6 +138,11 @@ private struct QuestionCard: View {
     @State private var expanded = false
     @State private var editing = false
     @State private var draft = ""
+    /// The answer's full height, so only answers taller than the folded height get Show More.
+    @State private var answerHeight: CGFloat = 0
+    private static let foldedHeight: CGFloat = 150
+
+    private var answerOverflows: Bool { answerHeight > Self.foldedHeight + 8 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -213,11 +218,13 @@ private struct QuestionCard: View {
     @ViewBuilder
     private var answer: some View {
         if !question.answer.isEmpty {
-            let folded = question.status == .answered && !expanded
+            let folded = question.status == .answered && !expanded && answerOverflows
             AnswerBody(source: question.answer, streaming: question.status == .answering, citations: question.citations) { citation in
                 open(citation)
             }
-            .frame(maxHeight: folded ? 150 : nil, alignment: .top)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { answerHeight = $0 }
+            .frame(maxHeight: folded ? Self.foldedHeight : nil, alignment: .top)
             .clipped()
             .mask {
                 if folded {
@@ -246,11 +253,13 @@ private struct QuestionCard: View {
                 .buttonStyle(.borderedProminent.clicking())
                 .controlSize(.small)
             case .answered:
-                Button(expanded ? tr("收起") : tr("展开")) {
-                    withAnimation(.smooth(duration: 0.3)) { expanded.toggle() }
+                if answerOverflows {
+                    Button(expanded ? tr("收起") : tr("展开")) {
+                        withAnimation(.smooth(duration: 0.3)) { expanded.toggle() }
+                    }
+                    .buttonStyle(.plain.clicking())
+                    .foregroundStyle(AppColor.accent)
                 }
-                .buttonStyle(.plain.clicking())
-                .foregroundStyle(AppColor.accent)
                 Button(tr("在提问中继续"), action: onContinueInChat)
                     .buttonStyle(.plain.clicking())
                     .foregroundStyle(AppColor.accent)
