@@ -261,6 +261,9 @@ private struct HtmlAnswerWebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.allowsMagnification = false
+        // Demos are written for a full page; at 82% they fit the chat column. Zoom is applied at
+        // layout, so it costs nothing while scrolling.
+        webView.pageZoom = Self.pageZoom
         webView.allowsBackForwardNavigationGestures = false
         webView.underPageBackgroundColor = .clear
         #if DEBUG
@@ -281,6 +284,8 @@ private struct HtmlAnswerWebView: NSViewRepresentable {
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
     }
+
+    static let pageZoom: CGFloat = 0.82
 
     private static let heightScript = """
     (function () {
@@ -320,7 +325,8 @@ private struct HtmlAnswerWebView: NSViewRepresentable {
                   let body = message.body as? [String: Any],
                   let height = (body["height"] as? NSNumber)?.doubleValue,
                   height.isFinite, height > 0 else { return }
-            onHeight(CGFloat(height))
+            // The page reports CSS pixels; the view is that many times the zoom tall.
+            onHeight(CGFloat(height) * (webView?.pageZoom ?? 1))
             webView?.showsWholePage = true
         }
 
