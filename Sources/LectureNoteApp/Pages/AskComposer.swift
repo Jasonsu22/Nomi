@@ -68,7 +68,9 @@ struct AskComposerField: NSViewRepresentable {
             textView.placeholder = placeholder
             textView.needsDisplay = true
         }
-        if textView.string != text {
+        // Never while an input method is composing: the binding does not carry marked text, and
+        // writing it back wiped Chinese input each time a streaming answer redrew the view.
+        if !textView.hasMarkedText(), textView.string != text {
             textView.string = text
             textView.needsDisplay = true
         }

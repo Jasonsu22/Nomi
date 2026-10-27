@@ -327,6 +327,23 @@ final class LocalEngine: TranscriptionEngine {
             for try await byte in bytes { data.append(byte) }
             throw llmError(String(data: data, encoding: .utf8) ?? tr("本地模型请求失败。"))
         }
+        var (accumulator, shown) = try await Self.readReply(bytes, onUpdate: onUpdate)
+        accumulator.finished = true
+        // A cancelled reply ends early with what it had written; that is not an answer.
+        if cancelledReplies.contains(replyID) { throw CancellationError() }
+        let answer = accumulator.answer
+        guard !answer.isEmpty else { throw llmError(tr("模型未返回文字，请重试。")) }
+        if answer != shown { onUpdate(answer) }
+        return answer
+    }
+
+    /// Reads a reply stream off the main thread. The engine sends the whole text so far with every
+    /// token, so parsing it on the main thread grew slower as the answer grew and made typing lag.
+    /// The screen gets the text at most every 80 ms.
+    nonisolated private static func readReply(
+        _ bytes: URLSession.AsyncBytes,
+        onUpdate: @escaping @MainActor (String) -> Void
+    ) async throws -> (ChatStream.Accumulator, String) {
         var accumulator = ChatStream.Accumulator()
         var last = Date.distantPast
         var shown = ""
@@ -341,21 +358,16 @@ final class LocalEngine: TranscriptionEngine {
                 guard let object = ChatStream.object(from: payload) else { continue }
                 if let message = accumulator.apply(object) { throw llmError(message) }
             }
+            if accumulator.finished { break }
+            guard Date().timeIntervalSince(last) >= 0.08 else { continue }
             let text = accumulator.display
-            if text != shown, !text.isEmpty, Date().timeIntervalSince(last) >= 0.05 {
+            if text != shown, !text.isEmpty {
                 last = Date()
                 shown = text
-                onUpdate(text)
+                await onUpdate(text)
             }
-            if accumulator.finished { break }
         }
-        accumulator.finished = true
-        // A cancelled reply ends early with what it had written; that is not an answer.
-        if cancelledReplies.contains(replyID) { throw CancellationError() }
-        let answer = accumulator.answer
-        guard !answer.isEmpty else { throw llmError(tr("模型未返回文字，请重试。")) }
-        if answer != shown { onUpdate(answer) }
-        return answer
+        return (accumulator, shown)
     }
 
     /// Stops the background replies in progress within about one token, leaving chat replies alone.
