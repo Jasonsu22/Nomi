@@ -94,9 +94,9 @@ cat > "$app/Contents/Info.plist" <<'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.6</string>
+    <string>0.7</string>
     <key>CFBundleVersion</key>
-    <string>8</string>
+    <string>9</string>
     <key>SUFeedURL</key>
     <string>https://github.com/Jasonsu22/Nomi/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key>
