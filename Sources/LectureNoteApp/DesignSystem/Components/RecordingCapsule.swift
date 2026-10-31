@@ -110,7 +110,9 @@ struct SessionControl: View {
                     .font(.system(size: 13, weight: .semibold).monospacedDigit())
                     .foregroundStyle(ink)
                     .contentTransition(.numericText())
-                    .frame(width: 48, alignment: .leading)
+                    .lineLimit(1)
+                    // Past an hour the clock reads 1:11:45; the capsule grows instead of wrapping it.
+                    .frame(width: session.elapsed >= 3600 ? 64 : 48, alignment: .leading)
             }
         }
     }

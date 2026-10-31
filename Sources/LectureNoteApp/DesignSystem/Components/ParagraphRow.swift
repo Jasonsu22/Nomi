@@ -13,7 +13,9 @@ struct ParagraphRow: View, Equatable {
                 .font(AppFont.caption)
                 .monospacedDigit()
                 .foregroundStyle(AppColor.textSecondary)
-                .frame(width: 48, alignment: .leading)
+                .lineLimit(1)
+                // Wide enough for 1:11:45 in a class longer than an hour.
+                .frame(width: 56, alignment: .leading)
             if compare {
                 spoken
                     .font(.system(size: fontSize))
