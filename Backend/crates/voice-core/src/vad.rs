@@ -16,6 +16,11 @@ pub struct VadConfig {
     pub min_segment_samples: usize,
     pub max_segment_samples: usize,
     pub progressive_samples: usize,
+    /// Audio kept from just before the gate opens, so a soft first consonant is not clipped.
+    pub preroll_samples: usize,
+    /// A phrase at the length limit is cut at its quietest frame within this last stretch,
+    /// between words, instead of mid-word.
+    pub cut_search_samples: usize,
 }
 
 impl Default for VadConfig {
@@ -33,10 +38,14 @@ impl Default for VadConfig {
             start_over_floor: 2.4,
             end_over_floor: 1.5,
             start_frames: 5,
-            end_silence_samples: rate * 420 / 1000,
+            // Lecturers pause 0.3-0.6 s inside a sentence; 0.42 s split sentences into fragments
+            // that the speech model then read without the rest of the sentence.
+            end_silence_samples: rate * 700 / 1000,
             min_segment_samples: rate * 420 / 1000,
-            max_segment_samples: rate * 8,
+            max_segment_samples: rate * 15,
             progressive_samples: rate * 1500 / 1000,
+            preroll_samples: rate * 200 / 1000,
+            cut_search_samples: rate * 2,
         }
     }
 }
@@ -63,6 +72,8 @@ pub struct Vad {
     segment_start: usize,
     burst_id: u64,
     samples_since_partial: usize,
+    /// The most recent audio before a phrase, at most `preroll_samples`.
+    preroll: std::collections::VecDeque<f32>,
     /// Background level, from quiet frames. It drops quickly and rises slowly, so a teacher
     /// far from the microphone still clears it while a fan or room tone does not.
     noise_floor: f32,
@@ -85,6 +96,7 @@ impl Vad {
             segment_start: 0,
             burst_id: 1,
             samples_since_partial: 0,
+            preroll: std::collections::VecDeque::new(),
             noise_floor: FLOOR_START,
         }
     }
@@ -151,6 +163,9 @@ impl Vad {
                 self.voiced_run += 1;
                 self.segment.extend_from_slice(frame);
                 if self.voiced_run >= self.config.start_frames {
+                    let mut phrase: Vec<f32> = self.preroll.drain(..).collect();
+                    phrase.append(&mut self.segment);
+                    self.segment = phrase;
                     self.speaking = true;
                     self.silence_samples = 0;
                     self.samples_since_partial = self.segment.len();
@@ -158,7 +173,9 @@ impl Vad {
                 }
             } else {
                 self.voiced_run = 0;
-                self.segment.clear();
+                let held = std::mem::take(&mut self.segment);
+                self.keep_preroll(&held);
+                self.keep_preroll(frame);
             }
             return None;
         }
@@ -171,7 +188,7 @@ impl Vad {
         }
 
         if self.segment.len() >= self.config.max_segment_samples {
-            return Some(self.emit(true, true));
+            return Some(self.cut_at_quietest());
         }
         if self.silence_samples >= self.config.end_silence_samples
             && self.segment.len() >= self.config.min_segment_samples
@@ -179,11 +196,46 @@ impl Vad {
             return Some(self.emit(true, false));
         }
         self.samples_since_partial += frame.len();
-        if self.samples_since_partial >= self.config.progressive_samples {
+        // Each preview reads the whole phrase so far, so long phrases preview less often; the final
+        // text is unchanged, and recognition keeps up in real time beside the local chat model.
+        if self.samples_since_partial >= self.config.progressive_samples.max(self.segment.len() / 4) {
             self.samples_since_partial = 0;
             return Some(self.emit(false, false));
         }
         None
+    }
+
+    fn keep_preroll(&mut self, samples: &[f32]) {
+        self.preroll.extend(samples.iter().copied());
+        let extra = self.preroll.len().saturating_sub(self.config.preroll_samples);
+        self.preroll.drain(..extra);
+    }
+
+    /// Ends a phrase that reached the length limit at its quietest frame in the last stretch,
+    /// and carries the rest into the next phrase, which keeps going.
+    fn cut_at_quietest(&mut self) -> VadOutput {
+        let frame = self.config.frame_samples;
+        let len = self.segment.len();
+        let from = len.saturating_sub(self.config.cut_search_samples) / frame * frame;
+        let quietest = (from..len.saturating_sub(frame))
+            .step_by(frame)
+            .min_by(|a, b| rms(&self.segment[*a..*a + frame]).total_cmp(&rms(&self.segment[*b..*b + frame])))
+            .map_or(len, |start| start + frame / 2);
+        let rest = self.segment.split_off(quietest);
+        let cut_end = self.cursor_samples - rest.len();
+        let output = VadOutput {
+            burst_id: self.burst_id,
+            samples: std::mem::take(&mut self.segment),
+            start: self.segment_start as f64 / self.config.sample_rate as f64,
+            end: cut_end as f64 / self.config.sample_rate as f64,
+            is_final: true,
+            hit_limit: true,
+        };
+        self.burst_id += 1;
+        self.segment_start = cut_end;
+        self.samples_since_partial = rest.len();
+        self.segment = rest;
+        output
     }
 
     fn emit(&mut self, is_final: bool, hit_limit: bool) -> VadOutput {
@@ -223,7 +275,7 @@ mod tests {
     fn a_tone_followed_by_silence_becomes_one_final_segment() {
         let mut vad = Vad::new(VadConfig::default());
         let tone = vec![0.2f32; 16_000];
-        let silence = vec![0.0f32; 8_000];
+        let silence = vec![0.0f32; 16_000];
         let mut outputs = vad.push(&tone);
         outputs.extend(vad.push(&silence));
         let finals: Vec<_> = outputs.iter().filter(|item| item.is_final).collect();
@@ -255,6 +307,38 @@ mod tests {
             .collect();
         let outputs = vad.push(&noise);
         assert!(outputs.is_empty(), "room noise alone should not become speech");
+    }
+
+    /// Long speech is cut where it is quietest, between words, and nothing is lost at the cut.
+    #[test]
+    fn a_phrase_at_the_limit_is_cut_at_a_pause_and_keeps_going() {
+        let config = VadConfig::default();
+        let mut vad = Vad::new(config.clone());
+        // 16 s of "speech" with a short dip 14 s in: the cut should land in the dip.
+        let speech: Vec<f32> = (0..16_000 * 16)
+            .map(|i| if (16_000 * 14..16_000 * 14 + 1_600).contains(&i) { 0.004 } else { 0.1 * (i as f32 * 0.05).sin() })
+            .collect();
+        let outputs = vad.push(&speech);
+        let cut = outputs.iter().find(|item| item.hit_limit).expect("a cut at the limit");
+        let cut_at = cut.samples.len() as f64 / 16_000.0;
+        assert!((14.0..14.2).contains(&(cut.end)), "cut at {cut_at:.2}s, ended {:.2}s", cut.end);
+        let finals: Vec<_> = vad.finish().into_iter().collect();
+        let total: usize = outputs.iter().filter(|item| item.is_final).map(|item| item.samples.len()).sum::<usize>()
+            + finals.iter().map(|item| item.samples.len()).sum::<usize>();
+        assert!(total >= speech.len() - config.frame_samples * 5, "audio after the cut is kept");
+    }
+
+    /// The quiet start of a word, just under the gate, is kept with the phrase.
+    #[test]
+    fn the_moment_before_the_gate_opens_is_kept() {
+        let mut vad = Vad::new(VadConfig::default());
+        vad.push(&vec![0.0f32; 16_000]);
+        vad.push(&vec![0.003f32; 1_600]);
+        let mut outputs = vad.push(&vec![0.1f32; 16_000]);
+        outputs.extend(vad.push(&vec![0.0f32; 16_000]));
+        let phrase = outputs.iter().find(|item| item.is_final).expect("a phrase");
+        assert!(phrase.samples.len() >= 16_000 + 1_600, "the soft start should be included");
+        assert!(phrase.start <= 1.0 + 0.01, "the phrase starts with the soft sound, at {:.2}s", phrase.start);
     }
 
     #[test]

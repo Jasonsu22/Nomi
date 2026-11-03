@@ -666,6 +666,18 @@ impl Qwen3ASR {
         language: &str,
         config: &SamplingConfig,
     ) -> Result<String> {
+        self.transcribe_samples_with_context(samples, language, "", config).map(|(text, _)| text)
+    }
+
+    /// Transcribe with a context hint (earlier sentences, topic, terms), which goes in the system
+    /// message as the model expects. Returns the text and, for "auto", the language the model named.
+    pub fn transcribe_samples_with_context(
+        &mut self,
+        samples: &[f32],
+        language: &str,
+        context: &str,
+        config: &SamplingConfig,
+    ) -> Result<(String, Option<String>)> {
         // 1. Compute mel spectrogram
         let mel = self.mel_frontend.compute_mel_spectrogram(samples)?;
         eval([&mel])?;
@@ -678,7 +690,7 @@ impl Qwen3ASR {
         eprintln!("Audio: {} mel frames -> {} audio tokens", mel.shape()[1], num_audio_tokens);
 
         // 3. Build prompt
-        let input_ids = self.build_prompt(num_audio_tokens, language)?;
+        let input_ids = self.build_prompt(num_audio_tokens, language, context)?;
         eval([&input_ids])?;
 
         // 4. Build input embeddings with audio merged in
@@ -690,7 +702,7 @@ impl Qwen3ASR {
     }
 
     /// Build prompt token IDs.
-    fn build_prompt(&self, num_audio_tokens: i32, language: &str) -> Result<Array> {
+    fn build_prompt(&self, num_audio_tokens: i32, language: &str, context: &str) -> Result<Array> {
         let tokenizer = self.tokenizer.as_ref()
             .ok_or_else(|| Error::Tokenizer("Tokenizer not loaded".to_string()))?;
 
@@ -703,7 +715,8 @@ impl Qwen3ASR {
             format!("language {}<asr_text>", language)
         };
         let prompt = format!(
-            "<|im_start|>system\n<|im_end|>\n<|im_start|>user\n<|audio_start|>{}<|audio_end|><|im_end|>\n<|im_start|>assistant\n{}",
+            "<|im_start|>system\n{}<|im_end|>\n<|im_start|>user\n<|audio_start|>{}<|audio_end|><|im_end|>\n<|im_start|>assistant\n{}",
+            context.trim(),
             "<|audio_pad|>".repeat(num_audio_tokens as usize),
             language_prefix,
         );
@@ -774,7 +787,7 @@ impl Qwen3ASR {
         inputs_embeds: &Array,
         config: &SamplingConfig,
         auto_language: bool,
-    ) -> Result<String> {
+    ) -> Result<(String, Option<String>)> {
         let mut cache: Vec<Option<KVCache>> = Vec::new();
         let mut tokens: Vec<i32> = Vec::new();
         let eos_tokens = &self.eos_token_ids;
@@ -831,10 +844,13 @@ impl Qwen3ASR {
         if auto_language {
             // Auto generates " Chinese<asr_text>..." after the "language" prompt; only
             // expose spoken text. Without the tag there is only a language name.
-            let text = decoded.split_once("<asr_text>").map_or("", |(_, text)| text);
-            Ok(text.trim().to_string())
+            let Some((named, text)) = decoded.split_once("<asr_text>") else {
+                return Ok((String::new(), None));
+            };
+            let named = named.trim().trim_start_matches("language").trim();
+            Ok((text.trim().to_string(), (!named.is_empty()).then(|| named.to_string())))
         } else {
-            Ok(decoded)
+            Ok((decoded, None))
         }
     }
 

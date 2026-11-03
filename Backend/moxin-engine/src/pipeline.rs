@@ -45,6 +45,55 @@ pub struct Pipeline {
     translation_retry_at: Option<Instant>,
     translation_error_reported: bool,
     commit_error_reported: bool,
+    language_lock: LanguageLock,
+    /// From the app: the meeting title and terms from its slides, so course words are heard right.
+    topic: String,
+    /// The end of what was said so far. Each phrase is recognised with the sentence before it.
+    recent: String,
+}
+
+/// Characters of earlier text given to the speech model with each phrase.
+const RECENT_CHARS: usize = 200;
+
+/// With Auto, the language a class is in, once enough longer phrases agree. A 1-2 s phrase from an
+/// accented speaker is too little to tell the language, and the model then invents text in another
+/// one (Malay in an English class). After the lock, phrases may still switch between Chinese and
+/// English, so short asides in either survive, and a phrase in any other language is transcribed
+/// again in the class language. Forcing short phrases into the class language instead turned real
+/// Chinese asides into invented English.
+#[derive(Default)]
+struct LanguageLock {
+    votes: Vec<String>,
+    locked: Option<String>,
+}
+
+impl LanguageLock {
+    /// Phrases at least this long say which language the class is in.
+    const VOTING_SECONDS: f64 = 2.0;
+    /// Chinese and English mix freely in class, whatever the locked language.
+    const MIXED: [&'static str; 2] = ["Chinese", "English"];
+
+    fn vote(&mut self, language: &str) {
+        if self.locked.is_some() || language.is_empty() {
+            return;
+        }
+        self.votes.push(language.to_string());
+        if self.votes.len() > 6 {
+            self.votes.remove(0);
+        }
+        let agreeing = self.votes.iter().filter(|vote| *vote == language).count();
+        if agreeing >= 3 && agreeing * 10 >= self.votes.len() * 6 {
+            self.locked = Some(language.to_string());
+        }
+    }
+
+    /// Whether a detected language is kept, or the phrase is transcribed again in the class language.
+    fn accepts(&self, named: Option<&str>) -> bool {
+        match (&self.locked, named) {
+            (Some(locked), Some(named)) => named == locked || Self::MIXED.contains(&named),
+            _ => true,
+        }
+    }
 }
 
 impl Pipeline {
@@ -71,6 +120,9 @@ impl Pipeline {
             translation_retry_at: None,
             translation_error_reported: false,
             commit_error_reported: false,
+            language_lock: LanguageLock::default(),
+            topic: String::new(),
+            recent: String::new(),
         };
         if pipeline.asr_status.files_ready {
             if let Err(error) = pipeline.load_asr() {
@@ -97,6 +149,41 @@ impl Pipeline {
         self.translation_retry_at = None;
         self.translation_error_reported = false;
         self.commit_error_reported = false;
+        self.language_lock = LanguageLock::default();
+        self.recent.clear();
+    }
+
+    /// The meeting title and course terms for this recording; cleared by passing "".
+    pub fn set_topic(&mut self, topic: &str) {
+        self.topic = topic.trim().chars().take(400).collect();
+    }
+
+    fn context(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.topic.is_empty() {
+            parts.push(self.topic.clone());
+        }
+        if !self.recent.is_empty() {
+            parts.push(self.recent.clone());
+        }
+        parts.join("\n")
+    }
+
+    fn remember(&mut self, text: &str) {
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+        // Auto has no fixed spacing rule; words in Latin script get a space, Chinese does not.
+        let latin = |c: Option<char>| c.is_some_and(|c| c.is_ascii());
+        if latin(self.recent.chars().last()) && latin(text.chars().next()) {
+            self.recent.push(' ');
+        }
+        self.recent.push_str(text);
+        let extra = self.recent.chars().count().saturating_sub(RECENT_CHARS);
+        if extra > 0 {
+            self.recent = self.recent.chars().skip(extra).collect();
+        }
     }
 
     pub fn load_asr(&mut self) -> Result<()> {
@@ -353,16 +440,10 @@ impl Pipeline {
                 });
                 continue;
             }
-            let id = self.next_request;
-            self.next_request += 1;
-            let language = voice_core::asr_language(&self.source_language);
-            let response = self.asr.as_mut().unwrap().request(
-                WorkerRequest::Transcribe { id, language },
-                &pcm_to_bytes(&boost(&segment.samples)),
-            );
+            let response = self.transcribe(&segment);
             let text = match response {
                 // A noise burst that opened the gate comes back empty or as stock filler; drop it.
-                Ok(WorkerEvent::Result { text, .. }) => if is_noise_transcript(&text) { String::new() } else { text },
+                Ok(WorkerEvent::Transcript { text, .. }) => if is_noise_transcript(&text) { String::new() } else { text },
                 Ok(WorkerEvent::Failed { message, .. }) => {
                     events.push(OutEvent::Error { code: "asr_failed".into(), message });
                     continue;
@@ -379,6 +460,9 @@ impl Pipeline {
             // Idle is decided from the previous chunk's clock. Refreshing it first
             // would hide a fragment that has already been sitting for 9 seconds.
             events.extend(self.drain_commits());
+            if segment.is_final {
+                self.remember(&text);
+            }
             self.committer.observe(segment.burst_id, &text, segment.start, segment.end, segment.is_final, segment.hit_limit);
             self.revision += 1;
             events.push(OutEvent::Tail {
@@ -389,6 +473,35 @@ impl Pipeline {
             events.extend(self.drain_commits());
         }
         events
+    }
+
+    /// One phrase to text. With Auto, the language lock picks what to ask for and catches a phrase
+    /// the model put in an unrelated language.
+    fn transcribe(&mut self, segment: &voice_core::VadOutput) -> Result<WorkerEvent> {
+        let audio = pcm_to_bytes(&boost(&segment.samples));
+        let seconds = segment.samples.len() as f64 / 16_000.0;
+        let fixed = voice_core::asr_language(&self.source_language);
+        let auto = fixed == "auto";
+        let mut response = self.request_transcript(&fixed, &audio)?;
+        if auto {
+            if let WorkerEvent::Transcript { language: named, .. } = &response {
+                let named = named.clone();
+                if !self.language_lock.accepts(named.as_deref()) {
+                    let locked = self.language_lock.locked.clone().unwrap_or_default();
+                    response = self.request_transcript(&locked, &audio)?;
+                } else if segment.is_final && seconds >= LanguageLock::VOTING_SECONDS {
+                    self.language_lock.vote(named.as_deref().unwrap_or_default());
+                }
+            }
+        }
+        Ok(response)
+    }
+
+    fn request_transcript(&mut self, language: &str, audio: &[u8]) -> Result<WorkerEvent> {
+        let id = self.next_request;
+        self.next_request += 1;
+        let request = WorkerRequest::Transcribe { id, language: language.to_string(), context: self.context() };
+        self.asr.as_mut().ok_or_else(|| anyhow!("识别模型没有加载"))?.request(request, audio)
     }
 
     fn drain_commits(&mut self) -> Vec<OutEvent> {
@@ -580,6 +693,35 @@ fn boost(samples: &[f32]) -> Vec<f32> {
         return samples.to_vec();
     }
     samples.iter().map(|sample| sample * gain).collect()
+}
+
+#[cfg(test)]
+mod language_lock_tests {
+    use super::LanguageLock;
+
+    #[test]
+    fn three_agreeing_phrases_lock_the_class_language() {
+        let mut lock = LanguageLock::default();
+        lock.vote("English");
+        lock.vote("Chinese");
+        lock.vote("English");
+        assert_eq!(lock.locked, None);
+        lock.vote("English");
+        assert_eq!(lock.locked.as_deref(), Some("English"));
+    }
+
+    #[test]
+    fn after_the_lock_chinese_and_english_mix_but_other_languages_are_redone() {
+        let mut lock = LanguageLock::default();
+        assert!(lock.accepts(Some("Malay")), "nothing is locked yet");
+        for _ in 0..3 {
+            lock.vote("English");
+        }
+        assert!(lock.accepts(Some("English")));
+        assert!(lock.accepts(Some("Chinese")), "a Chinese aside in an English class is kept");
+        assert!(!lock.accepts(Some("Malay")));
+        assert!(lock.accepts(None));
+    }
 }
 
 #[cfg(test)]

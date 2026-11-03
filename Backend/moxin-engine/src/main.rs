@@ -179,6 +179,7 @@ fn replay_wav(args: Vec<String>) -> Result<()> {
     let asr = model_path(flag(&args, "--asr-model"), "qwen3-asr-1.7b");
     let llm = model_path(flag(&args, "--llm-model"), "Qwen3.5-2B-MLX-4bit");
     let mut pipeline = Pipeline::start(asr, llm, &source, &target)?;
+    pipeline.set_topic(&flag(&args, "--context").unwrap_or_default());
     let mut file = std::fs::File::create(output)?;
     write_event(&mut file, &state_event(&pipeline, "loading"))?;
     if pipeline.asr_label() != "ready" {
@@ -507,6 +508,8 @@ async fn handle_session(mut socket: WebSocket, app: App) {
                         let (event, ready) = {
                             let mut pipeline = app.pipeline.lock().expect("pipeline");
                             pipeline.configure(source, target);
+                            // The meeting title and course terms, so the speech model hears course words right.
+                            pipeline.set_topic(value.get("context").and_then(|item| item.as_str()).unwrap_or(""));
                             let ready = pipeline.asr_label() == "ready";
                             let event = if ready {
                                 state_event(&pipeline, "listening")
@@ -523,6 +526,11 @@ async fn handle_session(mut socket: WebSocket, app: App) {
                         if !ready {
                             break;
                         }
+                    }
+                    // Terms from the meeting's slides, sent once the app has read them.
+                    Some("topic") => {
+                        let topic = value.get("context").and_then(|item| item.as_str()).unwrap_or("").to_string();
+                        app.pipeline.lock().expect("pipeline").set_topic(&topic);
                     }
                     Some("stop") => {
                         send_json(&mut socket, &{

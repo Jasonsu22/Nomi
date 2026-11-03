@@ -94,6 +94,7 @@ final class AppModel {
     @ObservationIgnored var qaStates: [UUID: MeetingQA] = [:]
     /// Checks the transcript for new questions while recording.
     @ObservationIgnored var questionScanTask: Task<Void, Never>?
+    @ObservationIgnored var transcriptionTopicTask: Task<Void, Never>?
     /// Answers queued questions one at a time.
     @ObservationIgnored var questionQueueTask: Task<Void, Never>?
     /// A Q&A job is generating on the local model, so other local work waits for it.
@@ -122,7 +123,11 @@ final class AppModel {
     /// The open chat for each meeting's own ask panel.
     var meetingChatID: [UUID: UUID] = [:]
     var meetingLinks: [UUID: [UUID]] = [:] {
-        didSet { persistMeetingLinks() }
+        didSet {
+            persistMeetingLinks()
+            // Slides linked during a recording teach the speech model their terms right away.
+            if let id = liveMeetingID, oldValue[id] != meetingLinks[id] { refreshTranscriptionTopic(id) }
+        }
     }
     private var meetingLinksReady = false
     /// Answers coming in right now, one per chat. API chats answer side by side; the local model
@@ -403,6 +408,7 @@ final class AppModel {
         meetings.insert(meeting, at: 0)
         liveMeetingID = meeting.id
         startLiveQuestionScan(meeting.id)
+        refreshTranscriptionTopic(meeting.id)
         openMeetingID = meeting.id
         page = .meetings
         engine.start()
@@ -430,6 +436,7 @@ final class AppModel {
         meetings[index].isLive = true
         liveMeetingID = id
         startLiveQuestionScan(id)
+        refreshTranscriptionTopic(id)
         openMeetingID = id
         page = .meetings
         recordingSetupPresented = false
@@ -588,6 +595,28 @@ final class AppModel {
         var links = meetingLinks[meetingID] ?? []
         links.append(contentsOf: added)
         meetingLinks[meetingID] = links
+    }
+
+    /// Gives the speech model the meeting's title and course now, and the terms from its linked
+    /// slides once they are read off the main thread. Big PDFs can take a moment, so the recording
+    /// does not wait for them.
+    func refreshTranscriptionTopic(_ meetingID: UUID) {
+        guard let engine = engine as? LocalEngine, let meeting = meetings.first(where: { $0.id == meetingID }) else { return }
+        let title = meeting.title
+        let course = categoryName(for: meeting)
+        engine.updateTranscriptionTopic(TranscriptionTopic.text(title: title, course: course, terms: []))
+        transcriptionTopicTask?.cancel()
+        let files = linkedSources(for: meetingID).map { (url: SourceStore.fileURL(for: $0), title: $0.title, id: $0.id) }
+        guard !files.isEmpty else { return }
+        transcriptionTopicTask = Task.detached(priority: .utility) { [weak self] in
+            let text = files.flatMap { SourceText.blocks(url: $0.url, title: $0.title, sourceID: $0.id) }.map(\.body).joined(separator: "\n")
+            let terms = TranscriptionTopic.terms(in: text)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self, self.liveMeetingID == meetingID else { return }
+                engine.updateTranscriptionTopic(TranscriptionTopic.text(title: title, course: course, terms: terms))
+            }
+        }
     }
 
     func linkSource(_ sourceID: UUID, to meetingID: UUID) {

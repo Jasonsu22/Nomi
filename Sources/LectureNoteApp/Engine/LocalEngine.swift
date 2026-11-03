@@ -28,6 +28,8 @@ final class LocalEngine: TranscriptionEngine {
     static let maxReplies = 3
     var sourceLanguage = "zh"
     var targetLanguage = "en"
+    /// The meeting title and course terms for the speech model; see `TranscriptionTopic`.
+    var transcriptionTopic = ""
     var inputDeviceUID: String?
     var recordingURL: URL?
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
@@ -418,9 +420,10 @@ final class LocalEngine: TranscriptionEngine {
         let socket = URLSession.shared.webSocketTask(with: request)
         self.socket = socket
         socket.resume()
-        let start = """
-        {"type":"start","source":"microphone","sourceLanguage":"\(sourceLanguage)","targetLanguage":"\(targetLanguage)"}
-        """
+        let start = Self.json([
+            "type": "start", "source": "microphone",
+            "sourceLanguage": sourceLanguage, "targetLanguage": targetLanguage, "context": transcriptionTopic,
+        ])
         do {
             try await socket.send(.string(start))
         } catch {
@@ -601,6 +604,19 @@ final class LocalEngine: TranscriptionEngine {
 
     private func sendText(_ text: String) async {
         try? await socket?.send(.string(text))
+    }
+
+    /// A new topic for the recording in progress, such as terms read from its slides after it started.
+    func updateTranscriptionTopic(_ topic: String) {
+        transcriptionTopic = topic
+        guard session.phase != .idle else { return }
+        let message = Self.json(["type": "topic", "context": topic])
+        Task { await sendText(message) }
+    }
+
+    private static func json(_ object: [String: String]) -> String {
+        let data = (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+        return String(data: data, encoding: .utf8) ?? "{}"
     }
 
     private func withAnimationIfNeeded(_ updates: () -> Void) {

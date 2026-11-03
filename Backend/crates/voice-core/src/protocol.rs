@@ -4,7 +4,13 @@ use std::io::{Read, Write};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WorkerRequest {
-    Transcribe { id: u64, language: String },
+    /// `context` is a short hint for the speech model: earlier sentences, the topic, course terms.
+    Transcribe {
+        id: u64,
+        language: String,
+        #[serde(default)]
+        context: String,
+    },
     Translate { id: u64, text: String, target_language: String },
     Generate { id: u64, system: String, prompt: String, max_tokens: usize },
     Shutdown,
@@ -18,6 +24,8 @@ pub enum WorkerEvent {
     /// Cumulative visible answer so far. A token boundary can sit inside a character, so this is the whole decoded string, not one piece.
     Token { id: u64, text: String },
     Result { id: u64, text: String },
+    /// A transcription, with the language the model named when asked to detect it.
+    Transcript { id: u64, text: String, language: Option<String> },
     Failed { id: u64, message: String },
 }
 

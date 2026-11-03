@@ -42,15 +42,15 @@ fn main() -> Result<()> {
                     &[],
                 )?;
             }
-            WorkerRequest::Transcribe { id, language } => {
+            WorkerRequest::Transcribe { id, language, context } => {
                 let samples = pcm_from_bytes(&payload);
                 let config = SamplingConfig { temperature: 0.0, max_tokens: MAX_TOKENS };
-                let result = model.transcribe_samples_with_config(&samples, &language, &config);
+                let result = model.transcribe_samples_with_context(&samples, &language, &context, &config);
                 unsafe {
                     mlx_sys::mlx_clear_cache();
                 }
                 match result {
-                    Ok(text) => write_frame(&mut stdout, &WorkerEvent::Result { id, text }, &[])?,
+                    Ok((text, language)) => write_frame(&mut stdout, &WorkerEvent::Transcript { id, text, language }, &[])?,
                     Err(error) => write_frame(
                         &mut stdout,
                         &WorkerEvent::Failed { id, message: error.to_string() },
