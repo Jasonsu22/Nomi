@@ -76,29 +76,33 @@ struct SessionControl: View {
     }
 
     private var listeningControl: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
+            // Clicks pass through to the button behind the whole capsule.
+            progress.allowsHitTesting(false)
+            HStack(spacing: 2) {
+                iconButton(
+                    systemName: session.isPaused ? "play.fill" : "pause.fill",
+                    label: session.isPaused ? tr("继续") : tr("暂停"),
+                    filled: false,
+                    action: onTogglePause
+                )
+                iconButton(systemName: "stop.fill", label: tr("停止"), filled: true, danger: true, action: onStop)
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 4)
+        .frame(height: 40)
+        .background {
+            // Behind pause and stop, so those keep their own clicks.
             if let onOpen {
-                // A sibling of the pause and stop buttons, so those keep their own clicks.
                 Button(action: onOpen) {
-                    progress.contentShape(Rectangle())
+                    hitCapsule(Color.clear)
                 }
                 .buttonStyle(.plain.clicking())
                 .help(tr("回到正在录制的会议"))
                 .accessibilityLabel(tr("回到正在录制的会议"))
-            } else {
-                progress
             }
-            iconButton(
-                systemName: session.isPaused ? "play.fill" : "pause.fill",
-                label: session.isPaused ? tr("继续") : tr("暂停"),
-                filled: false,
-                action: onTogglePause
-            )
-            iconButton(systemName: "stop.fill", label: tr("停止"), filled: true, danger: true, action: onStop)
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 8)
-        .frame(height: 40)
     }
 
     private var progress: some View {
@@ -124,7 +128,10 @@ struct SessionControl: View {
                 .foregroundStyle(filled ? Color.white : ink)
                 .frame(width: 22, height: 22)
                 .background(danger ? Color.red : (filled ? AppColor.accent : AppColor.surface), in: Circle())
-                .contentShape(Circle())
+                // A little wider than the circle, so a near miss still pauses or stops instead of opening the meeting.
+                .padding(.horizontal, 4)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain.clicking())
         .accessibilityLabel(label)
