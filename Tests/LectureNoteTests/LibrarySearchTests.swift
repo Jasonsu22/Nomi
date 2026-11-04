@@ -3,6 +3,34 @@ import Testing
 @testable import LectureNoteApp
 
 struct LibrarySearchTests {
+    @Test func inAClassChatTheTeacherAndTodayMeanThatClass() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        calendar.firstWeekday = 2
+        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 11, day: 3, hour: 23)))
+        let started = try #require(calendar.date(from: DateComponents(year: 2026, month: 11, day: 3, hour: 22)))
+        func outside(_ question: String) -> Bool {
+            LibraryRequest.pointsOutsideClass(question, classStartedAt: started, now: now, calendar: calendar)
+        }
+        for question in ["老师讲了什么", "老师说了什么", "刚才讲到哪了", "今天讲了什么", "What did the teacher say?", "讲了什么"] {
+            #expect(!outside(question), "\(question) is about this class")
+        }
+        for question in ["上节课讲了什么", "上次老师说了什么", "上周讲了什么", "昨天的课讲了啥", "What did we cover last class?"] {
+            #expect(outside(question), "\(question) is about another class")
+        }
+    }
+
+    @Test func aClassChatToldWhichClassItIsAndOnlySearchesWhenAsked() {
+        let label = ChatContext.classLabel(title: "NLP", startedAt: Date(timeIntervalSince1970: 1_800_000_000))
+        let system = ChatContext.systemPrompt(language: "Simplified Chinese", allowsWeb: false, tools: true, library: .available, currentClass: label)
+        #expect(system.contains("This chat belongs to the class \"NLP\""))
+        #expect(system.contains("只有学生明确问到别的课"))
+        #expect(!system.contains("问题涉及课上老师讲过的内容"))
+        let general = ChatContext.systemPrompt(language: "Simplified Chinese", allowsWeb: false, tools: true, library: .available)
+        #expect(!general.contains("This chat belongs"))
+        #expect(general.contains("问题涉及课上老师讲过的内容"))
+    }
+
     private var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/New_York")!

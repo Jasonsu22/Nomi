@@ -259,6 +259,7 @@ extension AppModel {
             return false
         }
         let boundMeeting = anchor ?? session.anchorMeetingID
+        let boundClass = boundMeeting.flatMap { id in meetings.first { $0.id == id } }
         let meetingItems = chatMeetingItems()
         let sourceItems = chatSourceItems()
         let chosenMeetings: Set<UUID>
@@ -340,7 +341,10 @@ extension AppModel {
                     return await Task.detached(priority: .userInitiated) { LibrarySearch.run(request, in: documents, budget: budget) }.value
                 }
                 // A question about last week, an earlier chat, or what the teacher said gets searched before the first answer.
-                if library == .available, LibraryRequest.referencesPast(question) {
+                // In a class's own chat, the teacher and today mean that class, so only a question pointing elsewhere searches.
+                let searchesFirst = boundClass.map { LibraryRequest.pointsOutsideClass(question, classStartedAt: $0.startedAt) }
+                    ?? LibraryRequest.referencesPast(question)
+                if library == .available, searchesFirst {
                     let found = await searchLibrary(LibraryRequest(query: question, range: LibraryDates.range(in: question)))
                     try Task.checkCancellation()
                     if !found.isEmpty {
@@ -375,6 +379,7 @@ extension AppModel {
                         tools: true,
                         webTool: webTool,
                         library: library,
+                        currentClass: boundClass.map { ChatContext.classLabel(title: $0.title, startedAt: $0.startedAt) },
                         memory: remembered
                     )
                     let libraryOpen = library == .available || library == .prefetched

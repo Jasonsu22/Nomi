@@ -72,6 +72,20 @@ struct LibraryRequest: Equatable, Sendable {
         "last time", "earlier", "previously", "we talked", "we discussed", "we chatted", "you said", "you told", "i asked", "teacher said", "professor said", "lecturer said", "in class", "last class", "last lecture", "last session", "remember when",
     ]
 
+    private static let outsideClassCues = [
+        "上次", "上回", "上节课", "上一节课", "那节课", "其他课", "别的课", "另一节课", "聊过", "问过",
+        "last time", "last class", "last lecture", "last session", "another class", "other class", "other lecture", "we chatted", "i asked",
+    ]
+
+    /// In a chat that belongs to a class, whether the question points away from that class. "What did
+    /// the teacher say", "just now" and "today" mean this class; other classes and other dates do not.
+    static func pointsOutsideClass(_ question: String, classStartedAt: Date, now: Date = .now, calendar: Calendar = LibraryDates.calendar) -> Bool {
+        let folded = question.lowercased()
+        if outsideClassCues.contains(where: { folded.contains($0) }) { return true }
+        guard let range = LibraryDates.range(in: question, now: now, calendar: calendar) else { return false }
+        return !range.contains(classStartedAt)
+    }
+
     /// Whether the question points at something from the past, so the library is searched before the first answer.
     static func referencesPast(_ question: String, now: Date = .now, calendar: Calendar = LibraryDates.calendar) -> Bool {
         let folded = question.lowercased()
