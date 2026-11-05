@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="60" viewBox="0 0 192 60" role="img" aria-label="观看介绍视频">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#14946F"/><stop offset="1" stop-color="#0E7F5E"/></linearGradient></defs>
+  <rect width="192" height="60" rx="30" fill="url(#g)"/>
+  <path d="M28 19.5v21c0 1.2 1.3 1.9 2.3 1.3l17-10.5c.9-.6.9-2 0-2.6l-17-10.5c-1-.6-2.3.1-2.3 1.3z" fill="#FFFFFF"/>
+  <text x="60" y="28" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="700" fill="#FFFFFF">观看介绍视频</text>
+  <text x="60" y="45" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11.5" fill="#D5F3E8">70 秒 · 请打开声音</text>
+</svg>
