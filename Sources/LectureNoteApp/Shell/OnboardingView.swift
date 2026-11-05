@@ -2,7 +2,8 @@ import AVFoundation
 import SwiftUI
 
 /// The first-start guide: welcome, download the speech and translation models, allow the
-/// microphone, then start. Downloads keep going after the guide closes.
+/// microphone, bind an API for better answers (optional), then start. Downloads keep going
+/// after the guide closes.
 struct OnboardingView: View {
     var model: AppModel
     @Environment(\.appReduceMotion) private var reduceMotion
@@ -11,8 +12,11 @@ struct OnboardingView: View {
     @State private var translatorChoice: LocalModelDefinition?
     @State private var started = false
     @State private var microphone = AVAudioApplication.shared.recordPermission
+    @State private var bindingProfile: LLMAPIProfile?
 
-    private let steps = 4
+    private let steps = 5
+    /// The services most students already have a key for; the editor's menu lists the rest.
+    private let quickProviders = ["openai", "anthropic", "gemini", "deepseek", "kimi", "custom"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +34,7 @@ struct OnboardingView: View {
                 case 0: welcome
                 case 1: models
                 case 2: microphoneStep
+                case 3: apiStep
                 default: ready
                 }
             }
@@ -42,6 +47,10 @@ struct OnboardingView: View {
         .padding(.bottom, 26)
         .frame(width: 600)
         .background(AppColor.surface)
+        .sheet(item: $bindingProfile, onDismiss: nil) { profile in
+            APIProfileEditor(profile: profile, configuration: model.llmConfiguration)
+                .onDisappear { model.useProfileFromOnboarding(profile.id) }
+        }
         .onAppear {
             asrChoice = asrChoice ?? model.recommendedModel(for: .asr)
             translatorChoice = translatorChoice ?? model.recommendedModel(for: .translator)
@@ -184,6 +193,92 @@ struct OnboardingView: View {
         }
     }
 
+    private var apiStep: some View {
+        let bound = model.llmConfiguration.activeProfile
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(tr("绑定大模型 API（推荐）")).font(.system(size: 22, weight: .bold))
+            Text(tr("Nomi 自带的本地模型可以离线回答问题，但模型较小。绑定你自己的 API 后，提问、摘要和图示都会好很多。"))
+                .font(AppFont.body)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+                .padding(.bottom, Space.s4)
+            if let bound {
+                HStack(spacing: Space.s3) {
+                    ProviderLogo(file: LLMProviderPreset.logoFile(for: bound.providerID), side: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(bound.name).font(AppFont.body.weight(.semibold))
+                        Text(bound.modelID).font(AppFont.secondary).foregroundStyle(AppColor.textSecondary).lineLimit(1)
+                    }
+                    Spacer()
+                    Text(tr("已绑定 ✓"))
+                        .font(AppFont.secondary.weight(.semibold))
+                        .foregroundStyle(AppColor.accentGreen)
+                }
+                .padding(Space.s4)
+                .background(AppColor.surfaceInset.opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.s2), count: 3), spacing: Space.s2) {
+                    ForEach(quickProviders, id: \.self) { id in
+                        if let preset = LLMProviderPreset.all.first(where: { $0.id == id }) {
+                            providerButton(preset)
+                        }
+                    }
+                }
+                Text(tr("需要你自己的 API 密钥，费用由服务商收取。"))
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .padding(.top, Space.s3)
+            }
+            Label(tr("录音和转写都留在这台 Mac 上。提问时，只有相关的文字会发送给你选择的服务。密钥保存在钥匙串里。"), systemImage: "lock")
+                .font(AppFont.caption)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, Space.s2)
+            if bound == nil {
+                Text(tr("跳过也能用：Nomi 会用本地模型回答。之后可以在 设置 › API 里绑定。"))
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+            }
+            footer {
+                Button(tr("返回")) { go(2) }
+                    .buttonStyle(.link.clicking())
+                    .foregroundStyle(AppColor.textSecondary)
+                Spacer()
+                if bound == nil {
+                    Button(tr("跳过")) { go(4) }
+                        .buttonStyle(.bordered.clicking())
+                } else {
+                    Button(tr("下一步")) { go(4) }
+                        .buttonStyle(.borderedProminent.clicking())
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+    }
+
+    private func providerButton(_ preset: LLMProviderPreset) -> some View {
+        let title = preset.id == "custom" ? tr("其他服务") : tr(preset.name)
+        return Button {
+            var profile = LLMAPIProfile(providerID: preset.id, name: tr(preset.name), baseURL: preset.baseURL)
+            profile.format = preset.format
+            bindingProfile = profile
+        } label: {
+            HStack(spacing: Space.s2) {
+                ProviderLogo(file: preset.logoFile, side: 18)
+                Text(title).font(AppFont.secondary.weight(.medium)).foregroundStyle(AppColor.textPrimary).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Space.s3)
+            .frame(height: 44)
+            .contentShape(Rectangle())
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(AppColor.separator))
+        }
+        .buttonStyle(.plain.clicking())
+    }
+
     private var ready: some View {
         let asr = asrChoice ?? model.recommendedModel(for: .asr)
         let progress = model.localModels.downloads[asr.id]
@@ -218,7 +313,7 @@ struct OnboardingView: View {
                     .padding(.top, 6)
             }
             footer {
-                Button(tr("返回")) { go(2) }
+                Button(tr("返回")) { go(3) }
                     .buttonStyle(.link.clicking())
                     .foregroundStyle(AppColor.textSecondary)
                 Spacer()

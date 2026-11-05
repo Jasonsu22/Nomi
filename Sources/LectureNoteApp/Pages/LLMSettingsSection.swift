@@ -103,7 +103,7 @@ struct LLMSettingsSection: View {
     }
 }
 
-private struct APIProfileEditor: View {
+struct APIProfileEditor: View {
     let configuration: LLMConfiguration
     @Environment(\.dismiss) private var dismiss
     @State private var draft: LLMAPIProfile

@@ -44,6 +44,13 @@ extension AppModel {
         }
     }
 
+    /// A profile saved from the guide answers from now on: binding it is the student's choice to use it.
+    func useProfileFromOnboarding(_ id: UUID) {
+        guard llmConfiguration.profiles.contains(where: { $0.id == id }) else { return }
+        llmConfiguration.activate(id)
+        llmConfiguration.setMode(.api)
+    }
+
     func finishOnboarding(startTour: Bool) {
         OnboardingPreference.done = true
         onboardingPresented = false
