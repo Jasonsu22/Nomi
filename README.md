@@ -21,6 +21,11 @@
 </p>
 
 <p align="center">
+  <a href="https://nomi.software/#video"><img src="Design/README/video-poster.jpg" width="760" alt="Play the 70-second Nomi video"></a><br>
+  <a href="https://nomi.software/#video"><b>▶ Watch Nomi in 70 seconds</b></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/Jasonsu22/Nomi/releases/latest/download/Nomi-arm64.dmg"><img src="Design/README/download-en.svg" height="54" alt="Download for Mac"></a>
 </p>
 

@@ -21,6 +21,11 @@
 </p>
 
 <p align="center">
+  <a href="https://nomi.software/?lang=zh#video"><img src="Design/README/video-poster.jpg" width="760" alt="播放 70 秒 Nomi 介绍视频"></a><br>
+  <a href="https://nomi.software/?lang=zh#video"><b>▶ 70 秒看懂 Nomi</b></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/Jasonsu22/Nomi/releases/latest/download/Nomi-arm64.dmg"><img src="Design/README/download-zh.svg" height="54" alt="下载 Mac 版"></a>
 </p>
 

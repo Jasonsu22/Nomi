@@ -217,6 +217,8 @@ h1 .soft { color: var(--accent); }
 /* ---------- Sections ---------- */
 section { padding: 96px 0; }
 @media (max-width: 640px) { section { padding: 72px 0; } }
+.video-frame { border-radius: 20px; overflow: hidden; box-shadow: var(--shadow-lg); background: #05121E; }
+.video-frame video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; }
 .kicker { font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--leaf); margin-bottom: 12px; }
 h2 { font-size: clamp(30px, 4.2vw, 46px); line-height: 1.1; letter-spacing: -.028em; font-weight: 720; margin: 0 0 16px; }
 .section-head { max-width: 680px; margin-bottom: 48px; }
@@ -467,6 +469,23 @@ footer { padding: 48px 0 56px; color: var(--text-3); font-size: 14px; }
       </div>
     </div>
   </div>
+
+  <!-- Video -->
+  <section id="video" class="video-section">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <div class="kicker"><span data-i18n="video0">See it work</span></div>
+        <h2><span data-i18n="video1">One lecture, start to finish.</span></h2>
+        <p><span data-i18n="video2">Watch Nomi write down a class, answer the teacher's questions and explain an idea. 70 seconds, with sound.</span></p>
+      </div>
+      <div class="video-frame reveal" style="--d:.1s">
+        <video controls playsinline preload="none" poster="nomi-promo-poster.jpg" width="1920" height="1080">
+          <source src="nomi-promo.mp4" type="video/mp4">
+          <a href="nomi-promo.mp4"><span data-i18n="video3">Watch the video</span></a>
+        </video>
+      </div>
+    </div>
+  </section>
 
   <!-- Why -->
   <section id="why">
@@ -775,6 +794,10 @@ footer { padding: 48px 0 56px; color: var(--text-3); font-size: 14px; }
 "t14": "生物 101 · 神经元",
 "t15": "什么是动作电位？",
 "t16": "神经元放电时，沿轴突快速传导的电信号。",
+"video0": "看看效果",
+"video1": "一节课，从头到尾。",
+"video2": "看 Nomi 记下一节课、回答老师的提问，再把一个概念讲明白。70 秒，请打开声音。",
+"video3": "观看视频",
 "t17": "老师讲得快，Nomi 帮你跟上。",
 "t18": "用第二语言上课本来就不容易。Nomi 帮你听、帮你记，你只需要专心理解。",
 "t19": "老师语速太快",
