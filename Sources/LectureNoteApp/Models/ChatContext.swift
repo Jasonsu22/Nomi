@@ -16,6 +16,24 @@ struct ContextBlock: Equatable, Sendable {
 enum ChatContext {
     static let budget = ContextBudget.local.scope
 
+    /// Passages from files attached to one question, each file with a fair share of `budget`.
+    /// Packed together, the first long file used to take all the room and later files sent nothing,
+    /// whenever the question matched no file better than another (a Chinese question about English
+    /// files, or "what are these about?"). Smaller files keep all their text, and what they leave is
+    /// shared among the rest. The files stay in the order they were attached.
+    static func packFiles(_ files: [[ContextBlock]], question: String, budget: Int) -> [ContextBlock] {
+        let sizes = files.map { $0.reduce(0) { $0 + $1.body.count } }
+        var packed = Array(repeating: [ContextBlock](), count: files.count)
+        var remaining = budget
+        let order = files.indices.sorted { sizes[$0] < sizes[$1] }
+        for (position, index) in order.enumerated() {
+            let share = remaining / (order.count - position)
+            packed[index] = pack(files[index], question: question, budget: share)
+            remaining -= packed[index].reduce(0) { $0 + $1.body.count }
+        }
+        return packed.flatMap { $0 }
+    }
+
     static func pack(_ blocks: [ContextBlock], question: String, budget: Int = ChatContext.budget) -> [ContextBlock] {
         let pinned = blocks.filter { $0.pinned && !$0.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard pinned.isEmpty else {

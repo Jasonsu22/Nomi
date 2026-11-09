@@ -155,3 +155,26 @@ struct FileReadingTests {
         #expect(result.notice != nil)
     }
 }
+
+struct AttachedFilePackingTests {
+    private func file(_ name: String, pages: Int, length: Int) -> [ContextBlock] {
+        (1...pages).map { ContextBlock(title: name, detail: "Page \($0)", body: String(repeating: "x", count: length), sourceID: UUID()) }
+    }
+
+    /// Two long lectures attached first used to fill the whole budget, and three later files sent nothing.
+    @Test func everyAttachedFileGetsItsShare() {
+        let files = [
+            file("Lecture1.pdf", pages: 100, length: 1_000),
+            file("Lecture2.pdf", pages: 150, length: 1_000),
+            file("Screencaps.docx", pages: 25, length: 1_600),
+            file("Lab.docx", pages: 3, length: 2_000),
+            file("Session1.pdf", pages: 10, length: 800),
+        ]
+        let packed = ChatContext.packFiles(files, question: "这些都在讲什么东西？", budget: 60_000)
+        let names = Set(packed.map(\.title))
+        #expect(names.count == 5, "every file reaches the model")
+        #expect(packed.filter { $0.title == "Lab.docx" }.count == 3, "a short file keeps all its text")
+        #expect(packed.reduce(0) { $0 + $1.body.count } <= 60_000)
+        #expect(packed.map(\.title).first == "Lecture1.pdf", "files stay in the order they were attached")
+    }
+}

@@ -308,12 +308,12 @@ extension AppModel {
             }
             do {
                 let contextBudget = ContextBudget.current(mode: mode, profile: profile)
-                // Attached files come first; the scope gets what is left, and at least a quarter.
-                let filePassages = ChatContext.pack(
-                    await self.passageBlocks(meetings: [], sources: attached),
-                    question: question,
-                    budget: contextBudget.scope
-                )
+                // Attached files come first, each with its share; the scope gets what is left, and at least a quarter.
+                var fileBlocks: [[ContextBlock]] = []
+                for source in attached {
+                    fileBlocks.append(await self.passageBlocks(meetings: [], sources: [source]))
+                }
+                let filePassages = ChatContext.packFiles(fileBlocks, question: question, budget: contextBudget.scope)
                 if !attached.isEmpty && filePassages.isEmpty { throw llmError(tr("附加的文件里没有可以阅读的文字。")) }
                 let fileUsed = filePassages.reduce(0) { $0 + $1.body.count }
                 let scopeBudget = attached.isEmpty ? contextBudget.scope : max(contextBudget.scope / 4, contextBudget.scope - fileUsed)
