@@ -531,6 +531,9 @@ private struct ZoomableImage: NSViewRepresentable {
         scroll.scrollerStyle = .overlay
         scroll.allowsMagnification = true
         scroll.maxMagnification = 8
+        // AppKit's default locks each swipe to up/down or left/right; like Preview, a zoomed
+        // picture follows the fingers in any direction.
+        scroll.usesPredominantAxisScrolling = false
         let clip = CenteringClipView()
         clip.drawsBackground = false
         scroll.contentView = clip
