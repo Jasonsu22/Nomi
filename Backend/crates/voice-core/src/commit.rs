@@ -73,7 +73,9 @@ impl Committer {
         }
         if chunk.is_empty() || is_low_information(&chunk, &self.source_language) {
             if is_final {
-                let _ = self.buffer.seal_active_burst(self.spaced);
+                // The final pass heard the whole phrase and found nothing worth keeping; an earlier
+                // preview of it (often the model echoing its context) is dropped, not kept.
+                self.buffer.discard_active_burst();
             }
             return;
         }

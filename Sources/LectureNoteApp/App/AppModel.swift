@@ -181,7 +181,16 @@ final class AppModel {
         // Sample lectures only fill the preview build, which has no engine to record with; a real
         // first launch starts with an empty library.
         let preview = engine is ReplayEngine
-        self.meetings = meetings ?? snapshot?.meetings.filter { !$0.paragraphs.isEmpty || $0.duration > 0 } ?? (preview ? SampleMeetings.make() : [])
+        var loaded = meetings ?? snapshot?.meetings.filter { !$0.paragraphs.isEmpty || $0.duration > 0 } ?? (preview ? SampleMeetings.make() : [])
+        // Recordings made before 0.8.4 can hold a word the speech model repeated hundreds of times.
+        var cleanedRepeats = false
+        for index in loaded.indices {
+            if let paragraphs = RepeatCleanup.cleaned(loaded[index].paragraphs) {
+                loaded[index].paragraphs = paragraphs
+                cleanedRepeats = true
+            }
+        }
+        self.meetings = loaded
         self.categories = categories ?? snapshot?.categories ?? (preview ? SampleMeetings.categories() : [])
         self.filter = CategoryFilter.load()
         self.grouping = MeetingGrouping.load()
@@ -227,6 +236,9 @@ final class AppModel {
         engine.transcript.onCommitted = { [weak self] in
             self?.schedulePersistence()
             self?.checkLatestLineForQuestion()
+        }
+        if cleanedRepeats {
+            schedulePersistence()
         }
     }
 

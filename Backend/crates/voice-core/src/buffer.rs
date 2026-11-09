@@ -51,6 +51,13 @@ impl TranscriptBuffer {
         self.buffer != old_buffer
     }
 
+    /// Forgets the phrase still being heard, keeping everything sealed before it.
+    pub fn discard_active_burst(&mut self) {
+        self.active_burst_text.clear();
+        self.active_burst_id = None;
+        self.rebuild_views();
+    }
+
     pub fn seal_active_burst(&mut self, spaced: bool) -> bool {
         if self.active_burst_text.is_empty() {
             self.active_burst_id = None;

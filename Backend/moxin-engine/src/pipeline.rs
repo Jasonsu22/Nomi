@@ -50,6 +50,35 @@ pub struct Pipeline {
     topic: String,
     /// The end of what was said so far. Each phrase is recognised with the sentence before it.
     recent: String,
+    repeated_finals: RepeatedFinals,
+}
+
+/// The same short line coming back phrase after phrase. Up to `ALLOWED` in a row are kept.
+#[derive(Default)]
+struct RepeatedFinals {
+    last: String,
+    count: usize,
+}
+
+impl RepeatedFinals {
+    const ALLOWED: usize = 3;
+    /// Lines longer than this are real sentences even when said twice.
+    const SHORT_CHARS: usize = 24;
+
+    /// Records a finished phrase; true when it is one repeat too many and should be dropped.
+    fn observe(&mut self, text: &str) -> bool {
+        let key: String = text.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect();
+        if key.is_empty() {
+            return false;
+        }
+        if key == self.last && key.chars().count() <= Self::SHORT_CHARS {
+            self.count += 1;
+        } else {
+            self.last = key;
+            self.count = 1;
+        }
+        self.count > Self::ALLOWED
+    }
 }
 
 /// Characters of earlier text given to the speech model with each phrase.
@@ -123,6 +152,7 @@ impl Pipeline {
             language_lock: LanguageLock::default(),
             topic: String::new(),
             recent: String::new(),
+            repeated_finals: RepeatedFinals::default(),
         };
         if pipeline.asr_status.files_ready {
             if let Err(error) = pipeline.load_asr() {
@@ -151,6 +181,7 @@ impl Pipeline {
         self.commit_error_reported = false;
         self.language_lock = LanguageLock::default();
         self.recent.clear();
+        self.repeated_finals = RepeatedFinals::default();
     }
 
     /// The meeting title and course terms for this recording; cleared by passing "".
@@ -443,7 +474,12 @@ impl Pipeline {
             let response = self.transcribe(&segment);
             let text = match response {
                 // A noise burst that opened the gate comes back empty or as stock filler; drop it.
-                Ok(WorkerEvent::Transcript { text, .. }) => if is_noise_transcript(&text) { String::new() } else { text },
+                // A model stuck in a loop writes one word hundreds of times; keep it once.
+                Ok(WorkerEvent::Transcript { text, .. }) => {
+                    let text = voice_core::collapse_repeats(&text);
+                    let seconds = segment.samples.len() as f64 / 16_000.0;
+                    if is_noise_transcript(&text) || more_than_spoken(&text, seconds) { String::new() } else { text }
+                }
                 Ok(WorkerEvent::Failed { message, .. }) => {
                     events.push(OutEvent::Error { code: "asr_failed".into(), message });
                     continue;
@@ -461,9 +497,14 @@ impl Pipeline {
             // would hide a fragment that has already been sitting for 9 seconds.
             events.extend(self.drain_commits());
             if segment.is_final {
+                // Noise between sentences can come back as the same short line phrase after phrase
+                // ("Okay." "Okay." "Okay."); after a few in a row the rest are dropped.
+                let text = if self.repeated_finals.observe(&text) { String::new() } else { text };
                 self.remember(&text);
+                self.committer.observe(segment.burst_id, &text, segment.start, segment.end, segment.is_final, segment.hit_limit);
+            } else {
+                self.committer.observe(segment.burst_id, &text, segment.start, segment.end, segment.is_final, segment.hit_limit);
             }
-            self.committer.observe(segment.burst_id, &text, segment.start, segment.end, segment.is_final, segment.hit_limit);
             self.revision += 1;
             events.push(OutEvent::Tail {
                 text: self.committer.tail(),
@@ -512,9 +553,11 @@ impl Pipeline {
             {
                 break;
             }
-            let Some(draft) = self.committer.pending_draft().or_else(|| self.committer.poll(Instant::now())) else {
+            let Some(mut draft) = self.committer.pending_draft().or_else(|| self.committer.poll(Instant::now())) else {
                 break;
             };
+            // A loop can also build up across phrases inside one line.
+            draft.source = voice_core::collapse_repeats(&draft.source);
             let translation = if self.translate {
                 match self.translate_draft(&draft.source) {
                     Ok(text) => {
@@ -637,6 +680,30 @@ fn weights_ready(path: &Path) -> bool {
     nonempty_file(&path.join("model.safetensors"))
 }
 
+/// More words than anyone can say in this much audio. On a short scrap of noise the model can copy
+/// the previous sentence out of its context ("…fifty-two percent is visible" again, from 0.5 s).
+/// Allows 3 words plus 6 a second, with a Chinese or Japanese character counting as two thirds of
+/// a word, which fast speakers stay under.
+fn more_than_spoken(text: &str, seconds: f64) -> bool {
+    let mut words = 0.0;
+    let mut in_word = false;
+    for c in text.chars() {
+        let cjk = matches!(c as u32, 0x3040..=0x30ff | 0x3400..=0x9fff | 0xac00..=0xd7af | 0xf900..=0xfaff);
+        if cjk {
+            words += 2.0 / 3.0;
+            in_word = false;
+        } else if c.is_alphanumeric() {
+            if !in_word {
+                words += 1.0;
+            }
+            in_word = true;
+        } else if c != '\'' && c != '-' {
+            in_word = false;
+        }
+    }
+    words > 3.0 + 6.0 * seconds
+}
+
 /// What speech models write for a burst of room noise: nothing readable, or stock video filler.
 /// Real short replies ("Yes.", "对。") are kept.
 fn is_noise_transcript(text: &str) -> bool {
@@ -667,6 +734,28 @@ mod noise_transcript_tests {
         for text in ["", "  ", "...", "。", "Thank you.", "Thanks for watching!", "谢谢观看。", "字幕由Amara.org社区提供"] {
             assert!(is_noise_transcript(text), "{text:?} should be dropped");
         }
+    }
+
+    #[test]
+    fn the_same_short_line_phrase_after_phrase_is_dropped_after_three() {
+        let mut finals = super::RepeatedFinals::default();
+        let dropped: Vec<bool> = ["Okay.", "okay", "Okay.", "Okay.", "Okay!", "So today we start."]
+            .iter()
+            .map(|text| finals.observe(text))
+            .collect();
+        assert_eq!(dropped, [false, false, false, true, true, false]);
+        let long = "Can you tell me what the summary was about?";
+        assert!((0..6).all(|_| !finals.observe(long)), "a full sentence said again is kept");
+    }
+
+    #[test]
+    fn a_sentence_from_half_a_second_is_the_model_copying_its_context() {
+        use super::more_than_spoken;
+        assert!(more_than_spoken("now this time only fifty-two percent is visible", 0.47));
+        assert!(!more_than_spoken("Okay, so.", 0.47));
+        assert!(!more_than_spoken("If I apply the filter, look at the top here. Then you can see that you still have ninety-eight vertices.", 4.5));
+        assert!(!more_than_spoken("我们今天讲注意力机制，它决定了模型在生成每一个词的时候看哪里。", 4.0), "fast Chinese, 7.5 characters a second");
+        assert!(more_than_spoken("我们今天讲注意力机制，它决定了模型在生成每一个词的时候看哪里。", 1.0));
     }
 
     #[test]

@@ -166,6 +166,9 @@ pub struct Qwen3ASR {
 
     /// EOS token IDs for stopping generation
     eos_token_ids: Vec<i32>,
+
+    /// Whether the last transcription used up `max_tokens` without finishing.
+    pub last_hit_token_limit: bool,
 }
 
 // ============================================================================
@@ -340,6 +343,7 @@ impl Qwen3ASR {
             mel_frontend,
             tokenizer,
             eos_token_ids,
+            last_hit_token_limit: false,
         })
     }
 
@@ -805,23 +809,19 @@ impl Qwen3ASR {
         eval([&token])?;
         let mut token_id = token.item::<i32>();
 
-        let mut recent_tokens: Vec<i32> = Vec::new();
-
         for _ in 0..config.max_tokens {
             if eos_tokens.contains(&token_id) {
                 break;
             }
 
-            // Repetition detection
-            recent_tokens.push(token_id);
-            if recent_tokens.len() > 10 {
-                recent_tokens.remove(0);
-            }
-            if recent_tokens.len() >= 10 && recent_tokens.iter().all(|&t| t == token_id) {
+            tokens.push(token_id);
+
+            // A loop ("Okay. Okay. Okay. …") never reaches EOS by itself; stop it and keep the
+            // phrase once.
+            if let Some(extra) = looping_tail(&tokens) {
+                tokens.truncate(tokens.len() - extra);
                 break;
             }
-
-            tokens.push(token_id);
 
             // Get embedding for next token
             let token_array = Array::from_slice(&[token_id], &[1, 1]);
@@ -839,6 +839,7 @@ impl Qwen3ASR {
             token_id = token.item::<i32>();
         }
 
+        self.last_hit_token_limit = tokens.len() >= config.max_tokens;
         // Decode tokens
         let decoded = self.decode_tokens(&tokens, !auto_language)?;
         if auto_language {
@@ -877,5 +878,63 @@ impl Qwen3ASR {
         } else {
             Ok(tokens.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(" "))
         }
+    }
+}
+
+/// The longest repeating token cycle looked for.
+const LOOP_PERIOD: usize = 16;
+
+/// When the generated tokens end in a loop, how many tokens to drop so that one copy is left.
+/// A cycle of two or more tokens counts after 4 copies covering 12 or more tokens; a single
+/// token after 10 copies. Real speech that repeats like that is far rarer than a decoder loop.
+pub(crate) fn looping_tail(tokens: &[i32]) -> Option<usize> {
+    for period in 1..=LOOP_PERIOD.min(tokens.len() / 2) {
+        let cycle = &tokens[tokens.len() - period..];
+        let mut copies = 1;
+        while (copies + 1) * period <= tokens.len()
+            && &tokens[tokens.len() - (copies + 1) * period..tokens.len() - copies * period] == cycle
+        {
+            copies += 1;
+        }
+        let looping = if period == 1 { copies >= 10 } else { copies >= 4 && copies * period >= 12 };
+        if looping {
+            return Some((copies - 1) * period);
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod loop_tests {
+    use super::looping_tail;
+
+    #[test]
+    fn a_two_token_loop_is_stopped_and_one_copy_kept() {
+        // "So" "okay" then "Okay" "." again and again.
+        let mut tokens = vec![1, 2];
+        let mut stopped = None;
+        for _ in 0..50 {
+            tokens.extend([7, 8]);
+            if let Some(extra) = looping_tail(&tokens) {
+                stopped = Some(tokens.len() - extra);
+                break;
+            }
+        }
+        assert_eq!(stopped, Some(4), "kept: 1 2 7 8");
+    }
+
+    #[test]
+    fn a_longer_phrase_loop_is_stopped() {
+        let phrase = [10, 11, 12, 13, 14];
+        let tokens: Vec<i32> = phrase.iter().cycle().take(20).copied().collect();
+        assert_eq!(looping_tail(&tokens), Some(15));
+    }
+
+    #[test]
+    fn ordinary_text_is_not_a_loop() {
+        assert_eq!(looping_tail(&[1, 2, 3, 4, 5, 6, 7, 8, 9]), None);
+        assert_eq!(looping_tail(&[5, 5, 5, 5]), None, "short emphasis");
+        assert_eq!(looping_tail(&[7, 8, 7, 8, 7, 8]), None, "three copies is allowed");
+        assert_eq!(looping_tail(&[1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2]), None);
     }
 }

@@ -7,6 +7,17 @@ use voice_core::{pcm_from_bytes, read_frame, write_frame, WorkerEvent, WorkerReq
 
 const MAX_TOKENS: usize = 1024;
 
+/// Phrases shorter than this (3 s) that reach the token limit hold no real speech worth keeping.
+const SHORT_PHRASE_SAMPLES: usize = 3 * 16_000;
+
+/// Text tokens a phrase of this length can need. Fast speech is about 8 tokens a second in Chinese
+/// and fewer in English; 12 a second plus room for the language header leaves margin, and a loop
+/// on a 15 s phrase now stops at about 200 tokens instead of 1024.
+fn token_budget(samples: usize) -> usize {
+    let seconds = samples as f64 / 16_000.0;
+    (32 + (seconds * 12.0).ceil() as usize).min(MAX_TOKENS)
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_writer(io::stderr)
@@ -44,8 +55,15 @@ fn main() -> Result<()> {
             }
             WorkerRequest::Transcribe { id, language, context } => {
                 let samples = pcm_from_bytes(&payload);
-                let config = SamplingConfig { temperature: 0.0, max_tokens: MAX_TOKENS };
-                let result = model.transcribe_samples_with_context(&samples, &language, &context, &config);
+                let config = SamplingConfig { temperature: 0.0, max_tokens: token_budget(samples.len()) };
+                let mut result = model.transcribe_samples_with_context(&samples, &language, &context, &config);
+                // More text than a short phrase can hold is the model repeating its context
+                // ("…fifty-two percent is visible" again from half a second of noise); drop it.
+                if model.last_hit_token_limit && samples.len() < SHORT_PHRASE_SAMPLES {
+                    if let Ok((text, _)) = &mut result {
+                        text.clear();
+                    }
+                }
                 unsafe {
                     mlx_sys::mlx_clear_cache();
                 }
@@ -74,4 +92,16 @@ fn argument_value(name: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::token_budget;
+
+    #[test]
+    fn the_budget_follows_the_phrase_length() {
+        assert_eq!(token_budget(16_000), 44);
+        assert_eq!(token_budget(15 * 16_000), 212);
+        assert_eq!(token_budget(600 * 16_000), 1024);
+    }
 }
