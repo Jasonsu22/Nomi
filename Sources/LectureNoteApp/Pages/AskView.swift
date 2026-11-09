@@ -227,7 +227,9 @@ struct AskView: View {
                 ChatQueueList(model: model, chatID: chatID, onEdit: editQueued)
             }
             if showsCloudNotice, let name = model.llmConfiguration.activeProfile?.name {
-                Text(hasScope
+                Text(attachedImages.contains(where: \.isFile)
+                    ? trf("会把附加文件里的相关文字发给 %@。", name)
+                    : hasScope
                     ? trf("会把所选会议和资料的文字发给 %@。", name)
                     : trf("这次只把问题发给 %@，不附带会议和资料。", name))
                     .font(AppFont.caption)
@@ -604,7 +606,7 @@ struct AskView: View {
         ) {
             setHistory(false)
         }
-        .fixedSize()
+        .fixedSize(horizontal: true, vertical: false)
         .background {
             OutsideClickObserver(isActive: true, shield: historyShield) {
                 historyGate.suppressButton = true
@@ -659,8 +661,8 @@ struct AskView: View {
                 .frame(width: 32, height: 32)
         }
         .buttonStyle(.plain.clicking())
-        .help(tr("添加图片"))
-        .accessibilityLabel(tr("添加图片"))
+        .help(tr("添加图片或文件"))
+        .accessibilityLabel(tr("添加图片或文件"))
     }
 
     private var attachedImages: [ChatImageDraft] {
@@ -686,7 +688,7 @@ struct AskView: View {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.allowedContentTypes = [.jpeg, .png, .gif, .webP, .heic, .tiff]
+        panel.allowedContentTypes = SourceStore.allowedTypes
         panel.begin { response in
             guard response == .OK else { return }
             Task { @MainActor in addImages(urls: panel.urls) }
@@ -839,8 +841,8 @@ private struct AskTurnRow: View, Equatable {
             HStack {
                 Spacer(minLength: 80)
                 VStack(alignment: .trailing, spacing: Space.s2) {
-                    if !turn.images.isEmpty {
-                        StoredImageStrip(images: turn.images)
+                    if !turn.images.isEmpty || !(turn.files ?? []).isEmpty {
+                        StoredImageStrip(images: turn.images, files: turn.files ?? [])
                     }
                     if !turn.question.isEmpty {
                         Text(turn.question)

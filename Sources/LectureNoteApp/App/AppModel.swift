@@ -574,10 +574,15 @@ final class AppModel {
     func importLinkedSources(_ urls: [URL], meetingID: UUID) {
         guard let meeting = meetings.first(where: { $0.id == meetingID }) else { return }
         var added: [UUID] = []
-        var rejected = false
+        var rejected: URL?
         for url in urls {
+            // A file dragged from Sources is linked, not copied again.
+            if let id = SourceStore.sourceID(at: url), sources.contains(where: { $0.id == id }) {
+                added.append(id)
+                continue
+            }
             guard SourceStore.accepts(url) else {
-                rejected = true
+                rejected = rejected ?? url
                 continue
             }
             do {
@@ -588,12 +593,12 @@ final class AppModel {
                 sourceError = error.localizedDescription
             }
         }
-        if rejected {
-            sourceError = tr("暂时只收 PDF、幻灯片、文档和图片。")
+        if let rejected {
+            sourceError = SourceText.refusal(for: rejected)
         }
         guard !added.isEmpty else { return }
         var links = meetingLinks[meetingID] ?? []
-        links.append(contentsOf: added)
+        links.append(contentsOf: added.filter { !links.contains($0) })
         meetingLinks[meetingID] = links
     }
 

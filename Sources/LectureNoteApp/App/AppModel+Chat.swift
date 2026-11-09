@@ -263,7 +263,7 @@ extension AppModel {
         let meetingItems = chatMeetingItems()
         let sourceItems = chatSourceItems()
         let chosenMeetings: Set<UUID>
-        let chosenSources: Set<UUID>
+        var chosenSources: Set<UUID>
         let hasScope: Bool
         if let boundMeeting {
             chosenMeetings = [boundMeeting]
@@ -279,6 +279,10 @@ extension AppModel {
             hasScope = !chosenMeetings.isEmpty || !chosenSources.isEmpty
         }
         chatError = nil
+        // Documents attached to this question go into Sources and are always read for it, whatever the scope.
+        let pictures = images.filter { !$0.isFile }
+        let attached = addChatFiles(images.filter(\.isFile), meetingID: boundMeeting)
+        chosenSources.formUnion(attached.map(\.id))
         let allowsWeb = session.allowsWeb && webSearch.isActiveReady
         let mode = llmConfiguration.mode
         let profile = llmConfiguration.activeProfile
@@ -289,7 +293,8 @@ extension AppModel {
         let chatSummary = session.summary
         // The class being recorded is read from the live transcript, not the copy from before it started.
         let pickedMeetings = meetings.filter { chosenMeetings.contains($0.id) }.map(current)
-        let pickedSources = sources.filter { chosenSources.contains($0.id) }
+        let attachedIDs = Set(attached.map(\.id))
+        let pickedSources = sources.filter { chosenSources.contains($0.id) && !attachedIDs.contains($0.id) }
         mutate(id) {
             $0.modelMode = mode.rawValue
             $0.profileID = mode == .api ? profile?.id : nil
@@ -303,16 +308,25 @@ extension AppModel {
             }
             do {
                 let contextBudget = ContextBudget.current(mode: mode, profile: profile)
-                let packed = ChatContext.pack(
-                    await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources, summaryAbove: contextBudget.scope),
+                // Attached files come first; the scope gets what is left, and at least a quarter.
+                let filePassages = ChatContext.pack(
+                    await self.passageBlocks(meetings: [], sources: attached),
                     question: question,
                     budget: contextBudget.scope
+                )
+                if !attached.isEmpty && filePassages.isEmpty { throw llmError(tr("附加的文件里没有可以阅读的文字。")) }
+                let fileUsed = filePassages.reduce(0) { $0 + $1.body.count }
+                let scopeBudget = attached.isEmpty ? contextBudget.scope : max(contextBudget.scope / 4, contextBudget.scope - fileUsed)
+                let packed = filePassages + ChatContext.pack(
+                    await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources, summaryAbove: scopeBudget),
+                    question: question,
+                    budget: scopeBudget
                 )
                 if hasScope && packed.isEmpty { throw llmError(tr("所选范围里还没有可以阅读的文字。")) }
                 try Task.checkCancellation()
                 let seesImages = ChatImages.seesImages(mode: mode, modelID: profile?.modelID ?? "")
-                let imagePlan = ChatContext.attachedImages(history: history, currentCount: images.count)
-                let promptImages = seesImages ? self.promptImages(current: images, history: imagePlan.history) : []
+                let imagePlan = ChatContext.attachedImages(history: history, currentCount: pictures.count)
+                let promptImages = seesImages ? self.promptImages(current: pictures, history: imagePlan.history) : []
                 let historyWindow = ChatHistory.window(
                     history,
                     budget: contextBudget,
@@ -390,7 +404,8 @@ extension AppModel {
                         blocks: blocks,
                         mentionsOlderImages: seesImages && imagePlan.mentionsOlderImages,
                         mentionsLibrary: libraryOpen,
-                        steered: steered
+                        steered: steered,
+                        attachedFiles: attached.map(\.title)
                     )
                     if round > 0 {
                         let draft = answer.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -445,7 +460,7 @@ extension AppModel {
                     guard looked else { break }
                 }
                 let stored = self.storedImages(images)
-                let turnID = self.finishChat(id, question: question, answer: answer, modelName: name, citations: ChatContext.citations(in: answer, blocks: blocks), error: nil, images: stored)
+                let turnID = self.finishChat(id, question: question, answer: answer, modelName: name, citations: ChatContext.citations(in: answer, blocks: blocks), error: nil, images: stored, files: self.fileRefs(attached))
                 self.chatRuns[id] = nil
                 if let webNotice { self.chatError = webNotice }
                 self.scheduleAfterAnswerWork(chatID: id)
@@ -477,7 +492,7 @@ extension AppModel {
                 if Task.isCancelled {
                     self.chatWasStopped(id, question: question, images: images, modelName: name)
                 } else {
-                    _ = self.finishChat(id, question: question, answer: "", modelName: name, citations: [], error: error.localizedDescription, images: self.storedImages(images))
+                    _ = self.finishChat(id, question: question, answer: "", modelName: name, citations: [], error: error.localizedDescription, images: self.storedImages(images), files: self.fileRefs(attached))
                     self.chatDidEnd(id, succeeded: false)
                 }
             }
@@ -662,7 +677,7 @@ extension AppModel {
         let shown = (run?.answer ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         // Nothing shown yet: the question is simply replaced, unless it carried images worth keeping.
         if !shown.isEmpty || !images.isEmpty {
-            let turnID = finishChat(id, question: question, answer: shown, modelName: modelName, citations: run?.citations ?? [], error: nil, images: storedImages(images))
+            let turnID = finishChat(id, question: question, answer: shown, modelName: modelName, citations: run?.citations ?? [], error: nil, images: storedImages(images), files: fileRefs(images.compactMap(existingSource)))
             if let turnID, let chatIndex = chats.firstIndex(where: { $0.id == id }),
                let turnIndex = chats[chatIndex].turns.firstIndex(where: { $0.id == turnID }) {
                 chats[chatIndex].turns[turnIndex].interrupted = true
@@ -686,7 +701,7 @@ extension AppModel {
         }
     }
 
-    private func finishChat(_ id: UUID, question: String, answer: String, modelName: String, citations: [ChatCitation], error: String?, images: [ChatImage] = []) -> UUID? {
+    private func finishChat(_ id: UUID, question: String, answer: String, modelName: String, citations: [ChatCitation], error: String?, images: [ChatImage] = [], files: [ChatFileRef] = []) -> UUID? {
         guard chats.contains(where: { $0.id == id }) else { return nil }
         let turn = ChatTurn(
             question: question,
@@ -694,11 +709,12 @@ extension AppModel {
             modelName: modelName,
             citations: citations,
             error: error,
-            images: images
+            images: images,
+            files: files
         )
         mutate(id) { session in
             if !session.titleCustom && session.title.isEmpty {
-                let source = question.isEmpty ? (images.first?.name ?? "") : question
+                let source = question.isEmpty ? (files.first?.name ?? images.first?.name ?? "") : question
                 session.title = String(source.prefix(20))
             }
             session.turns.append(turn)
@@ -706,8 +722,47 @@ extension AppModel {
         return turn.id
     }
 
+    /// Images move into the chat's own folder. Attached documents are already in Sources, so their
+    /// temporary copies are removed.
     private func storedImages(_ drafts: [ChatImageDraft]) -> [ChatImage] {
-        drafts.compactMap { ChatImages.promote($0) }
+        drafts.filter(\.isFile).forEach(ChatImages.discard)
+        return drafts.filter { !$0.isFile }.compactMap { ChatImages.promote($0) }
+    }
+
+    private func fileRefs(_ sources: [KnowledgeSource]) -> [ChatFileRef] {
+        sources.map { ChatFileRef(sourceID: $0.id, name: $0.fileName) }
+    }
+
+    /// Copies documents attached in the chat box into Sources and returns their records. In a meeting's
+    /// chat they join that meeting's category and are linked to it; elsewhere they are Uncategorized.
+    /// A file already in Sources (same name and size) is reused rather than copied again.
+    func addChatFiles(_ drafts: [ChatImageDraft], meetingID: UUID?) -> [KnowledgeSource] {
+        let meeting = meetingID.flatMap { id in meetings.first { $0.id == id } }
+        var added: [KnowledgeSource] = []
+        for draft in drafts where draft.isFile {
+            if let existing = existingSource(draft) {
+                added.append(existing)
+                continue
+            }
+            do {
+                let source = try SourceStore.stage(draft.fileURL, categoryID: meeting?.categoryID)
+                sources.append(source)
+                added.append(source)
+            } catch {
+                chatError = trf("无法加入 %@：%@", draft.name, error.localizedDescription)
+            }
+        }
+        if let meetingID, meeting != nil, !added.isEmpty {
+            var links = meetingLinks[meetingID] ?? []
+            for source in added where !links.contains(source.id) { links.append(source.id) }
+            meetingLinks[meetingID] = links
+        }
+        return added
+    }
+
+    private func existingSource(_ draft: ChatImageDraft) -> KnowledgeSource? {
+        guard draft.isFile, let size = (try? draft.fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize else { return nil }
+        return sources.first { $0.fileName == SourceStore.safeFileName(draft.name) && $0.byteCount == Int64(size) }
     }
 
     private func promptImages(current: [ChatImageDraft], history: [ChatImage]) -> [ModelImage] {
@@ -793,14 +848,9 @@ extension AppModel {
                 ))
             }
         }
+        // Cached, so a file whose pictures took a while to read is not read again for the next question.
         for source in sources {
-            let url = SourceStore.fileURL(for: source)
-            let title = source.title
-            let sourceID = source.id
-            let extracted = await Task.detached(priority: .userInitiated) {
-                SourceText.blocks(url: url, title: title, sourceID: sourceID)
-            }.value
-            blocks.append(contentsOf: extracted)
+            blocks.append(contentsOf: await SourceTextCache.shared.blocks(for: source))
         }
         return blocks
     }

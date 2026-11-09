@@ -243,6 +243,8 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
     var citations: [ChatCitation]
     var error: String?
     var images: [ChatImage]
+    /// Documents attached to the question, kept in Sources.
+    var files: [ChatFileRef]? = nil
     /// What the memory pass learned right after this answer, shown under it.
     var memoryNote: [String]? = nil
     /// The student steered away while this answer was being written; it holds what was shown.
@@ -256,7 +258,8 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
         createdAt: Date = .now,
         citations: [ChatCitation] = [],
         error: String? = nil,
-        images: [ChatImage] = []
+        images: [ChatImage] = [],
+        files: [ChatFileRef] = []
     ) {
         self.id = id
         self.question = question
@@ -266,6 +269,7 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
         self.citations = citations
         self.error = error
         self.images = images
+        self.files = files.isEmpty ? nil : files
     }
 
     init(from decoder: Decoder) throws {
@@ -278,6 +282,7 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
         citations = try container.decodeIfPresent([ChatCitation].self, forKey: .citations) ?? []
         error = try container.decodeIfPresent(String.self, forKey: .error)
         images = try container.decodeIfPresent([ChatImage].self, forKey: .images) ?? []
+        files = try container.decodeIfPresent([ChatFileRef].self, forKey: .files)
         memoryNote = try container.decodeIfPresent([String].self, forKey: .memoryNote)
         interrupted = try container.decodeIfPresent(Bool.self, forKey: .interrupted)
     }

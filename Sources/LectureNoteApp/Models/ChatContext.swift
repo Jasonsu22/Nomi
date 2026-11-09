@@ -442,7 +442,7 @@ enum ChatContext {
     /// Added before a message that interrupted the previous answer.
     static let steerNote = "The student interrupted your previous answer to say the message below. Take it into account; continue or change course as it asks, without repeating what was already said."
 
-    static func userPrompt(question: String, history: HistoryWindow, blocks: [ContextBlock], mentionsOlderImages: Bool = false, mentionsLibrary: Bool = false, steered: Bool = false) -> String {
+    static func userPrompt(question: String, history: HistoryWindow, blocks: [ContextBlock], mentionsOlderImages: Bool = false, mentionsLibrary: Bool = false, steered: Bool = false, attachedFiles: [String] = []) -> String {
         var parts: [String] = []
         if mentionsOlderImages {
             parts.append("用户发过一张图片")
@@ -469,6 +469,10 @@ enum ChatContext {
             parts.append("\(intro)\n<passages>\n\(passages)\n</passages>")
         }
         if steered { parts.append(steerNote) }
+        if !attachedFiles.isEmpty {
+            let names = attachedFiles.map { "\"\($0)\"" }.joined(separator: ", ")
+            parts.append("The student attached \(names) to this question. \"This file\" or \"the document\" means \(attachedFiles.count == 1 ? "it" : "them"). Answer from the passages titled with \(attachedFiles.count == 1 ? "that name" : "those names"), not from earlier turns or earlier images.")
+        }
         parts.append(question.isEmpty ? "Question:" : "Question: \(question)")
         return parts.joined(separator: "\n\n")
     }

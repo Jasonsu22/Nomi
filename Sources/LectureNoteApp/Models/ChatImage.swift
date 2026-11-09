@@ -15,11 +15,23 @@ struct ChatImage: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// Something attached in the chat box before it is sent: an image, or a document (any mime type
+/// that is not an image). Documents travel the same way as images through queued and interrupted
+/// messages; on send they go into Sources and their text into the question.
 struct ChatImageDraft: Identifiable, Equatable, Sendable {
     var id: UUID
     var name: String
     var mime: String
     var fileURL: URL
+
+    var isFile: Bool { !mime.hasPrefix("image/") }
+}
+
+/// A document attached to a sent question, kept in Sources.
+struct ChatFileRef: Codable, Equatable, Sendable {
+    var sourceID: UUID
+    /// The file's name in its Sources folder.
+    var name: String
 }
 
 struct ModelImage: Equatable, Sendable {
@@ -30,6 +42,7 @@ struct ModelImage: Equatable, Sendable {
 enum ChatImages {
     static let countLimit = 8
     static let byteLimit = 10 * 1024 * 1024
+    static let fileByteLimit = 50 * 1024 * 1024
     private static let longestSide = 2048
 
     static var root: URL {
@@ -55,13 +68,16 @@ enum ChatImages {
         }
         for url in urls {
             if count >= countLimit {
-                note(tr("一次最多 8 张图片。"))
+                note(tr("一次最多 8 个图片或文件。"))
                 break
             }
             let accessed = url.startAccessingSecurityScopedResource()
             defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             guard let mime = mimeType(for: url) else {
-                note(tr("只能加入图片。"))
+                if let draft = storeFile(url, note: note) {
+                    drafts.append(draft)
+                    count += 1
+                }
                 continue
             }
             guard let data = try? Data(contentsOf: url) else {
@@ -75,29 +91,28 @@ enum ChatImages {
         return (drafts, notice)
     }
 
-    static func containsImage(_ pasteboard: NSPasteboard) -> Bool {
+    /// Files copied or dragged from Finder, or a picture (a screenshot, an image copied from a page).
+    static func containsAttachment(_ pasteboard: NSPasteboard) -> Bool {
         let urls = fileURLs(pasteboard)
-        if urls.contains(where: { mimeType(for: $0) != nil }) { return true }
+        if !urls.isEmpty { return true }
         if hasBitmapType(pasteboard) { return true }
         let hasString = pasteboard.string(forType: .string)?.isEmpty == false
         if hasString || !urls.isEmpty { return false }
         return pasteboard.canReadObject(forClasses: [NSImage.self])
     }
 
-    /// Nil when the pasteboard has no image, so the text field can paste normally.
+    /// Nil when the pasteboard has no file or image, so the text field can paste normally.
+    /// Finder puts a picture of each file's icon on the pasteboard beside the files themselves;
+    /// when there are files, the files are what is attached and the icon is ignored.
     static func intake(pasteboard: NSPasteboard, existing: Int) -> (drafts: [ChatImageDraft], notice: String?)? {
         let urls = fileURLs(pasteboard)
         if !urls.isEmpty {
             var seen = Set<String>()
-            let images = urls.filter { url in
-                guard mimeType(for: url) != nil else { return false }
-                return seen.insert(url.standardizedFileURL.path).inserted
-            }
-            if !images.isEmpty { return intake(urls: images, existing: existing) }
-            if bitmapPayload(pasteboard) == nil { return ([], tr("只能加入图片。")) }
+            let unique = urls.filter { seen.insert($0.standardizedFileURL.path).inserted }
+            return intake(urls: unique, existing: existing)
         }
         guard let payload = bitmapPayload(pasteboard) else { return nil }
-        if existing >= countLimit { return ([], tr("一次最多 8 张图片。")) }
+        if existing >= countLimit { return ([], tr("一次最多 8 个图片或文件。")) }
         var notice: String?
         guard let draft = store(data: payload.data, name: payload.name, mime: payload.mime, note: { notice = $0 }) else {
             return ([], notice ?? tr("这张图片无法读取。"))
@@ -148,6 +163,35 @@ enum ChatImages {
         }
         guard let image = NSImage(pasteboard: pasteboard), let tiff = image.tiffRepresentation, !tiff.isEmpty else { return nil }
         return (tiff, "image/tiff", "image.png")
+    }
+
+    /// Copies a document into the temporary folder, so moving or editing the original before sending changes nothing.
+    private static func storeFile(_ url: URL, note: (String) -> Void) -> ChatImageDraft? {
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey, .contentTypeKey])
+        if values?.isDirectory == true {
+            note(tr("文件夹不能直接加入，请在资料页导入。"))
+            return nil
+        }
+        guard SourceText.canRead(url) else {
+            note(SourceText.refusal(for: url))
+            return nil
+        }
+        guard (values?.fileSize ?? 0) <= fileByteLimit else {
+            note(tr("单个文件不能超过 50 MB。"))
+            return nil
+        }
+        let id = UUID()
+        let folder = temporaryRoot.appendingPathComponent(id.uuidString, isDirectory: true)
+        let destination = folder.appendingPathComponent(url.lastPathComponent)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: url, to: destination)
+        } catch {
+            note(tr("这个文件无法读取。"))
+            return nil
+        }
+        let mime = values?.contentType?.preferredMIMEType ?? "application/octet-stream"
+        return ChatImageDraft(id: id, name: url.lastPathComponent, mime: mime.hasPrefix("image/") ? "application/octet-stream" : mime, fileURL: destination)
     }
 
     /// A screen-sized bitmap so opening the photo does not decode the original on the first animation frame.

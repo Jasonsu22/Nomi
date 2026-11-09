@@ -150,7 +150,7 @@ final class SubmitTextView: NSTextView {
     }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(paste(_:)), ChatImages.containsImage(NSPasteboard.general) {
+        if menuItem.action == #selector(paste(_:)), ChatImages.containsAttachment(NSPasteboard.general) {
             return true
         }
         return super.validateMenuItem(menuItem)
@@ -158,7 +158,7 @@ final class SubmitTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         let board = NSPasteboard.general
-        if ChatImages.containsImage(board) {
+        if ChatImages.containsAttachment(board) {
             let now = ProcessInfo.processInfo.systemUptime
             if board.changeCount == lastImagePasteChange, now - lastImagePasteTime < 0.2 {
                 return
@@ -171,7 +171,7 @@ final class SubmitTextView: NSTextView {
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        ChatImages.containsImage(sender.draggingPasteboard) ? .copy : []
+        ChatImages.containsAttachment(sender.draggingPasteboard) ? .copy : []
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {

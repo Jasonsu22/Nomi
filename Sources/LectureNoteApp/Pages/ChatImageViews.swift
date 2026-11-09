@@ -174,7 +174,14 @@ struct ChatThumb: View {
 }
 
 struct ChatThumbRow: View {
-    var images: [(id: UUID, url: URL, name: String)]
+    struct Item {
+        var id: UUID
+        var url: URL
+        var name: String
+        var isFile = false
+    }
+
+    var images: [Item]
     var trailing = false
     var onRemove: ((UUID) -> Void)?
 
@@ -182,8 +189,13 @@ struct ChatThumbRow: View {
         GeometryReader { geo in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ForEach(images, id: \.id) { image in
-                        ChatThumb(url: image.url, name: image.name, onRemove: onRemove.map { remove in { remove(image.id) } })
+                    ForEach(images, id: \.id) { item in
+                        let remove = onRemove.map { remove in { remove(item.id) } }
+                        if item.isFile {
+                            ChatFileChip(url: item.url, name: item.name, onRemove: remove)
+                        } else {
+                            ChatThumb(url: item.url, name: item.name, onRemove: remove)
+                        }
                     }
                 }
                 .frame(minWidth: geo.size.width, alignment: trailing ? .trailing : .leading)
@@ -202,7 +214,7 @@ struct ChatImageStrip: View {
 
     var body: some View {
         ChatThumbRow(
-            images: items.map { ($0.id, $0.fileURL, $0.name) },
+            images: items.map { .init(id: $0.id, url: $0.fileURL, name: $0.name, isFile: $0.isFile) },
             trailing: trailing,
             onRemove: onRemove.map { remove in
                 { id in
@@ -216,12 +228,91 @@ struct ChatImageStrip: View {
 
 struct StoredImageStrip: View {
     var images: [ChatImage]
+    var files: [ChatFileRef] = []
 
     var body: some View {
         ChatThumbRow(
-            images: images.map { ($0.id, $0.fileURL(), $0.name) },
+            images: images.map { .init(id: $0.id, url: $0.fileURL(), name: $0.name) }
+                + files.map { .init(id: $0.sourceID, url: SourceStore.fileURL(id: $0.sourceID, fileName: $0.name), name: $0.name, isFile: true) },
             trailing: true
         )
+    }
+}
+
+/// A document attached to a question: its icon, name and size. Click opens it, right-click gives the
+/// file menu, and it can be dragged out to Finder or another app.
+struct ChatFileChip: View {
+    var url: URL
+    var name: String
+    var onRemove: (() -> Void)?
+    @State private var hovering = false
+
+    private var exists: Bool { FileManager.default.fileExists(atPath: url.path) }
+
+    var body: some View {
+        let present = exists
+        ZStack(alignment: .topTrailing) {
+            Button {
+                if present { AnswerLinkActions.openFile(url) }
+            } label: {
+                HStack(spacing: Space.s2) {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: present ? url.path : "/System/Library/CoreServices/Finder.app"))
+                        .resizable()
+                        .frame(width: 30, height: 30)
+                        .opacity(present ? 1 : 0.4)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(name)
+                            .font(AppFont.secondary.weight(.medium))
+                            .foregroundStyle(present ? AppColor.textPrimary : AppColor.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text(present ? Self.detail(url) : tr("文件已从资料中移除"))
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.horizontal, Space.s2)
+                .frame(maxWidth: 240, minHeight: ChatThumb.side, maxHeight: ChatThumb.side, alignment: .leading)
+                .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                // Darker the whole time the pointer is on the chip, so it reads as something to open.
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.black.opacity(hovering && present ? 0.22 : 0))
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain.clicking())
+            .help(name)
+            .contextMenu {
+                if present { AnswerFileMenu(url: url) }
+            }
+            .onDrag { (present ? NSItemProvider(contentsOf: url) : nil) ?? NSItemProvider() }
+            if let onRemove {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 16, height: 16)
+                        .background(Color.black.opacity(0.72), in: Circle())
+                }
+                .buttonStyle(.plain.clicking())
+                .padding(3)
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
+                .accessibilityLabel(tr("移走文件"))
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+
+    private static func detail(_ url: URL) -> String {
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        let kind = url.pathExtension.uppercased()
+        let bytes = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+        return kind.isEmpty ? bytes : "\(kind) · \(bytes)"
     }
 }
 

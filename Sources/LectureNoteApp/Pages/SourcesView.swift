@@ -449,6 +449,8 @@ struct SourcesView: View {
         .contentShape(Rectangle())
         .modifier(RowHover(reduceMotion: reduceMotion))
         .contextMenu { sourceMenu(source) }
+        // Drag a file out to Finder, the desktop or another app for a copy of it.
+        .onDrag { NSItemProvider(contentsOf: SourceStore.fileURL(for: source)) ?? NSItemProvider() }
     }
 
     @ViewBuilder
@@ -619,10 +621,12 @@ struct SourcesView: View {
 
     private func stage(_ urls: [URL]) {
         var added: [KnowledgeSource] = []
-        var rejected = false
+        var rejected: URL?
         for url in urls {
+            // A row dragged out of this page and dropped back in is already here.
+            if SourceStore.sourceID(at: url) != nil { continue }
             guard SourceStore.accepts(url) else {
-                rejected = true
+                rejected = rejected ?? url
                 continue
             }
             do {
@@ -631,8 +635,8 @@ struct SourcesView: View {
                 model.sourceError = error.localizedDescription
             }
         }
-        if rejected {
-            model.sourceError = tr("暂时只收 PDF、幻灯片、文档和图片。")
+        if let rejected {
+            model.sourceError = SourceText.refusal(for: rejected)
         }
         guard !added.isEmpty else { return }
         staged.append(contentsOf: added)

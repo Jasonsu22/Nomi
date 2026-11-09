@@ -34,18 +34,11 @@ enum MeetingSourceLinkStore {
 }
 
 enum SourceStore {
-    static let allowedExtensions: Set<String> = [
-        "pdf", "ppt", "pptx", "key", "doc", "docx", "txt", "md", "png", "jpg", "jpeg", "heic",
-    ]
+    /// Whatever `SourceText` can read; the chat box accepts the same list.
+    static var allowedExtensions: Set<String> { SourceText.readableExtensions }
 
     static var allowedTypes: [UTType] {
-        var types: [UTType] = [.pdf, .png, .jpeg, .heic, .plainText, .presentation]
-        for ext in ["pptx", "ppt", "key", "docx", "doc", "md"] {
-            if let type = UTType(filenameExtension: ext) {
-                types.append(type)
-            }
-        }
-        return types
+        allowedExtensions.sorted().compactMap { UTType(filenameExtension: $0) }
     }
 
     private static var root: URL {
@@ -54,6 +47,17 @@ enum SourceStore {
     }
 
     private static var file: URL { root.appendingPathComponent("sources.json") }
+
+    /// The source a file belongs to, when the file is one of Nomi's own copies in Sources.
+    static func sourceID(at url: URL) -> UUID? {
+        let folder = url.standardizedFileURL.deletingLastPathComponent()
+        guard folder.deletingLastPathComponent().path == root.appendingPathComponent("sources").standardizedFileURL.path else { return nil }
+        return UUID(uuidString: folder.lastPathComponent)
+    }
+
+    static func fileURL(id: UUID, fileName: String) -> URL {
+        directory(for: id).appendingPathComponent(fileName)
+    }
 
     static func directory(for id: UUID) -> URL {
         root.appendingPathComponent("sources/\(id.uuidString)", isDirectory: true)
@@ -145,7 +149,7 @@ enum SourceStore {
         }
     }
 
-    private static func safeFileName(_ name: String) -> String {
+    static func safeFileName(_ name: String) -> String {
         let cleaned = name
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
