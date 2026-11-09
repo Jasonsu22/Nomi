@@ -58,39 +58,24 @@ enum SearchURL {
     }
 }
 
-enum SearchKeychain {
+enum SearchKeys {
     private static let service = "local.nomi.search-api"
 
-    private static func query(_ vendor: SearchVendor) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: service,
-         kSecAttrAccount as String: vendor.rawValue]
-    }
-
-    /// Whether a key is stored. Does not read the secret, so it does not raise the keychain password dialog.
+    /// Whether a key is saved. Does not read an old keychain copy, so it never asks for a password.
     static func contains(_ vendor: SearchVendor) -> Bool {
-        #if NOMI_DEV_KEYS
-        if LocalSecrets.get(service: service, account: vendor.rawValue) != nil { return true }
-        #endif
-        var request = query(vendor)
-        request[kSecReturnAttributes as String] = true
-        request[kSecMatchLimit as String] = kSecMatchLimitOne
-        request[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUISkip
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(request as CFDictionary, &result)
-        return status == errSecSuccess || status == errSecInteractionNotAllowed
+        APIKeyStore.contains(service: service, account: vendor.rawValue)
     }
 
     static func read(_ vendor: SearchVendor) throws -> String {
-        try KeychainTrust.read(service: service, account: vendor.rawValue)
+        try APIKeyStore.read(service: service, account: vendor.rawValue)
     }
 
     static func save(_ key: String, vendor: SearchVendor) throws {
-        try KeychainTrust.save(service: service, account: vendor.rawValue, secret: key)
+        try APIKeyStore.save(service: service, account: vendor.rawValue, secret: key)
     }
 
     static func delete(_ vendor: SearchVendor) throws {
-        try KeychainTrust.delete(service: service, account: vendor.rawValue)
+        try APIKeyStore.delete(service: service, account: vendor.rawValue)
     }
 }
 
@@ -134,7 +119,7 @@ final class SearchConfiguration {
         if vendor.needsBaseURL {
             ready = defaults.string(forKey: Self.baseKey(vendor.rawValue)).flatMap { try? SearchURL.normalize($0) } != nil
         } else {
-            ready = SearchKeychain.contains(vendor)
+            ready = SearchKeys.contains(vendor)
         }
         readyCache[vendor] = ready
         return ready
@@ -170,10 +155,10 @@ final class SearchConfiguration {
         let normalized = vendor.needsBaseURL ? try SearchURL.normalize(baseURL) : nil
         if !vendor.needsBaseURL, trimmedKey.isEmpty { throw llmError(tr("请输入 API 密钥。")) }
         if trimmedKey.isEmpty {
-            try SearchKeychain.delete(vendor)
+            try SearchKeys.delete(vendor)
             keyCache[vendor.rawValue] = ""
         } else {
-            try SearchKeychain.save(trimmedKey, vendor: vendor)
+            try SearchKeys.save(trimmedKey, vendor: vendor)
             keyCache[vendor.rawValue] = trimmedKey
         }
         if let normalized { defaults.set(normalized, forKey: Self.baseKey(vendor.rawValue)) }
@@ -183,7 +168,7 @@ final class SearchConfiguration {
 
     @discardableResult
     func delete(_ vendor: SearchVendor) throws -> Bool {
-        try SearchKeychain.delete(vendor)
+        try SearchKeys.delete(vendor)
         keyCache[vendor.rawValue] = ""
         defaults.removeObject(forKey: Self.baseKey(vendor.rawValue))
         let wasActive = activeID == vendor.rawValue
@@ -222,7 +207,7 @@ final class SearchConfiguration {
     private func storedKey(_ vendor: SearchVendor) -> String {
         if let cached = keyCache[vendor.rawValue] { return cached }
         do {
-            let key = try SearchKeychain.read(vendor)
+            let key = try SearchKeys.read(vendor)
             keyCache[vendor.rawValue] = key
             return key
         } catch {

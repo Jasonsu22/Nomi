@@ -228,7 +228,7 @@
 "下载失败（HTTP %d）。请检查网络后重试。" = "Download failed (HTTP %d). Check your connection and retry.";
 "模型加载失败，请重试。" = "Could not load this model. Please retry.";
 "模型文件不完整，请重新下载。" = "Model files are incomplete. Please download the model again.";
-"API 密钥保存到 macOS 钥匙串。支持手动填写模型 ID；本机 Ollama 可以不填密钥。" = "API keys are stored in macOS Keychain. You can enter a model ID manually. Local Ollama does not require a key.";
+"API 密钥只保存在这台 Mac 上。支持手动填写模型 ID；本机 Ollama 可以不填密钥。" = "API keys are saved only on this Mac. You can enter a model ID manually. Local Ollama does not require a key.";
 "API 密钥" = "API Key";
 "API 密钥（已保存时留空保留）" = "API Key (leave blank to keep the saved key)";
 "模型" = "Model";
@@ -259,9 +259,9 @@
 "提问与摘要大模型" = "Questions & Summaries";
 "提问和摘要会将相关会议文字发送到你选择的 API 服务。识别和翻译继续在本机运行。" = "Questions and summaries will send relevant meeting text to your selected API service. Recognition and translation continue to run locally.";
 "提问和摘要将使用本地模型。识别和翻译不受影响。" = "Questions and summaries will use the local model. Recognition and translation are unchanged.";
-"无法保存 API 密钥到钥匙串。" = "Could not save the API key to Keychain.";
-"无法删除钥匙串中的 API 密钥。" = "Could not delete the API key from Keychain.";
-"无法读取钥匙串中的 API 密钥。" = "Could not read the API key from Keychain.";
+"无法保存 API 密钥。" = "Could not save the API key.";
+"无法删除 API 密钥。" = "Could not delete the API key.";
+"无法读取保存的 API 密钥，请在设置里重新填写。" = "Could not read the saved API key. Enter it again in Settings.";
 "服务商预设" = "Provider Preset";
 "服务未返回模型列表，可以手动填写模型 ID。" = "The service did not return a model list. You can enter a model ID manually.";
 "未配置 API" = "No API Configured";
@@ -358,7 +358,7 @@
 "先在这个页面注册账号，创建 API 密钥，再粘贴到下面。" = "Create an account on this page, make an API key, and paste it below.";
 "SearXNG 没有统一账号。按文档搭好自己的服务，把地址填在下面。" = "SearXNG has no shared account. Follow the docs to run your own instance, then enter its address below.";
 "删除 %@ 的搜索配置？" = "Delete the %@ search configuration?";
-"钥匙串里的密钥和保存的地址会被清掉。" = "The key in Keychain and the saved address will be removed.";
+"保存的密钥和地址会被清掉。" = "The saved key and address will be removed.";
 "昨天" = "Yesterday";
 "会把所选会议和资料的文字发给 %@。" = "The text of the selected meetings and sources will be sent to %@.";
 "这次只把问题发给 %@，不附带会议和资料。" = "Only the question will be sent to %@. Meetings and sources stay out.";
@@ -497,7 +497,7 @@
 "已打断" = "Interrupted";
 "通用" = "General";
 "录音与翻译" = "Recording & Translation";
-"选择一个已配置的服务用于联网搜索。密钥保存在钥匙串里。" = "Pick a configured service for web search. Keys are stored in the Keychain.";
+"选择一个已配置的服务用于联网搜索。密钥只保存在这台 Mac 上。" = "Pick a configured service for web search. Keys are saved only on this Mac.";
 "Nomi 会从对话里记下你的偏好、课程和目标，只存在这台 Mac 上。使用 API 模型时，相关记忆会随问题发送。" = "Nomi learns your preferences, courses and goals from your chats and keeps them on this Mac. With an API model, related memories are sent along with your questions.";
 "麦克风或转录服务没有响应，请重试，或换一个输入源。" = "The microphone or transcription service didn't respond. Try again, or pick another input.";
 "检查更新…" = "Check for Updates…";
@@ -569,5 +569,5 @@
 "已绑定 ✓" = "Connected ✓";
 "其他服务" = "Other";
 "需要你自己的 API 密钥，费用由服务商收取。" = "You need your own API key. The provider bills you directly.";
-"录音和转写都留在这台 Mac 上。提问时，只有相关的文字会发送给你选择的服务。密钥保存在钥匙串里。" = "Recordings and transcripts stay on this Mac. When you ask a question, only the relevant text goes to the service you choose. Your key is kept in Keychain.";
+"录音和转写都留在这台 Mac 上。提问时，只有相关的文字会发送给你选择的服务。密钥只保存在这台 Mac 上。" = "Recordings and transcripts stay on this Mac. When you ask a question, only the relevant text goes to the service you choose. Your key is saved only on this Mac.";
 "跳过也能用：Nomi 会用本地模型回答。之后可以在 设置 › API 里绑定。" = "You can skip this: Nomi will answer with the local model. Connect one later in Settings › API.";

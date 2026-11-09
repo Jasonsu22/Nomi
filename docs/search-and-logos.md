@@ -86,9 +86,9 @@ Nomi 自己去查网页，再把查到的标题、网址和摘要交给当前选
 
 保存时检查地址：只允许 `http` 或 `https`，必须有 host，不能在地址里夹用户名、密码、查询串或片段。SearXNG 以外的厂商没填密钥就不能保存。
 
-密钥进钥匙串，服务名 `local.nomi.search-api`，账户名是厂商 id（`tavily`、`exa`、`searxng`）。地址和「当前使用哪一家」写在 UserDefaults，键是 `nomi.search.baseURL.<id>` 和 `nomi.search.active`。日志里不写密钥，也不写完整搜索词以外的会议正文。
+密钥存在 `api-keys.json`（只有本人账户能读），服务名 `local.nomi.search-api`，账户名是厂商 id（`tavily`、`exa`、`searxng`）。地址和「当前使用哪一家」写在 UserDefaults，键是 `nomi.search.baseURL.<id>` 和 `nomi.search.active`。日志里不写密钥，也不写完整搜索词以外的会议正文。
 
-删掉一家配置时，清掉它的钥匙串项和地址。如果删的是当前使用的那一家，`nomi.search.active` 清空，提问里的「联网」自动关掉。
+删掉一家配置时，清掉它的密钥和地址。如果删的是当前使用的那一家，`nomi.search.active` 清空，提问里的「联网」自动关掉。
 
 ### 第一次打开
 

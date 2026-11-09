@@ -23,12 +23,6 @@ if [[ ! -d "$app/Contents/MacOS" ]]; then
     echo "还没有 build/Nomi.app，先运行 scripts/build-app.sh release。" >&2
     exit 1
 fi
-# Debug builds and NOMI_DEV_KEYS builds keep API keys in a plain file; never hand those out.
-# grep reads all of nm's output (no -q), so pipefail does not see nm cut off early.
-if nm "$app/Contents/MacOS/Nomi" 2>/dev/null | grep LocalSecrets >/dev/null; then
-    echo "这是调试版或开发密钥模式的版本，不能发给别人。请用 scripts/build-app.sh release 重新编译（不要设 NOMI_DEV_KEYS）。" >&2
-    exit 1
-fi
 
 # grep reads all of pip's output (no -q), so pipefail does not see pip cut off early.
 if ! "$venv/bin/python" -m pip show dmgbuild 2>/dev/null | grep -x "Version: $dmgbuild_version" >/dev/null; then

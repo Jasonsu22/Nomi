@@ -227,7 +227,7 @@ struct APIProfileEditor: View {
             .disabled(fetching)
             .onAppear {
                 // Read once when the sheet opens, not on every redraw of the page behind it.
-                key = (try? LLMKeychain.read(draft)) ?? ""
+                key = (try? LLMKeys.read(draft)) ?? ""
                 if !draft.modelID.isEmpty, !draft.savedModelIDs.contains(draft.modelID) {
                     draft.savedModelIDs.insert(draft.modelID, at: 0)
                 }
@@ -350,7 +350,7 @@ struct APIProfileEditor: View {
         do {
             var secret = key.trimmingCharacters(in: .whitespacesAndNewlines)
             if secret.isEmpty, configuration.profiles.contains(where: { $0.id == draft.id && $0.baseURL == draft.baseURL }) {
-                secret = try LLMKeychain.read(draft)
+                secret = try LLMKeys.read(draft)
             }
             guard draft.isLoopback || !secret.isEmpty else { throw llmError(tr("请输入 API 密钥。")) }
             availableModels = try await RemoteLLMClient.models(profile: draft, key: secret)

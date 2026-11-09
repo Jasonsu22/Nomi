@@ -230,7 +230,7 @@ struct OnboardingView: View {
                     .foregroundStyle(AppColor.textSecondary)
                     .padding(.top, Space.s3)
             }
-            Label(tr("录音和转写都留在这台 Mac 上。提问时，只有相关的文字会发送给你选择的服务。密钥保存在钥匙串里。"), systemImage: "lock")
+            Label(tr("录音和转写都留在这台 Mac 上。提问时，只有相关的文字会发送给你选择的服务。密钥只保存在这台 Mac 上。"), systemImage: "lock")
                 .font(AppFont.caption)
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

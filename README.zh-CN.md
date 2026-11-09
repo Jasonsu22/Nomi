@@ -77,7 +77,7 @@
     </td>
     <td valign="top">
       <h3>🔒 隐私优先</h3>
-      识别和翻译在你的 Mac 上运行，没有网络也能用。提问可以用本地模型或你自己的 API，密钥保存在 macOS 钥匙串中。
+      识别和翻译在你的 Mac 上运行，没有网络也能用。提问可以用本地模型或你自己的 API，密钥只保存在你的 Mac 上。
     </td>
   </tr>
 </table>
@@ -129,15 +129,7 @@ bash scripts/refresh-app.sh
 
 这个脚本要求 `build/Nomi.app` 已经存在。
 
-没有付费的 Apple 开发者证书时，每次重新编译后 macOS 都会再要一次钥匙串密码。调试版，以及用 `NOMI_DEV_KEYS=1` 编译的发布版，会在第一次允许后把每个 API 密钥复制到一个只有你能读取的文件里，之后重新编译就不再询问：
-
-```sh
-NOMI_DEV_KEYS=1 bash scripts/build-app.sh release
-```
-
-开启这个模式时脚本会打印提醒。给别人用的版本请用普通的发布版编译，密钥只保存在钥匙串里。
-
-打包发布时，先不带 `NOMI_DEV_KEYS` 编译，再生成 DMG：
+打包发布时，先编译，再生成 DMG：
 
 ```sh
 bash scripts/build-app.sh release
@@ -183,7 +175,7 @@ bash scripts/make-appcast.sh release-notes.md
 | 会议问答 | `~/Library/Application Support/Nomi/qa/` |
 | 记忆 | `~/Library/Application Support/Nomi/memory.json` |
 | 本机模型 | `~/.OminiX/models` |
-| API 密钥 | macOS 钥匙串；开发版还会在 `~/Library/Application Support/Nomi/secrets.json` 保存一份副本（只有你能读取） |
+| API 密钥 | `~/Library/Application Support/Nomi/api-keys.json`（只有你的账户能读取） |
 | 引擎日志 | `~/Library/Logs/Nomi/engine.log` |
 
 界面语言、外观、麦克风权限、所选本机模型和 API 配置保存在应用的 UserDefaults 里。

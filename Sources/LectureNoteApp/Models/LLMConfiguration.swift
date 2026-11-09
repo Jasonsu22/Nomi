@@ -179,11 +179,11 @@ final class LLMConfiguration {
         let existing = profiles.first { $0.id == value.id }
         let replacement = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if !value.isLoopback && replacement.isEmpty {
-            let kept = existing?.baseURL == value.baseURL ? ((try? LLMKeychain.read(value)) ?? "") : ""
+            let kept = existing?.baseURL == value.baseURL ? ((try? LLMKeys.read(value)) ?? "") : ""
             guard !kept.isEmpty else { throw llmError(tr("请输入 API 密钥。")) }
         }
-        if !replacement.isEmpty { try LLMKeychain.save(replacement, profile: value) }
-        if let existing, existing.baseURL != value.baseURL { try LLMKeychain.delete(existing) }
+        if !replacement.isEmpty { try LLMKeys.save(replacement, profile: value) }
+        if let existing, existing.baseURL != value.baseURL { try LLMKeys.delete(existing) }
         if let index = profiles.firstIndex(where: { $0.id == value.id }) { profiles[index] = value }
         else { profiles.append(value) }
         persist()
@@ -191,7 +191,7 @@ final class LLMConfiguration {
     }
 
     func delete(_ profile: LLMAPIProfile) throws {
-        try LLMKeychain.delete(profile)
+        try LLMKeys.delete(profile)
         profiles.removeAll { $0.id == profile.id }
         if activeID == profile.id {
             activeID = nil
@@ -205,7 +205,7 @@ final class LLMConfiguration {
     }
 }
 
-enum LLMKeychain {
+enum LLMKeys {
     private static let service = "local.nomi.llm-api"
 
     private enum Cache {
@@ -238,18 +238,18 @@ enum LLMKeychain {
     static func read(_ profile: LLMAPIProfile) throws -> String {
         let id = account(profile)
         if let cached = Cache.get(id) { return cached }
-        let key = try KeychainTrust.read(service: service, account: id)
+        let key = try APIKeyStore.read(service: service, account: id)
         Cache.set(id, key)
         return key
     }
 
     static func save(_ key: String, profile: LLMAPIProfile) throws {
-        try KeychainTrust.save(service: service, account: account(profile), secret: key)
+        try APIKeyStore.save(service: service, account: account(profile), secret: key)
         Cache.set(account(profile), key)
     }
 
     static func delete(_ profile: LLMAPIProfile) throws {
-        try KeychainTrust.delete(service: service, account: account(profile))
+        try APIKeyStore.delete(service: service, account: account(profile))
         Cache.remove(account(profile))
     }
 }

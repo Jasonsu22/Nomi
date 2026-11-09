@@ -8,7 +8,7 @@ struct SearchSettingsSection: View {
         SettingsSection(tr("联网搜索")) {
             ForEach(SearchVendor.allCases) { vendor in row(vendor) }
         } footer: {
-            Text(tr("选择一个已配置的服务用于联网搜索。密钥保存在钥匙串里。"))
+            Text(tr("选择一个已配置的服务用于联网搜索。密钥只保存在这台 Mac 上。"))
         }
         .sheet(item: $editing) { vendor in
             SearchProviderEditor(vendor: vendor, model: model)
@@ -131,12 +131,12 @@ private struct SearchProviderEditor: View {
         }
         .padding(Space.s5)
         .frame(width: 640)
-        .onAppear { key = (try? SearchKeychain.read(vendor)) ?? "" }
+        .onAppear { key = (try? SearchKeys.read(vendor)) ?? "" }
         .alert(trf("删除 %@ 的搜索配置？", vendor.title), isPresented: $confirmingDelete) {
             Button(tr("删除"), role: .destructive) { remove() }
             Button(tr("取消"), role: .cancel) {}
         } message: {
-            Text(tr("钥匙串里的密钥和保存的地址会被清掉。"))
+            Text(tr("保存的密钥和地址会被清掉。"))
         }
     }
 

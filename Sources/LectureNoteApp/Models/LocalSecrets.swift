@@ -1,15 +1,11 @@
 import Foundation
 
-// Development builds only. Release builds leave this out unless built with
-// NOMI_DEV_KEYS=1, so an app given to others keeps its keys in the keychain alone.
-#if DEBUG || NOMI_DEV_KEYS
-
-/// API keys kept in a file that only this user account can read (mode 0600).
+/// API keys kept in a file that only this user account can read (mode 0600), in
+/// ~/Library/Application Support/Nomi/api-keys.json.
 ///
-/// The login keychain remembers "Always Allow" per build hash when the app has no
-/// Team ID, so every rebuild asked for the password again. In development builds
-/// keys are read from the keychain once, then kept here, and rebuilds stay quiet.
-/// Other programs running as this user can read the file, so release builds do not use it.
+/// Nomi has no Team ID, so the keychain asked for the login password after every update
+/// and often on every launch. Keys live here instead. Other programs running as this
+/// user could read the file, which is the trade for never being asked.
 enum LocalSecrets {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var location = defaultLocation
@@ -18,7 +14,17 @@ enum LocalSecrets {
     private static var defaultLocation: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Nomi", isDirectory: true)
-            .appendingPathComponent("secrets.json")
+            .appendingPathComponent("api-keys.json")
+    }
+
+    /// The copy development builds kept before release builds stopped using the keychain.
+    /// It may be older than the keychain, so it is only a fallback when the keychain cannot be read.
+    static func developmentCopy(service: String, account: String) -> String? {
+        let file = defaultLocation.deletingLastPathComponent().appendingPathComponent("secrets.json")
+        guard let data = try? Data(contentsOf: file),
+              let values = try? JSONDecoder().decode([String: String].self, from: data),
+              let secret = values[key(service, account)], !secret.isEmpty else { return nil }
+        return secret
     }
 
     static func get(service: String, account: String) -> String? {
@@ -76,13 +82,11 @@ enum LocalSecrets {
         let data = try encoder.encode(secrets)
         let temporary = directory.appendingPathComponent(".secrets-\(UUID().uuidString).tmp")
         guard manager.createFile(atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
-            throw llmError(tr("无法保存 API 密钥到钥匙串。"))
+            throw llmError(tr("无法保存 API 密钥。"))
         }
         guard rename(temporary.path, location.path) == 0 else {
             try? manager.removeItem(at: temporary)
-            throw llmError(tr("无法保存 API 密钥到钥匙串。"))
+            throw llmError(tr("无法保存 API 密钥。"))
         }
     }
 }
-
-#endif

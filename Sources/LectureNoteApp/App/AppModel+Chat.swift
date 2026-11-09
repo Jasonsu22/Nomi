@@ -179,7 +179,7 @@ extension AppModel {
 
     func refreshActiveAPIModels() async {
         guard llmConfiguration.mode == .api, let profile = llmConfiguration.activeProfile else { return }
-        let key = (try? LLMKeychain.read(profile)) ?? ""
+        let key = (try? LLMKeys.read(profile)) ?? ""
         guard profile.isLoopback || !key.isEmpty else { return }
         guard let models = try? await RemoteLLMClient.models(profile: profile, key: key), !models.isEmpty else { return }
         llmConfiguration.setListedModels(models, for: profile.id)
@@ -530,7 +530,7 @@ extension AppModel {
     ) async throws -> String {
         if mode == .api {
             guard let profile else { throw llmError(tr("请先在设置中选择 API 配置。")) }
-            let key = try LLMKeychain.read(profile)
+            let key = try LLMKeys.read(profile)
             guard profile.isLoopback || !key.isEmpty else { throw llmError(tr("请输入 API 密钥。")) }
             return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
         }

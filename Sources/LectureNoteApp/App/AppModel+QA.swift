@@ -235,7 +235,7 @@ extension AppModel {
     private func questionReply(mode: LLMMode, profile: LLMAPIProfile?, system: String, prompt: String, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
         if mode == .api {
             guard let profile else { throw llmError(tr("请先在设置中选择 API 配置。")) }
-            let key = try LLMKeychain.read(profile)
+            let key = try LLMKeys.read(profile)
             guard profile.isLoopback || !key.isEmpty else { throw llmError(tr("请输入 API 密钥。")) }
             return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, onUpdate: onUpdate)
         }

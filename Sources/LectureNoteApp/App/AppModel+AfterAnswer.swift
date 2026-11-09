@@ -129,7 +129,7 @@ extension AppModel {
     func backgroundReply(mode: LLMMode, profile: LLMAPIProfile?, system: String, prompt: String, maxTokens: Int) async throws -> String {
         if mode == .api {
             guard let profile else { throw llmError(tr("请先在设置中选择 API 配置。")) }
-            let key = try LLMKeychain.read(profile)
+            let key = try LLMKeys.read(profile)
             return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt) { _ in }
         }
         guard let engine = engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }

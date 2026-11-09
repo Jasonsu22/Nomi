@@ -77,7 +77,7 @@ Studying in a second language is hard. The teacher talks fast, new terms are eve
     </td>
     <td valign="top">
       <h3>🔒 Private by design</h3>
-      Recognition and translation run on your Mac and work offline. Questions use a local model or your own API, and keys stay in the macOS Keychain.
+      Recognition and translation run on your Mac and work offline. Questions use a local model or your own API, and keys stay on your Mac.
     </td>
   </tr>
 </table>
@@ -129,15 +129,7 @@ bash scripts/refresh-app.sh
 
 That script requires `build/Nomi.app` to exist already.
 
-Without a paid Apple Developer certificate, macOS asks for the Keychain password again after every rebuild. Debug builds, and release builds made with `NOMI_DEV_KEYS=1`, copy each API key into a private file after the first approval, so rebuilding stops asking:
-
-```sh
-NOMI_DEV_KEYS=1 bash scripts/build-app.sh release
-```
-
-The script prints a warning when this mode is on. Builds you give to other people should be plain release builds, which keep keys in the Keychain only.
-
-To package a release, build without `NOMI_DEV_KEYS`, then make the DMG:
+To package a release, build it, then make the DMG:
 
 ```sh
 bash scripts/build-app.sh release
@@ -183,7 +175,7 @@ Downloaded weights stay in `~/.OminiX/models`. On a Mac without them, download t
 | Meeting Q&A | `~/Library/Application Support/Nomi/qa/` |
 | Memory | `~/Library/Application Support/Nomi/memory.json` |
 | Local models | `~/.OminiX/models` |
-| API keys | macOS Keychain; development builds also keep a copy in `~/Library/Application Support/Nomi/secrets.json` (readable only by you) |
+| API keys | `~/Library/Application Support/Nomi/api-keys.json` (readable only by your account) |
 | Engine log | `~/Library/Logs/Nomi/engine.log` |
 
 Interface language, appearance, microphone permission, the selected local model, and API profiles are stored in the app’s UserDefaults.
