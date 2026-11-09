@@ -42,6 +42,23 @@ enum AnswerDocument {
         return result
     }
 
+    /// What each fenced block in the answer becomes, in order, by the same rules as `pieces`.
+    /// The answer page uses it so a demo card shows exactly where the app would show one.
+    enum FenceRole: String {
+        case code, widget, preparing, empty
+    }
+
+    static func fenceRoles(in source: String, streaming: Bool) -> [FenceRole] {
+        regions(in: source).filter { $0.kind == .fence }.map { region in
+            let body = region.body
+            if streaming, !region.closed, isDisplayFence(region.info, body: body) { return .preparing }
+            if body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .empty }
+            let ready = region.closed || finishedDocument(body)
+            if ready, widgetTitle(info: region.info, body: body) != nil, widgetFragment(from: body) != nil { return .widget }
+            return .code
+        }
+    }
+
     /// A fragment, or a complete page reduced to the styles, inline scripts, and body.
     static func widgetFragment(from html: String) -> String? {
         guard passesSafety(html) else { return nil }

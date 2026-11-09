@@ -21,6 +21,8 @@ let package = Package(
             dependencies: ["SwiftMath", "NomiObjCSupport", .product(name: "Sparkle", package: "Sparkle")],
             resources: [
                 .copy("Fixtures"),
+                // The answer page: markdown-it and KaTeX, MIT licensed (AnswerWeb/vendor/LICENSES.txt).
+                .copy("AnswerWeb"),
                 .process("Resources"),
             ]
         ),

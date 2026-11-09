@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Nothing here loads from the network except https images. Model text is never parsed as HTML
+     (markdown-it runs with html off). Demo frames inherit this policy, so it allows inline scripts for
+     them; each demo page adds its own stricter policy on top (AnswerDocument.page). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src https: data:; frame-src about: data:; child-src about: data:">
+<link rel="stylesheet" href="vendor/katex.min.css">
+<link rel="stylesheet" href="answer.css">
+<script src="vendor/markdown-it.min.js"></script>
+<script src="vendor/katex.min.js"></script>
+</head>
+<body>
+<main id="answer"></main>
+<script src="answer.js"></script>
+</body>
+</html>

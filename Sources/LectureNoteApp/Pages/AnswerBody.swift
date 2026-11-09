@@ -2,6 +2,9 @@ import AppKit
 import SwiftUI
 import WebKit
 
+/// One answer, drawn as a single web page (AnswerWeb/answer.html): Markdown through markdown-it,
+/// formulas through KaTeX. The whole answer is one piece of text, so a selection can run from the
+/// first line to the last. Demo cards run inside the same page, each in its own sandboxed frame.
 struct AnswerBody: View {
     var source: String
     var streaming = false
@@ -15,17 +18,12 @@ struct AnswerBody: View {
             : AnswerPreparedCache.prepared(source, citations: citations) {
                 Self.prepare(source, streaming: false, citations: citations)
             }
-        let export = prepared.export
-        let linkedCitations = prepared.citations
-        return VStack(alignment: .leading, spacing: Space.s3) {
-            if prepared.rows.isEmpty {
-                answerText(AnswerInline.render(source, citations: linkedCitations, streaming: streaming, files: export.named))
-            } else {
-                ForEach(Array(prepared.rows.enumerated()), id: \.offset) { _, row in
-                    pieceView(row.piece, file: row.file, files: export.named, citations: linkedCitations)
-                }
-            }
-        }
+        AnswerWebView(
+            payload: payload(prepared),
+            heightKey: source,
+            citations: citations,
+            onOpen: open
+        )
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -40,6 +38,54 @@ struct AnswerBody: View {
             export: export,
             citations: ChatContext.linkedCitations(in: source, citations: citations)
         )
+    }
+
+    /// Everything the page needs to draw this answer, as plain values for JavaScript.
+    private func payload(_ prepared: AnswerPrepared) -> [String: Any] {
+        let dark = colorScheme == .dark
+        var widgets: [[String: String]] = []
+        for row in prepared.rows {
+            guard case .widget(let title, let html) = row.piece else { continue }
+            widgets.append([
+                "title": title,
+                "page": AnswerDocument.page(
+                    fragment: html,
+                    text: dark ? "#E6E8EB" : "#111418",
+                    surface: dark ? "#1F242B" : "#EBF0F6",
+                    accent: dark ? "#7CC4F2" : "#004A77"
+                ),
+                "file": row.file?.absoluteString ?? "",
+            ])
+        }
+        return [
+            "markdown": source,
+            "streaming": streaming,
+            "dark": dark,
+            "citations": Self.citationChips(prepared.citations),
+            "files": prepared.export.named.mapValues(\.absoluteString),
+            "widgets": widgets,
+            "fenceRoles": AnswerDocument.fenceRoles(in: source, streaming: streaming).map(\.rawValue),
+            "preparing": tr("正在准备图示…"),
+            "cardTitle": tr("互动图示"),
+        ]
+    }
+
+    /// The chip for each citation number. When every source is from one meeting, chips name the
+    /// moment (8:41) instead of repeating the meeting title, as AnswerInline does.
+    static func citationChips(_ citations: [Int: ChatCitation]) -> [String: [String: String]] {
+        let meetings = Set(citations.values.compactMap(\.meetingID))
+        let oneMeeting = meetings.count == 1 && citations.values.allSatisfy { $0.meetingID != nil }
+        var chips: [String: [String: String]] = [:]
+        for (number, citation) in citations {
+            guard !citation.inlineLabel.isEmpty, let url = citation.inlineURL else { continue }
+            let moment = citation.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            chips[String(number)] = [
+                "label": oneMeeting && !moment.isEmpty ? moment : citation.inlineLabel,
+                "key": AnswerInline.citationSourceKey(citation),
+                "url": url.absoluteString,
+            ]
+        }
+        return chips
     }
 
     private func open(_ url: URL) {
@@ -69,282 +115,345 @@ struct AnswerBody: View {
             return AnswerPrepared.Row(piece: piece, file: file)
         }
     }
+}
 
-    /// The marker and the sentence share one text view, so their baselines match.
-    private func listText(
-        ordered: Bool,
-        items: [String],
-        files: [String: URL],
-        citations: [Int: ChatCitation]
-    ) -> AttributedString {
-        let font = NSFont.systemFont(ofSize: 15)
-        let widest = ordered ? "\(max(items.count, 1))." : "•"
-        let indent = ceil((widest as NSString).size(withAttributes: [.font: font]).width) + 8
-        let style = NSMutableParagraphStyle()
-        style.tabStops = [NSTextTab(textAlignment: .left, location: indent)]
-        style.defaultTabInterval = indent
-        style.headIndent = indent
-        style.paragraphSpacing = 4
-        let text = NSMutableAttributedString()
-        for (index, item) in items.enumerated() {
-            let marker = NSAttributedString(
-                string: ordered ? "\(index + 1).\t" : "•\t",
-                attributes: [.font: font, .foregroundColor: AppColor.nsTextSecondary]
-            )
-            text.append(marker)
-            text.append(NSAttributedString(AnswerInline.render(item, citations: citations, streaming: streaming, files: files)))
-            if index + 1 < items.count {
-                text.append(NSAttributedString(string: "\n"))
-            }
-        }
-        text.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: text.length))
-        return AttributedString(text)
-    }
+/// Heights of answers already drawn, so a row scrolled back into view starts at its real size.
+@MainActor
+enum AnswerHeights {
+    private static var heights: [String: CGFloat] = [:]
+    private static var order: [String] = []
 
-    private func answerText(_ text: AttributedString) -> some View {
-        CiteText(attributed: text, citations: citations, colorScheme: colorScheme, streaming: streaming, onOpen: open)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
+    static func height(for key: String) -> CGFloat? { heights[key] }
 
-    private func codeText(_ code: String) -> AttributedString {
-        let raw = NSMutableAttributedString(string: code)
-        let range = NSRange(location: 0, length: raw.length)
-        if range.length > 0 {
-            raw.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 15, weight: .regular), range: range)
-            raw.addAttribute(.foregroundColor, value: AppColor.nsTextPrimary, range: range)
-        }
-        return AttributedString(raw)
-    }
-
-    @ViewBuilder
-    private func pieceView(
-        _ piece: AnswerDocument.Piece,
-        file: URL?,
-        files: [String: URL],
-        citations: [Int: ChatCitation]
-    ) -> some View {
-        switch piece {
-        case .heading(let level, let text):
-            answerText(AnswerInline.render(text, size: level == 1 ? 17 : (level == 2 ? 15 : 13), weight: .semibold, citations: citations, streaming: streaming, files: files))
-        case .paragraph(let text):
-            answerText(AnswerInline.render(text, citations: citations, streaming: streaming, files: files))
-        case .list(let ordered, let items):
-            answerText(listText(ordered: ordered, items: items, files: files, citations: citations))
-        case .code(let code):
-            answerText(codeText(code))
-                .padding(Space.s2)
-                .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.tag, style: .continuous))
-        case .math(let latex):
-            answerText(MathFormula.block(latex))
-        case .preparing:
-            HStack(spacing: Space.s2) {
-                ProgressView().controlSize(.small)
-                Text(tr("正在准备图示…"))
-                    .font(AppFont.secondary)
-                    .foregroundStyle(AppColor.textSecondary)
-            }
-        case .table(let header, let rows):
-            Grid(alignment: .leading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
-                GridRow {
-                    ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        answerText(AnswerInline.render(cell, size: 13, weight: .semibold, citations: citations, streaming: streaming, files: files))
-                    }
-                }
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    GridRow {
-                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            answerText(AnswerInline.render(cell, size: 13, citations: citations, streaming: streaming, files: files))
-                        }
-                    }
-                }
-            }
-        case .widget(let title, let html):
-            HtmlAnswerCard(
-                title: title,
-                file: file,
-                html: AnswerDocument.page(
-                    fragment: html,
-                    text: colorScheme == .dark ? "#E6E8EB" : "#111418",
-                    surface: colorScheme == .dark ? "#1F242B" : "#EBF0F6",
-                    accent: colorScheme == .dark ? "#7CC4F2" : "#004A77"
-                )
-            )
-        case .remoteImage(let alt, let url):
-            RemoteAnswerImage(address: url, caption: alt)
+    static func remember(_ height: CGFloat, for key: String) {
+        if heights.updateValue(height, forKey: key) == nil {
+            order.append(key)
+            if order.count > 400 { heights[order.removeFirst()] = nil }
         }
     }
 }
 
-private struct HtmlAnswerCard: View {
-    var title: String
-    var file: URL?
-    var html: String
-    @State private var height: CGFloat = 160
+private struct AnswerWebView: View {
+    var payload: [String: Any]
+    var heightKey: String
+    var citations: [ChatCitation]
+    var onOpen: (URL) -> Void
+    @State private var height: CGFloat?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s1) {
-            Text(title.isEmpty ? tr("互动图示") : title)
-                .font(AppFont.body)
-                .foregroundStyle(AppColor.textPrimary)
-                .contextMenu {
-                    if let file {
-                        AnswerFileMenu(url: file)
-                    }
-                }
-            HtmlAnswerWebView(html: html, file: file) { reported in
-                height = reported
-            }
-            .frame(height: max(height, 44))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-            .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        AnswerPage(payload: payload, citations: citations, onOpen: onOpen) { reported in
+            height = reported
+            AnswerHeights.remember(reported, for: heightKey)
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(title.isEmpty ? tr("互动图示") : title)
+        .frame(height: max(height ?? AnswerHeights.height(for: heightKey) ?? 22, 22))
     }
 }
 
-private final class HtmlAnswerWeb: WKWebView {
-    var fileURL: URL?
-    /// The card has grown to the page's full height, so the page has nothing left to scroll.
-    var showsWholePage = false
-    private var fileMenu: NSMenu?
-
-    /// Once the whole page is shown, vertical scrolling over it moves the chat instead of stopping at the card.
-    /// Mostly sideways gestures stay with the page, for wide tables and sliders.
+/// The page never scrolls on its own: vertical scrolling moves the chat, while mostly sideways
+/// gestures stay with the page for wide formulas, tables and code.
+private final class AnswerWeb: WKWebView {
     override func scrollWheel(with event: NSEvent) {
-        if showsWholePage, abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX), let next = nextResponder {
+        if abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX), let next = nextResponder {
             next.scrollWheel(with: event)
         } else {
             super.scrollWheel(with: event)
         }
     }
 
-    override func menu(for event: NSEvent) -> NSMenu? {
-        guard let fileURL else { return super.menu(for: event) }
-        let menu = AnswerMenus.file(fileURL)
-        fileMenu = menu
-        return menu
+    // MARK: Selecting past the edge
+    // The page is as tall as the answer, so WebKit has nothing of its own to scroll when a selection
+    // drag leaves the visible chat. The chat around it scrolls instead, and keeps scrolling while the
+    // pointer stays outside, with each step extending the selection.
+
+    private var dragTimer: Timer?
+
+    override func mouseDown(with event: NSEvent) {
+        stopDragScrolling()
+        // Control-click is a right-click too.
+        if event.modifierFlags.contains(.control), let file = card(at: event) {
+            NSMenu.popUpContextMenu(AnswerMenus.file(file), with: event, for: self)
+            return
+        }
+        super.mouseDown(with: event)
     }
 
-    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
-        guard let fileURL else { return }
-        let custom = AnswerMenus.file(fileURL)
-        fileMenu = custom
-        menu.removeAllItems()
-        for item in custom.items {
-            custom.removeItem(item)
-            menu.addItem(item)
+    override func mouseDragged(with event: NSEvent) {
+        super.mouseDragged(with: event)
+        scrollChat(following: event)
+        guard dragTimer == nil else { return }
+        dragTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.continueDragScrolling() }
         }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        stopDragScrolling()
+        super.mouseUp(with: event)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil { stopDragScrolling() }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    /// While the button is held with the pointer still outside, keep scrolling and extend the selection.
+    private func continueDragScrolling() {
+        guard NSEvent.pressedMouseButtons & 1 == 1, let window,
+              let drag = NSEvent.mouseEvent(
+                  with: .leftMouseDragged,
+                  location: window.mouseLocationOutsideOfEventStream,
+                  modifierFlags: NSEvent.modifierFlags,
+                  timestamp: ProcessInfo.processInfo.systemUptime,
+                  windowNumber: window.windowNumber,
+                  context: nil,
+                  eventNumber: 0,
+                  clickCount: 1,
+                  pressure: 1
+              ) else {
+            stopDragScrolling()
+            return
+        }
+        if scrollChat(following: drag) { super.mouseDragged(with: drag) }
+    }
+
+    /// Scrolls the chat when the pointer is beyond its visible edge. Returns whether it moved.
+    @discardableResult
+    private func scrollChat(following event: NSEvent) -> Bool {
+        guard let clip = enclosingScrollView?.contentView else { return false }
+        let before = clip.bounds.origin
+        _ = clip.autoscroll(with: event)
+        guard clip.bounds.origin != before else { return false }
+        enclosingScrollView?.reflectScrolledClipView(clip)
+        return true
+    }
+
+    private func stopDragScrolling() {
+        dragTimer?.invalidate()
+        dragTimer = nil
+    }
+
+    /// Demo cards in the page and the files they were saved to, in page coordinates.
+    var cards: [(rect: CGRect, file: URL)] = []
+
+    private func card(at event: NSEvent) -> URL? {
+        let point = convert(event.locationInWindow, from: nil)
+        let pagePoint = CGPoint(x: point.x, y: isFlipped ? point.y : bounds.height - point.y)
+        return cards.first { $0.rect.contains(pagePoint) }?.file
+    }
+
+    /// Right-clicking a demo card shows the menu for its saved file. The click is caught here,
+    /// before WebKit hands it to the card's sandboxed frame, which has no menu of its own.
+    override func rightMouseDown(with event: NSEvent) {
+        guard let file = card(at: event) else { return super.rightMouseDown(with: event) }
+        NSMenu.popUpContextMenu(AnswerMenus.file(file), with: event, for: self)
+    }
+
+    /// Elsewhere, Copy, Look Up and Translate stay; page navigation items make no sense for an answer.
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        let dropped = ["Reload", "GoBack", "GoForward", "OpenLinkInNewWindow", "OpenImageInNewWindow",
+                       "OpenFrameInNewWindow", "DownloadImage", "DownloadLinkedFile", "OpenMediaInNewWindow"]
+        for item in menu.items where dropped.contains(where: { item.identifier?.rawValue.contains($0) == true }) {
+            menu.removeItem(item)
+        }
+        super.willOpenMenu(menu, with: event)
     }
 }
 
-private struct HtmlAnswerWebView: NSViewRepresentable {
-    var html: String
-    var file: URL?
+private struct AnswerPage: NSViewRepresentable {
+    var payload: [String: Any]
+    var citations: [ChatCitation]
+    var onOpen: (URL) -> Void
     var onHeight: (CGFloat) -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onHeight: onHeight)
-    }
+    static let pageURL = Bundle.module.url(forResource: "answer", withExtension: "html", subdirectory: "AnswerWeb")
 
-    func makeNSView(context: Context) -> HtmlAnswerWeb {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> AnswerWeb {
         let content = WKUserContentController()
         content.add(context.coordinator, name: "nomi")
-        content.addUserScript(WKUserScript(source: Self.heightScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = content
         configuration.websiteDataStore = .nonPersistent()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        let webView = HtmlAnswerWeb(frame: .zero, configuration: configuration)
-        webView.fileURL = file
+        configuration.suppressesIncrementalRendering = false
+        let webView = AnswerWeb(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        webView.allowsMagnification = false
-        // Demos are written for a full page; at 82% they fit the chat column. Zoom is applied at
-        // layout, so it costs nothing while scrolling.
-        webView.pageZoom = Self.pageZoom
-        webView.allowsBackForwardNavigationGestures = false
         webView.underPageBackgroundColor = .clear
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.allowsMagnification = false
+        webView.allowsBackForwardNavigationGestures = false
         #if DEBUG
         webView.isInspectable = true
         #endif
-        context.coordinator.load(html, into: webView)
+        context.coordinator.webView = webView
+        update(context.coordinator)
+        if let page = Self.pageURL {
+            webView.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent())
+        }
         return webView
     }
 
-    func updateNSView(_ webView: HtmlAnswerWeb, context: Context) {
-        webView.fileURL = file
-        context.coordinator.onHeight = onHeight
-        context.coordinator.load(html, into: webView)
+    func updateNSView(_ webView: AnswerWeb, context: Context) {
+        update(context.coordinator)
+        context.coordinator.render()
     }
 
-    static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+    private func update(_ coordinator: Coordinator) {
+        coordinator.payload = payload
+        coordinator.citations = citations
+        coordinator.onOpen = onOpen
+        coordinator.onHeight = onHeight
+    }
+
+    static func dismantleNSView(_ webView: AnswerWeb, coordinator: Coordinator) {
+        coordinator.closeCard()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "nomi")
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
     }
 
-    static let pageZoom: CGFloat = 0.82
-
-    private static let heightScript = """
-    (function () {
-      function report() {
-        var body = document.body;
-        var height = body ? Math.ceil(body.scrollHeight) : 0;
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nomi) {
-          window.webkit.messageHandlers.nomi.postMessage({ height: height });
-        }
-      }
-      if (window.ResizeObserver && document.body) new ResizeObserver(report).observe(document.body);
-      document.addEventListener("input", function () { requestAnimationFrame(report); });
-      document.addEventListener("click", function () { requestAnimationFrame(report); });
-      report();
-    })();
-    """
-
+    @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
-        var onHeight: (CGFloat) -> Void
-        private var loaded: String?
-        private weak var webView: HtmlAnswerWeb?
+        weak var webView: AnswerWeb?
+        var payload: [String: Any] = [:]
+        var citations: [ChatCitation] = []
+        var onOpen: (URL) -> Void = { _ in }
+        var onHeight: (CGFloat) -> Void = { _ in }
+        private var ready = false
+        private var rendered: NSDictionary?
+        private var card: (popover: NSPopover, host: NSHostingController<AnyView>)?
+        private var pointerInsideCard = false
+        private var closeTicket = 0
 
-        init(onHeight: @escaping (CGFloat) -> Void) {
-            self.onHeight = onHeight
-        }
-
-        func load(_ html: String, into webView: WKWebView) {
-            self.webView = webView as? HtmlAnswerWeb
-            guard loaded != html else { return }
-            loaded = html
-            self.webView?.showsWholePage = false
-            webView.loadHTMLString(html, baseURL: nil)
+        func render() {
+            guard ready, let webView else { return }
+            let next = payload as NSDictionary
+            if let rendered, rendered.isEqual(next) { return }
+            rendered = next
+            webView.callAsyncJavaScript("nomi.render(payload)", arguments: ["payload": payload], in: nil, in: .page, completionHandler: nil)
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == "nomi",
-                  let body = message.body as? [String: Any],
-                  let height = (body["height"] as? NSNumber)?.doubleValue,
-                  height.isFinite, height > 0 else { return }
-            // The page reports CSS pixels; the view is that many times the zoom tall.
-            onHeight(CGFloat(height) * (webView?.pageZoom ?? 1))
-            webView?.showsWholePage = true
+            // Demo cards run in frames of this page; only the page itself may talk to the app.
+            guard message.name == "nomi", message.frameInfo.isMainFrame, let body = message.body as? [String: Any] else { return }
+            if body["ready"] != nil {
+                ready = true
+                rendered = nil
+                render()
+            } else if let height = (body["height"] as? NSNumber)?.doubleValue, height.isFinite, height >= 0 {
+                onHeight(CGFloat(height))
+            } else if let raw = body["open"] as? String, let url = URL(string: raw) {
+                closeCard()
+                onOpen(url)
+            } else if let raw = body["hover"] as? String, let url = URL(string: raw),
+                      let rect = body["rect"] as? [NSNumber], rect.count == 4 {
+                showCard(url: url, label: body["label"] as? String ?? "", rect: rect.map { CGFloat($0.doubleValue) })
+            } else if body["unhover"] != nil {
+                scheduleClose()
+            } else if let cards = body["cards"] as? [[Any]] {
+                webView?.cards = cards.compactMap { card in
+                    let values = card.prefix(4).compactMap { ($0 as? NSNumber).map { CGFloat($0.doubleValue) } }
+                    guard card.count == 5, values.count == 4, let raw = card[4] as? String, let file = URL(string: raw) else { return nil }
+                    return (CGRect(x: values[0], y: values[1], width: values[2], height: values[3]), file)
+                }
+            }
         }
+
+        // MARK: Source preview card
+
+        private func showCard(url: URL, label: String, rect: [CGFloat]) {
+            guard let webView else { return }
+            closeTicket += 1
+            let card = self.card ?? makeCard()
+            card.host.rootView = AnyView(CitePreviewCard(preview: preview(for: url, label: label), onOpen: { [weak self] in
+                self?.closeCard()
+                self?.onOpen(url)
+            }, onInside: { [weak self] inside in
+                guard let self else { return }
+                self.pointerInsideCard = inside
+                if inside { self.closeTicket += 1 } else { self.scheduleClose() }
+            }))
+            // The page reports CSS pixels from its top-left corner; the web view is flipped the same way.
+            let anchor = CGRect(x: rect[0], y: rect[1], width: max(rect[2], 1), height: max(rect[3], 1))
+            card.popover.show(relativeTo: anchor, of: webView, preferredEdge: .maxY)
+        }
+
+        private func scheduleClose() {
+            closeTicket += 1
+            let ticket = closeTicket
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, self.closeTicket == ticket, !self.pointerInsideCard else { return }
+                self.closeCard()
+            }
+        }
+
+        func closeCard() {
+            pointerInsideCard = false
+            if let popover = card?.popover, popover.isShown { popover.performClose(nil) }
+        }
+
+        private func makeCard() -> (popover: NSPopover, host: NSHostingController<AnyView>) {
+            let popover = NSPopover()
+            let host = NSHostingController(rootView: AnyView(EmptyView()))
+            popover.behavior = .applicationDefined
+            popover.animates = false
+            host.sizingOptions = .preferredContentSize
+            popover.contentViewController = host
+            card = (popover, host)
+            return (popover, host)
+        }
+
+        private func preview(for url: URL, label: String) -> CitePreview {
+            if let citation = citation(for: url) {
+                let web = url.scheme == "http" || url.scheme == "https"
+                let host = web ? CiteLink.host(url) : ""
+                let title = citation.title.isEmpty || citation.title == host || citation.title == citation.url ? label : citation.title
+                let detail = citation.detail == title || citation.detail == host || citation.detail == citation.url ? "" : citation.detail
+                return CitePreview(title: title, host: host, detail: detail, symbol: citation.symbolName, url: url)
+            }
+            return CitePreview(
+                title: label,
+                host: CiteLink.host(url),
+                detail: "",
+                symbol: ChatCitation.symbolName(title: label, detail: "", url: url.absoluteString),
+                url: url
+            )
+        }
+
+        private func citation(for url: URL) -> ChatCitation? {
+            if url.scheme == "nomi-cite", let id = UUID(uuidString: url.host ?? "") {
+                return citations.first { $0.id == id }
+            }
+            return citations.first { citation in
+                guard let raw = citation.url, let parsed = URL(string: raw) else { return false }
+                return parsed.absoluteString == url.absoluteString
+            }
+        }
+
+        // MARK: Navigation: only the answer page itself and its demo frames load
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-            let scheme = navigationAction.request.url?.scheme?.lowercased()
-            if navigationAction.navigationType == .other, scheme == nil || scheme == "about" {
-                return .allow
+            let url = navigationAction.request.url
+            let scheme = url?.scheme?.lowercased()
+            if navigationAction.targetFrame?.isMainFrame == true {
+                return url?.isFileURL == true && url?.lastPathComponent == "answer.html" ? .allow : .cancel
             }
-            return .cancel
-        }
-
-        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-            let scheme = navigationResponse.response.url?.scheme?.lowercased()
-            return scheme == nil || scheme == "about" ? .allow : .cancel
+            return scheme == "data" || scheme == "about" ? .allow : .cancel
         }
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             nil
+        }
+
+        /// A page that was closed by the system (memory pressure) is loaded again and redrawn.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            ready = false
+            if let page = AnswerPage.pageURL {
+                webView.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent())
+            }
         }
     }
 }
@@ -478,681 +587,5 @@ enum AnswerPreparedCache {
         entries.removeAll()
         order.removeAll()
         characters = 0
-    }
-}
-
-/// Selectable answer text. A link uses the pointing hand, and shows its card while the pointer is over it.
-private struct CiteText: NSViewRepresentable {
-    var attributed: AttributedString
-    var citations: [ChatCitation]
-    var colorScheme: ColorScheme
-    var streaming = false
-    var onOpen: (URL) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onOpen: onOpen)
-    }
-
-    func makeNSView(context: Context) -> CiteTextView {
-        let view = CiteTextView()
-        view.drawsBackground = false
-        view.isEditable = false
-        view.isSelectable = true
-        view.isRichText = true
-        view.importsGraphics = false
-        view.isAutomaticLinkDetectionEnabled = false
-        view.isAutomaticDataDetectionEnabled = false
-        view.textContainerInset = .zero
-        view.textContainer?.lineFragmentPadding = 0
-        view.textContainer?.widthTracksTextView = false
-        view.font = .systemFont(ofSize: 15)
-        view.isVerticallyResizable = true
-        view.isHorizontallyResizable = false
-        view.focusRingType = .none
-        view.delegate = context.coordinator
-        view.hover = context.coordinator
-        context.coordinator.apply(attributed, citations: citations, colorScheme: colorScheme, streaming: streaming, to: view)
-        return view
-    }
-
-    func updateNSView(_ view: CiteTextView, context: Context) {
-        context.coordinator.onOpen = onOpen
-        view.hover = context.coordinator
-        context.coordinator.apply(attributed, citations: citations, colorScheme: colorScheme, streaming: streaming, to: view)
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: CiteTextView, context: Context) -> CGSize? {
-        let proposed = proposal.width ?? .infinity
-        let width = proposed.isFinite ? max(proposed, 1) : 10_000
-        guard let container = nsView.textContainer, let layout = nsView.layoutManager else {
-            return CGSize(width: width, height: 20)
-        }
-        container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-        layout.ensureLayout(for: container)
-        let used = layout.usedRect(for: container)
-        return CGSize(width: width, height: max(ceil(used.height), 1))
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        var onOpen: (URL) -> Void
-        private var citations: [ChatCitation] = []
-        private var colorScheme: ColorScheme = .light
-        private var streaming = false
-        private var source: AttributedString?
-        private var layoutWidth: CGFloat = 0
-        private var born: [Int: TimeInterval] = [:]
-        private var baseColors: [Int: NSColor] = [:]
-        private var baseImages: [Int: NSImage] = [:]
-        private var fadeTimer: Timer?
-        private weak var textView: CiteTextView?
-        private let fadeDuration = 0.18
-        private var underlined: NSRange?
-        private var shownURL: URL?
-        private var pendingURL: URL?
-        private var showTicket = 0
-        private var closeTicket = 0
-        private var pointerInsideCard = false
-        private var contextMenuOpen = false
-        // An answer has many text blocks, so the hover card is only built when it is first shown.
-        private var card: (popover: NSPopover, host: NSHostingController<AnyView>)?
-        private var cardShown: Bool { card?.popover.isShown == true }
-        /// Math images are sized to the column, so only those blocks redraw when the width changes.
-        private var widthSensitive = false
-
-        init(onOpen: @escaping (URL) -> Void) {
-            self.onOpen = onOpen
-            super.init()
-        }
-
-        func apply(_ attributed: AttributedString, citations: [ChatCitation], colorScheme: ColorScheme, streaming: Bool, to view: CiteTextView) {
-            self.citations = citations
-            textView = view
-            let width = view.bounds.width
-            let resized = abs(layoutWidth - width) > 8
-            let changed = source != attributed || self.colorScheme != colorScheme || self.streaming != streaming
-                || (resized && widthSensitive)
-            self.colorScheme = colorScheme
-            self.streaming = streaming
-            source = attributed
-            let color = CiteLink.accent(colorScheme)
-            view.linkTextAttributes = [
-                .foregroundColor: color,
-                .underlineStyle: 0,
-                .cursor: NSCursor.pointingHand,
-            ]
-            guard changed else {
-                if !widthSensitive { layoutWidth = width }
-                return
-            }
-            underlined = nil
-            view.clearUnderline()
-            let next = decorated(attributed, color: color, maxWidth: width > 40 ? width : 640)
-            if !streaming {
-                stopFade()
-                view.textStorage?.setAttributedString(next)
-            } else {
-                let previous = view.textStorage?.string ?? ""
-                if resized { baseImages.removeAll() }
-                syncBirths(from: previous, to: next.string)
-                view.textStorage?.setAttributedString(next)
-                rememberBases(next)
-                if paintFade(in: view) { scheduleFade() }
-            }
-            layoutWidth = width
-            view.window?.invalidateCursorRects(for: view)
-        }
-
-        func beginContextMenu() {
-            contextMenuOpen = true
-            pendingURL = nil
-            showTicket += 1
-            close(textView)
-        }
-
-        func endContextMenu() {
-            contextMenuOpen = false
-        }
-
-        func hoverMoved(_ view: CiteTextView, at point: NSPoint?) {
-            guard !contextMenuOpen else { return }
-            guard let point, let link = view.link(at: point) else {
-                NSCursor.iBeam.set()
-                pendingURL = nil
-                showTicket += 1
-                scheduleClose(view)
-                return
-            }
-            NSCursor.pointingHand.set()
-            cancelClose()
-            view.underline(link.range)
-            underlined = link.range
-            if shownURL == link.url, cardShown { return }
-            if pendingURL == link.url { return }
-            if cardShown { closeCard() }
-            pendingURL = link.url
-            showTicket += 1
-            let ticket = showTicket
-            let preview = preview(for: link.url, label: link.label)
-            let rect = link.rect
-            Task { @MainActor [weak self, weak view] in
-                try? await Task.sleep(for: .milliseconds(500))
-                guard let self, let view, self.showTicket == ticket, self.pendingURL == link.url else { return }
-                self.present(preview, url: link.url, rect: rect, in: view)
-            }
-        }
-
-        func hoverExited(_ view: CiteTextView) {
-            NSCursor.iBeam.set()
-            scheduleClose(view)
-        }
-
-        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-            guard let url = CiteLink.url(from: link) else { return false }
-            onOpen(url)
-            close(textView)
-            return true
-        }
-
-        private func scheduleClose(_ view: NSTextView?) {
-            closeTicket += 1
-            let ticket = closeTicket
-            Task { @MainActor [weak self, weak view] in
-                try? await Task.sleep(for: .milliseconds(250))
-                guard let self, self.closeTicket == ticket, !self.pointerInsideCard else { return }
-                self.close(view)
-            }
-        }
-
-        private func cancelClose() {
-            closeTicket += 1
-        }
-
-        private func present(_ preview: CitePreview, url: URL, rect: CGRect, in view: CiteTextView) {
-            pendingURL = nil
-            shownURL = url
-            let card = self.card ?? makeCard()
-            card.host.rootView = AnyView(CitePreviewCard(preview: preview, onOpen: { [weak self, weak view] in
-                self?.onOpen(url)
-                self?.close(view)
-            }, onInside: { [weak self, weak view] inside in
-                guard let self else { return }
-                self.pointerInsideCard = inside
-                if inside { self.cancelClose() } else { self.scheduleClose(view) }
-            }))
-            card.popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
-        }
-
-        private func makeCard() -> (popover: NSPopover, host: NSHostingController<AnyView>) {
-            let popover = NSPopover()
-            let host = NSHostingController(rootView: AnyView(EmptyView()))
-            popover.behavior = .applicationDefined
-            popover.animates = false
-            host.sizingOptions = .preferredContentSize
-            popover.contentViewController = host
-            card = (popover, host)
-            return (popover, host)
-        }
-
-        private func closeCard() {
-            shownURL = nil
-            if let popover = card?.popover, popover.isShown { popover.performClose(nil) }
-        }
-
-        private func close(_ view: NSTextView?) {
-            pendingURL = nil
-            showTicket += 1
-            pointerInsideCard = false
-            if let cite = view as? CiteTextView {
-                cite.clearUnderline()
-            }
-            underlined = nil
-            closeCard()
-        }
-
-        private func preview(for url: URL, label: String) -> CitePreview {
-            if let citation = citation(for: url) {
-                let web = url.scheme == "http" || url.scheme == "https"
-                let host = web ? CiteLink.host(url) : ""
-                let title = citation.title.isEmpty || citation.title == host || citation.title == citation.url ? label : citation.title
-                let detail = citation.detail == title || citation.detail == host || citation.detail == citation.url ? "" : citation.detail
-                return CitePreview(title: title, host: host, detail: detail, symbol: citation.symbolName, url: url)
-            }
-            return CitePreview(
-                title: label,
-                host: CiteLink.host(url),
-                detail: "",
-                symbol: ChatCitation.symbolName(title: label, detail: "", url: url.absoluteString),
-                url: url
-            )
-        }
-
-        private func citation(for url: URL) -> ChatCitation? {
-            if url.scheme == "nomi-cite", let id = UUID(uuidString: url.host ?? "") {
-                return citations.first { $0.id == id }
-            }
-            return citations.first { citation in
-                guard let raw = citation.url, let parsed = URL(string: raw) else { return false }
-                return parsed.absoluteString == url.absoluteString
-            }
-        }
-
-        private func stopFade() {
-            fadeTimer?.invalidate()
-            fadeTimer = nil
-            born.removeAll()
-            baseColors.removeAll()
-            baseImages.removeAll()
-        }
-
-        private func syncBirths(from old: String, to new: String) {
-            let oldText = old as NSString
-            let newText = new as NSString
-            let limit = min(oldText.length, newText.length)
-            var prefix = 0
-            while prefix < limit, oldText.character(at: prefix) == newText.character(at: prefix) {
-                prefix += 1
-            }
-            born = born.filter { $0.key < prefix }
-            baseColors = baseColors.filter { $0.key < prefix }
-            baseImages = baseImages.filter { $0.key < prefix }
-            let extra = newText.length - prefix
-            guard extra > 0 else { return }
-            let now = Date().timeIntervalSinceReferenceDate
-            let lagCap = 0.16
-            var cursor = born.values.max() ?? now
-            if cursor < now { cursor = now }
-            if cursor > now + lagCap {
-                for index in born.keys where (born[index] ?? 0) > now {
-                    born[index] = now
-                }
-                cursor = now
-            }
-            let room = max(0, now + lagCap - cursor)
-            let step = extra > 1 ? min(0.012, room / Double(extra)) : 0
-            for offset in 0..<extra {
-                born[prefix + offset] = cursor + Double(offset) * step
-            }
-        }
-
-        private func rememberBases(_ text: NSAttributedString) {
-            for index in born.keys where index < text.length {
-                if baseColors[index] == nil {
-                    baseColors[index] = text.attribute(.foregroundColor, at: index, effectiveRange: nil) as? NSColor
-                }
-                if baseImages[index] == nil,
-                   let attachment = text.attribute(.attachment, at: index, effectiveRange: nil) as? NSTextAttachment,
-                   let image = attachment.image {
-                    baseImages[index] = image
-                }
-            }
-        }
-
-        private func opacity(at index: Int, now: TimeInterval) -> CGFloat {
-            guard let birth = born[index] else { return 1 }
-            let t = (now - birth) / fadeDuration
-            if t >= 1 { return 1 }
-            if t <= 0 { return 0 }
-            return CGFloat(1 - (1 - t) * (1 - t))
-        }
-
-        @discardableResult
-        private func paintFade(in view: CiteTextView) -> Bool {
-            guard let storage = view.textStorage else { return false }
-            let now = Date().timeIntervalSinceReferenceDate
-            var pending = false
-            var firstAffected = storage.length
-            var lastAffected = 0
-            storage.beginEditing()
-            var finished: [Int] = []
-            for index in born.keys where index < storage.length {
-                let alpha = opacity(at: index, now: now)
-                let range = NSRange(location: index, length: 1)
-                firstAffected = min(firstAffected, index)
-                lastAffected = max(lastAffected, index + 1)
-                if alpha >= 0.999 {
-                    if let color = baseColors[index] {
-                        storage.addAttribute(.foregroundColor, value: color, range: range)
-                    }
-                    if let image = baseImages[index],
-                       let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil) as? NSTextAttachment {
-                        attachment.image = image
-                    }
-                    finished.append(index)
-                    continue
-                }
-                pending = true
-                if let color = baseColors[index] {
-                    storage.addAttribute(.foregroundColor, value: color.withAlphaComponent(color.alphaComponent * alpha), range: range)
-                }
-                if let image = baseImages[index],
-                   let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil) as? NSTextAttachment {
-                    attachment.image = faded(image, alpha: alpha)
-                }
-            }
-            storage.endEditing()
-            if let layout = view.layoutManager, firstAffected < lastAffected {
-                layout.invalidateDisplay(forCharacterRange: NSRange(location: firstAffected, length: lastAffected - firstAffected))
-            }
-            for index in finished {
-                born[index] = nil
-                baseColors[index] = nil
-                baseImages[index] = nil
-            }
-            return pending
-        }
-
-        private func faded(_ image: NSImage, alpha: CGFloat) -> NSImage {
-            let result = NSImage(size: image.size)
-            result.lockFocus()
-            image.draw(in: NSRect(origin: .zero, size: image.size), from: .zero, operation: .sourceOver, fraction: max(alpha, 0))
-            result.unlockFocus()
-            return result
-        }
-
-        private func scheduleFade() {
-            guard fadeTimer == nil else { return }
-            let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] timer in
-                let finished = MainActor.assumeIsolated { () -> Bool in
-                    guard let self, let view = self.textView else { return true }
-                    return !self.paintFade(in: view)
-                }
-                guard finished else { return }
-                timer.invalidate()
-                MainActor.assumeIsolated {
-                    self?.fadeTimer = nil
-                    self?.born.removeAll()
-                    self?.baseColors.removeAll()
-                    self?.baseImages.removeAll()
-                }
-            }
-            fadeTimer = timer
-            RunLoop.main.add(timer, forMode: .common)
-        }
-
-        private func decorated(_ source: AttributedString, color: NSColor, maxWidth: CGFloat) -> NSAttributedString {
-            let text = NSMutableAttributedString(attributedString: NSAttributedString(source))
-            widthSensitive = replaceMath(in: text, maxWidth: maxWidth)
-            var ranges: [NSRange] = []
-            text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
-                if value != nil { ranges.append(range) }
-            }
-            for range in ranges.reversed() {
-                guard let url = CiteLink.url(from: text.attribute(.link, at: range.location, effectiveRange: nil)) else { continue }
-                let label = text.attributedSubstring(from: range).string
-                let font = text.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 15)
-                let icon = icon(url: url, label: label, font: font, color: color)
-                let gap = leadingGap(in: text, before: range.location, font: font)
-                text.insert(gap, at: range.location)
-                text.insert(icon, at: range.location + gap.length)
-                let whole = NSRange(location: range.location + gap.length, length: range.length + icon.length)
-                text.addAttribute(.link, value: url, range: whole)
-                text.addAttribute(.foregroundColor, value: color, range: whole)
-                text.addAttribute(.cursor, value: NSCursor.pointingHand, range: whole)
-                text.removeAttribute(.underlineStyle, range: whole)
-            }
-            return text
-        }
-
-        @discardableResult
-        private func replaceMath(in text: NSMutableAttributedString, maxWidth: CGFloat) -> Bool {
-            let ink = colorScheme == .dark ? NSColor(hex: 0xE6E8EB) : NSColor(hex: 0x111418)
-            var found: [(NSRange, URL)] = []
-            text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
-                guard let url = CiteLink.url(from: value), url.scheme == "nomi-math" else { return }
-                found.append((range, url))
-            }
-            let centers = found.count == 1 && found[0].0.location == 0 && found[0].0.length == text.length
-                && MathFormula.latex(from: found[0].1)?.display == true
-            for (range, url) in found.reversed() {
-                guard let parsed = MathFormula.latex(from: url) else { continue }
-                let font = text.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 15)
-                let fontSize = parsed.display ? 18 : font.pointSize
-                if let raster = MathRaster.raster(latex: parsed.latex, fontSize: fontSize, color: ink, display: parsed.display, maxWidth: maxWidth) {
-                    let attachment = NSTextAttachment()
-                    attachment.image = raster.image
-                    attachment.bounds = CGRect(x: 0, y: -raster.descent, width: raster.image.size.width, height: raster.image.size.height)
-                    text.replaceCharacters(in: range, with: NSAttributedString(attachment: attachment))
-                } else {
-                    text.replaceCharacters(in: range, with: NSAttributedString(string: parsed.latex, attributes: [
-                        .font: NSFont.monospacedSystemFont(ofSize: max(font.pointSize - 1, 12), weight: .regular),
-                        .foregroundColor: ink,
-                    ]))
-                }
-            }
-            if centers, text.length > 0 {
-                let style = NSMutableParagraphStyle()
-                style.alignment = .center
-                text.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: text.length))
-            }
-            return !found.isEmpty
-        }
-
-        /// One ordinary space before a link that sits against the previous word. The space stays outside the link.
-        private func leadingGap(in text: NSAttributedString, before index: Int, font: NSFont) -> NSAttributedString {
-            guard index > 0 else { return NSAttributedString() }
-            let previous = (text.string as NSString).substring(with: NSRange(location: index - 1, length: 1))
-            guard previous.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else { return NSAttributedString() }
-            let color = text.attribute(.foregroundColor, at: index - 1, effectiveRange: nil) as? NSColor ?? NSColor.labelColor
-            let gapFont = text.attribute(.font, at: index - 1, effectiveRange: nil) as? NSFont ?? font
-            return NSAttributedString(string: " ", attributes: [.font: gapFont, .foregroundColor: color])
-        }
-
-        func menu(for url: URL) -> NSMenu {
-            if url.isFileURL { return AnswerMenus.file(url) }
-            if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
-                return AnswerMenus.link(url)
-            }
-            let menu = NSMenu()
-            menu.autoenablesItems = false
-            let item = NSMenuItem(title: tr("打开"), action: #selector(CiteTextView.openHoveredLink(_:)), keyEquivalent: "")
-            item.target = textView
-            item.isEnabled = true
-            item.representedObject = url
-            menu.addItem(item)
-            return menu
-        }
-
-        private func icon(url: URL, label: String, font: NSFont, color: NSColor) -> NSAttributedString {
-            let symbol = url.isFileURL
-                ? ChatFiles.symbol(for: url)
-                : (citation(for: url)?.symbolName ?? ChatCitation.symbolName(title: label, detail: "", url: url.absoluteString))
-            let config = NSImage.SymbolConfiguration(pointSize: font.pointSize * 0.86, weight: .semibold)
-            guard let symbolImage = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config) else {
-                return NSAttributedString()
-            }
-            let image = NSImage(size: symbolImage.size, flipped: false) { rect in
-                color.setFill()
-                rect.fill()
-                symbolImage.draw(in: rect, from: .zero, operation: .destinationIn, fraction: 1)
-                return true
-            }
-            image.isTemplate = false
-            let attachment = NSTextAttachment()
-            attachment.image = image
-            // Same vertical center as the old capsule: the symbol sits in the middle of the line, not on the baseline.
-            let y = (font.ascender + font.descender - image.size.height) / 2
-            attachment.bounds = CGRect(x: 0, y: y, width: image.size.width, height: image.size.height)
-            let result = NSMutableAttributedString(attachment: attachment)
-            result.append(NSAttributedString(string: "\u{2009}", attributes: [.font: font]))
-            return result
-        }
-    }
-}
-
-private final class CiteTextView: NSTextView {
-    weak var hover: CiteText.Coordinator?
-    private var tracking: NSTrackingArea?
-    private var underlined: NSRange?
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        window?.acceptsMouseMovedEvents = true
-    }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .iBeam)
-        guard let layoutManager, let container = textContainer, let storage = textStorage, storage.length > 0 else { return }
-        layoutManager.ensureLayout(for: container)
-        let origin = textContainerOrigin
-        storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
-            guard value != nil, range.length > 0 else { return }
-            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            layoutManager.enumerateEnclosingRects(
-                forGlyphRange: glyphs,
-                withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
-                in: container
-            ) { rect, _ in
-                var hit = rect
-                hit.origin.x += origin.x
-                hit.origin.y += origin.y
-                self.addCursorRect(hit, cursor: .pointingHand)
-            }
-        }
-    }
-
-    override func cursorUpdate(with event: NSEvent) {
-        if link(at: convert(event.locationInWindow, from: nil)) == nil {
-            NSCursor.iBeam.set()
-        } else {
-            NSCursor.pointingHand.set()
-        }
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        hover?.hoverMoved(self, at: convert(event.locationInWindow, from: nil))
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        hover?.hoverExited(self)
-    }
-
-    override func rightMouseDown(with event: NSEvent) {
-        hover?.beginContextMenu()
-        super.rightMouseDown(with: event)
-        hover?.endContextMenu()
-    }
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        let point = convert(event.locationInWindow, from: nil)
-        if let link = link(at: point) {
-            return hover?.menu(for: link.url)
-        }
-        return super.menu(for: event)
-    }
-
-    @objc func openHoveredLink(_ sender: NSMenuItem) {
-        guard let url = sender.representedObject as? URL else { return }
-        hover?.onOpen(url)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        drawDottedUnderline()
-    }
-
-    override func layout() {
-        super.layout()
-        window?.invalidateCursorRects(for: self)
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        guard let container = textContainer else { return }
-        if abs(container.containerSize.width - newSize.width) > 0.5 {
-            container.containerSize = NSSize(width: max(newSize.width, 1), height: CGFloat.greatestFiniteMagnitude)
-            layoutManager?.ensureLayout(for: container)
-        }
-        window?.invalidateCursorRects(for: self)
-    }
-
-    func link(at point: NSPoint) -> (range: NSRange, rect: CGRect, url: URL, label: String)? {
-        guard let layoutManager, let container = textContainer, let storage = textStorage, storage.length > 0 else { return nil }
-        let origin = textContainerOrigin
-        let local = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
-        let index = layoutManager.characterIndex(for: local, in: container, fractionOfDistanceBetweenInsertionPoints: nil)
-        guard index < storage.length else { return nil }
-        var range = NSRange()
-        guard let url = CiteLink.url(from: storage.attribute(.link, at: index, effectiveRange: &range)) else { return nil }
-        let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-        var hit: CGRect?
-        layoutManager.enumerateEnclosingRects(
-            forGlyphRange: glyphs,
-            withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
-            in: container
-        ) { rect, stop in
-            var box = rect
-            box.origin.x += origin.x
-            box.origin.y += origin.y
-            let padded = box.insetBy(dx: -2, dy: -1)
-            if padded.contains(point) {
-                hit = box
-                stop.pointee = true
-            }
-        }
-        guard let hit else { return nil }
-        let label = storage.attributedSubstring(from: range).string.replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespaces)
-        return (range, hit, url, label)
-    }
-
-    func underline(_ range: NSRange) {
-        if underlined == range { return }
-        underlined = range
-        needsDisplay = true
-    }
-
-    func clearUnderline() {
-        guard underlined != nil else { return }
-        underlined = nil
-        needsDisplay = true
-    }
-
-    /// Round dots, in the same color as the link text.
-    private func drawDottedUnderline() {
-        guard let underlined, let layoutManager, let container = textContainer, let storage = textStorage,
-              underlined.length > 0, NSMaxRange(underlined) <= storage.length else { return }
-        layoutManager.ensureLayout(for: container)
-        let origin = textContainerOrigin
-        storage.enumerateAttribute(.attachment, in: underlined) { value, subrange, _ in
-            guard value == nil, subrange.length > 0 else { return }
-            let color = storage.attribute(.foregroundColor, at: subrange.location, effectiveRange: nil) as? NSColor ?? .labelColor
-            let font = storage.attribute(.font, at: subrange.location, effectiveRange: nil) as? NSFont ?? .systemFont(ofSize: 15)
-            let glyphs = layoutManager.glyphRange(forCharacterRange: subrange, actualCharacterRange: nil)
-            guard glyphs.length > 0 else { return }
-            layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { lineRect, _, _, lineGlyphs, _ in
-                let slice = NSIntersectionRange(glyphs, lineGlyphs)
-                guard slice.length > 0 else { return }
-                let bounds = layoutManager.boundingRect(forGlyphRange: slice, in: container)
-                let baseline = origin.y + lineRect.minY + layoutManager.location(forGlyphAt: slice.location).y
-                let drop = max(-font.underlinePosition, 1)
-                color.setFill()
-                self.fillDots(from: origin.x + bounds.minX, to: origin.x + bounds.maxX, centerY: baseline + drop)
-            }
-        }
-    }
-
-    private func fillDots(from left: CGFloat, to right: CGFloat, centerY: CGFloat) {
-        let diameter: CGFloat = 1.5
-        let pitch: CGFloat = 2.5
-        guard right - left >= diameter * 0.6 else { return }
-        var center = left + diameter / 2
-        let limit = right - diameter / 2
-        while center <= limit + 0.01 {
-            NSBezierPath(ovalIn: NSRect(x: center - diameter / 2, y: centerY - diameter / 2, width: diameter, height: diameter)).fill()
-            center += pitch
-        }
     }
 }
