@@ -7,6 +7,8 @@ struct AppShell: View {
     @State private var visitedPages: Set<AppPage> = []
 
     private var compact: Bool { model.meetingCompact && model.openMeetingID != nil }
+    /// The standard macOS title bar, which the hidden title bar style leaves as an empty strip.
+    static let titleBarHeight: CGFloat = 28
 
     var body: some View {
         ZStack {
@@ -15,6 +17,16 @@ struct AppShell: View {
                     .transition(.opacity)
             } else {
                 browser
+                    .overlay(alignment: .top) {
+                        // The strip beside the window buttons, where the hidden title bar was:
+                        // drag to move, double-click to fill the screen and back.
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .frame(height: Self.titleBarHeight)
+                            .windowBarGestures()
+                            .ignoresSafeArea(edges: .top)
+                            .offset(y: -Self.titleBarHeight)
+                    }
                     .transition(.opacity)
             }
         }
