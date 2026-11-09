@@ -130,10 +130,11 @@ struct AskView: View {
                                         .equatable()
                                     if model.preparingVisualTurnIDs.contains(turn.id) {
                                         HStack(spacing: Space.s2) {
-                                            ProgressView().controlSize(.small)
+                                            LeafOrbit(size: 16)
                                             Text(tr("正在准备图示…"))
                                                 .font(AppFont.secondary)
                                                 .foregroundStyle(AppColor.textSecondary)
+                                                .shimmering()
                                         }
                                     }
                                 }
@@ -568,12 +569,18 @@ struct AskView: View {
                     }
                 }
             }
+            AnswerStepsView(steps: run.steps, thinking: run.thinking)
+                .frame(maxWidth: 680, alignment: .leading)
             if run.answer.isEmpty {
-                HStack(spacing: Space.s2) {
-                    ProgressView().controlSize(.small)
-                    Text(tr("正在回答…"))
-                        .font(AppFont.secondary)
-                        .foregroundStyle(AppColor.textSecondary)
+                // Before the first step starts (a local model waiting for its worker, say).
+                if !run.steps.contains(where: \.isRunning) {
+                    HStack(spacing: Space.s2) {
+                        LeafOrbit(size: 18)
+                        Text(tr("正在回答…"))
+                            .font(AppFont.secondary)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .shimmering()
+                    }
                 }
             } else {
                 AnswerBody(source: run.answer, streaming: true, citations: run.citations) { citation in
@@ -861,6 +868,9 @@ private struct AskTurnRow: View, Equatable {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             } else if !turn.answer.isEmpty {
+                if turn.steps != nil || turn.answerSeconds != nil {
+                    AnswerStepsFold(steps: turn.steps ?? [], seconds: turn.answerSeconds)
+                }
                 AnswerBody(source: turn.answer, citations: turn.citations) { citation in
                     onOpenCitation(citation)
                 }

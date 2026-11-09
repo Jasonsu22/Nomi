@@ -79,8 +79,8 @@ struct MeetingAssistantPanel: View {
             }
             HStack {
                 if state?.isGenerating == true {
-                    ProgressView().controlSize(.small)
-                    Text(tr("正在生成…")).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
+                    LeafOrbit(size: 16)
+                    Text(tr("正在生成…")).font(AppFont.caption).foregroundStyle(AppColor.textSecondary).shimmering()
                 }
                 Spacer()
                 Button(summary ? (shownSummary == nil ? tr("生成摘要") : tr("重新生成")) : tr("发送")) {

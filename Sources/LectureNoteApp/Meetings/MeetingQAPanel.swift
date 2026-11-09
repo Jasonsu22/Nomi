@@ -76,7 +76,7 @@ struct MeetingQAPanel: View {
         } label: {
             Group {
                 if qa.scanning {
-                    ProgressView().controlSize(.small)
+                    LeafOrbit(size: 18)
                 } else {
                     Image(systemName: "text.magnifyingglass")
                 }
@@ -203,8 +203,8 @@ private struct QuestionCard: View {
             Text(tr("排队中")).font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
         case .answering:
             HStack(spacing: 4) {
-                ProgressView().controlSize(.mini)
-                Text(tr("正在回答…"))
+                LeafOrbit(size: 13)
+                Text(tr("正在回答…")).shimmering()
             }
             .font(AppFont.caption)
             .foregroundStyle(AppColor.textSecondary)
