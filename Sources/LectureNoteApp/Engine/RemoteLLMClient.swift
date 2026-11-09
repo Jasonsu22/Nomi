@@ -38,8 +38,14 @@ enum RemoteLLMClient {
         }
     }
 
-    /// Sends the chat request. An empty reply is sometimes a passing service hiccup,
-    /// so it is sent once more before the error reaches the user.
+    /// A service's error reply, with the status and its own message so a retry can tell what it refused.
+    struct HTTPFailure: LocalizedError {
+        var status: Int
+        var detail: String
+        var errorDescription: String? { trf("API 请求失败（HTTP %d）：%@", status, String(detail.prefix(400))) }
+    }
+
+    /// A single question without earlier turns or thinking, for summaries, demos and side tasks.
     static func generate(
         profile: LLMAPIProfile,
         key: String,
@@ -48,79 +54,107 @@ enum RemoteLLMClient {
         images: [ModelImage] = [],
         onUpdate: @escaping @MainActor (String) -> Void
     ) async throws -> String {
-        do {
-            return try await send(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
-        } catch is EmptyReply {
-            try Task.checkCancellation()
-            do {
-                return try await send(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
-            } catch var empty as EmptyReply {
-                empty.retried = true
-                throw empty
-            }
+        let request = LLMRequest.single(system: system, prompt: prompt, images: images)
+        return try await stream(profile: profile, key: key, request: request) { progress in
+            if !progress.answer.isEmpty { onUpdate(progress.answer) }
+        }.answer
+    }
+
+    /// Sends one request and streams the answer and the thinking.
+    /// - An empty reply is sometimes a passing hiccup, so it is sent once more.
+    /// - A service without Responses gets Chat Completions.
+    /// - A service that refuses thinking, usage reports or the cache key gets the request without them.
+    /// The result says which of these happened, so the profile can remember it.
+    static func stream(
+        profile: LLMAPIProfile,
+        key: String,
+        request: LLMRequest,
+        onProgress: @escaping @MainActor (LLMProgress) -> Void
+    ) async throws -> LLMResult {
+        var options = LLMRequestBody.Options()
+        var mode = profile.effectiveAPIMode
+        var responsesRejected = false
+        var emptyRetried = false
+        let started = Date()
+        let first = FirstToken()
+        let watched: @MainActor (LLMProgress) -> Void = { progress in
+            if first.date == nil { first.date = Date() }
+            onProgress(progress)
         }
+        var lastError: Error?
+        for _ in 0..<5 {
+            do {
+                var result = try await send(profile: profile, key: key, request: request, mode: mode, options: options, onProgress: watched)
+                result.responsesRejected = responsesRejected
+                result.thinkingRejected = request.thinking != .off && !options.thinking
+                RequestLog.record(.init(profile: profile, request: request, mode: mode, options: options, started: started,
+                                        firstToken: first.date, usage: result.usage, failure: nil))
+                return result
+            } catch let failure as HTTPFailure where mode == .responses && LLMRequestBody.lacksResponses(status: failure.status, message: failure.detail) {
+                mode = .chatCompletions
+                responsesRejected = true
+                lastError = failure
+            } catch let failure as HTTPFailure where LLMRequestBody.rejectsOption(status: failure.status, message: failure.detail) && (options.thinking || options.extras) {
+                let text = failure.detail.lowercased()
+                let aboutThinking = ["reasoning", "thinking", "effort"].contains { text.contains($0) }
+                if options.thinking && request.thinking != .off && (aboutThinking || !options.extras) {
+                    options.thinking = false
+                } else if options.extras {
+                    options.extras = false
+                } else {
+                    options.thinking = false
+                }
+                lastError = failure
+            } catch var empty as EmptyReply {
+                guard !emptyRetried else {
+                    empty.retried = true
+                    lastError = empty
+                    break
+                }
+                emptyRetried = true
+                lastError = empty
+            } catch {
+                lastError = error
+                break
+            }
+            try Task.checkCancellation()
+        }
+        let error = lastError ?? llmError(tr("模型未返回文字，请检查所选模型和接口格式。"))
+        RequestLog.record(.init(profile: profile, request: request, mode: mode, options: options, started: started,
+                                firstToken: first.date, usage: LLMUsage(), failure: error.localizedDescription))
+        throw error
     }
 
     private static func send(
         profile: LLMAPIProfile,
         key: String,
-        system: String,
-        prompt: String,
-        images: [ModelImage],
-        onUpdate: @escaping @MainActor (String) -> Void
-    ) async throws -> String {
+        request: LLMRequest,
+        mode: LLMAPIMode,
+        options: LLMRequestBody.Options,
+        onProgress: @escaping @MainActor (LLMProgress) -> Void
+    ) async throws -> LLMResult {
         let profile = try profile.validated()
-        var request = request(
-            profile: profile,
-            path: profile.format == .anthropic ? "messages" : "chat/completions",
-            key: key,
-            sendsJSON: true
-        )
-        let body: [String: Any]
-        if profile.format == .anthropic {
-            body = [
-                "model": profile.modelID,
-                "system": system,
-                "max_tokens": 8192,
-                "messages": [["role": "user", "content": anthropicContent(prompt: prompt, images: images)]],
-                "stream": true,
-            ]
-        } else {
-            var chat: [String: Any] = [
-                "model": profile.modelID,
-                "messages": [
-                    ["role": "system", "content": system],
-                    ["role": "user", "content": openAIContent(prompt: prompt, images: images, miniMax: isMiniMax(profile))],
-                ],
-                "stream": true,
-            ]
-            if host(of: profile) == "api.openai.com" {
-                chat["store"] = false
-            } else if isMiniMax(profile) {
-                // Omitting this uses a short server default and cuts the reply off. The value is that API's own maximum, so the model stops when it is finished.
-                chat["max_completion_tokens"] = miniMaxOutputCeiling(profile.modelID)
-            }
-            body = chat
-        }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let made = LLMRequestBody.make(profile: profile, request: request, mode: mode, options: options)
+        var urlRequest = self.request(profile: profile, path: made.path, key: key, sendsJSON: true)
+        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: made.body)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 60
         configuration.timeoutIntervalForResource = 3600
         let session = URLSession(configuration: configuration, delegate: SameOriginRedirects(), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
-        let (bytes, response) = try await session.bytes(for: request)
+        let (bytes, response) = try await session.bytes(for: urlRequest)
         let http = response as? HTTPURLResponse
         let code = http?.statusCode ?? 0
         let type = http?.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
         if !(200..<300).contains(code) || (type.contains("json") && !type.contains("event-stream")) {
             let data = try await data(from: bytes)
             if !(200..<300).contains(code) { throw failure(data, code: code, key: key) }
-            return try await complete(data, status: code, key: key, onUpdate: onUpdate)
+            return try await complete(data, status: code, key: key, onProgress: onProgress)
         }
-        return try await events(bytes, status: code, key: key, onUpdate: onUpdate)
+        return try await events(bytes, status: code, key: key, waitsForUsage: options.extras, onProgress: onProgress)
     }
 
-    private static func events(_ bytes: URLSession.AsyncBytes, status: Int, key: String, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
+    private static func events(_ bytes: URLSession.AsyncBytes, status: Int, key: String, waitsForUsage: Bool, onProgress: @escaping @MainActor (LLMProgress) -> Void) async throws -> LLMResult {
         var iterator = bytes.lines.makeAsyncIterator()
         var pending: String?
         while let line = try await iterator.next() {
@@ -129,15 +163,17 @@ enum RemoteLLMClient {
             if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
                 var raw = line
                 while let more = try await iterator.next() { raw += "\n" + more }
-                return try await complete(Data(raw.utf8), status: status, key: key, onUpdate: onUpdate)
+                return try await complete(Data(raw.utf8), status: status, key: key, onProgress: onProgress)
             }
             pending = line
             break
         }
         var accumulator = ChatStream.Accumulator()
         var last = Date.distantPast
-        var shown = ""
+        var shown = LLMProgress()
         var pendingLine = pending
+        // Chat Completions reports usage in one more event after the finish reason.
+        var linesAfterFinish = 0
         while true {
             let line: String
             if let queued = pendingLine {
@@ -149,40 +185,47 @@ enum RemoteLLMClient {
                 break
             }
             try Task.checkCancellation()
+            var done = false
             switch ChatStream.line(line) {
             case .skip:
                 continue
             case .done:
                 accumulator.finished = true
+                done = true
             case .payload(let payload):
                 guard let object = ChatStream.object(from: payload) else { continue }
                 if let message = accumulator.apply(object) {
                     throw llmError(redacted(message, key: key))
                 }
             }
-            let text = accumulator.display
-            if text != shown, !text.isEmpty, Date().timeIntervalSince(last) >= 0.05 {
+            let progress = LLMProgress(answer: accumulator.display, thinking: accumulator.thinking)
+            if progress != shown, !(progress.answer.isEmpty && progress.thinking.isEmpty), Date().timeIntervalSince(last) >= 0.05 {
                 last = Date()
-                shown = text
-                await MainActor.run { onUpdate(text) }
+                shown = progress
+                await MainActor.run { onProgress(progress) }
             }
-            if accumulator.finished { break }
+            if done { break }
+            if accumulator.finished {
+                linesAfterFinish += 1
+                if !waitsForUsage || accumulator.usage.input != nil || linesAfterFinish > 3 { break }
+            }
         }
         accumulator.finished = true
         let answer = accumulator.answer
         guard !answer.isEmpty else {
             throw EmptyReply(status: status, events: accumulator.events, finishReason: accumulator.finishReason)
         }
-        if answer != shown { await MainActor.run { onUpdate(answer) } }
-        return answer
+        let final = LLMProgress(answer: answer, thinking: accumulator.thinking)
+        if final != shown { await MainActor.run { onProgress(final) } }
+        return LLMResult(answer: answer, thinking: accumulator.thinking, usage: accumulator.usage)
     }
 
-    private static func complete(_ data: Data, status: Int, key: String, onUpdate: @escaping @MainActor (String) -> Void) async throws -> String {
+    private static func complete(_ data: Data, status: Int, key: String, onProgress: @escaping @MainActor (LLMProgress) -> Void) async throws -> LLMResult {
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw failure(data, code: 200, key: key)
         }
         if let failure = serviceFailure(in: object) {
-            throw llmError(redacted(trf("API 请求失败（HTTP %d）：%@", 200, String(failure.prefix(400))), key: key))
+            throw HTTPFailure(status: 200, detail: redacted(failure, key: key))
         }
         var accumulator = ChatStream.Accumulator()
         if let message = accumulator.apply(object) {
@@ -193,8 +236,9 @@ enum RemoteLLMClient {
         guard !answer.isEmpty else {
             throw EmptyReply(status: status, events: accumulator.events, finishReason: accumulator.finishReason)
         }
-        await MainActor.run { onUpdate(answer) }
-        return answer
+        let progress = LLMProgress(answer: answer, thinking: accumulator.thinking)
+        await MainActor.run { onProgress(progress) }
+        return LLMResult(answer: answer, thinking: accumulator.thinking, usage: accumulator.usage)
     }
 
     private static func data(from bytes: URLSession.AsyncBytes) async throws -> Data {
@@ -205,10 +249,10 @@ enum RemoteLLMClient {
 
     private static func failure(_ data: Data, code: Int, key: String) -> Error {
         if let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let message = serviceFailure(in: object) {
-            return llmError(redacted(trf("API 请求失败（HTTP %d）：%@", code, String(message.prefix(400))), key: key))
+            return HTTPFailure(status: code, detail: redacted(message, key: key))
         }
         let raw = String(data: data, encoding: .utf8) ?? ""
-        return llmError(redacted(trf("API 请求失败（HTTP %d）：%@", code, String(raw.prefix(400))), key: key))
+        return HTTPFailure(status: code, detail: redacted(String(raw.prefix(2000)), key: key))
     }
 
     private static func request(profile: LLMAPIProfile, path: String, key: String, sendsJSON: Bool) -> URLRequest {
@@ -248,19 +292,6 @@ enum RemoteLLMClient {
             ])
         }
         return parts
-    }
-
-    private static func host(of profile: LLMAPIProfile) -> String {
-        URL(string: profile.baseURL)?.host?.lowercased() ?? ""
-    }
-
-    private static func isMiniMax(_ profile: LLMAPIProfile) -> Bool {
-        host(of: profile).contains("minimax")
-    }
-
-    /// MiniMax stops a reply at this budget. M3 can use 512K; other models on that API can use 200K.
-    private static func miniMaxOutputCeiling(_ modelID: String) -> Int {
-        modelID.lowercased().contains("m3") ? 524_288 : 204_800
     }
 
     private static func perform(_ request: URLRequest, key: String) async throws -> [String: Any] {
@@ -306,6 +337,11 @@ enum RemoteLLMClient {
         guard !key.isEmpty else { return message }
         return message.replacingOccurrences(of: key, with: "••••")
     }
+}
+
+/// When the first thinking or answer text arrived. Written on the main actor while streaming, read after.
+private final class FirstToken: @unchecked Sendable {
+    var date: Date?
 }
 
 private final class SameOriginRedirects: NSObject, URLSessionTaskDelegate, Sendable {

@@ -8,8 +8,38 @@ struct HistoryWindow: Equatable, Sendable {
     var includedTurns: Set<UUID>
     /// Answered turns older than the window that the prompt does not show.
     var omittedOlderTurns: Int
+    /// The shown turns, oldest first, as separate question and answer texts for API messages.
+    var turns: [HistoryTurn] = []
+    /// The running summary block, empty when there is none.
+    var summary = ""
 
     static let empty = HistoryWindow(text: "", includedTurns: [], omittedOlderTurns: 0)
+
+    /// Earlier turns as real user and assistant messages. The summary leads the first question.
+    /// The last message is marked for Anthropic's cache, so the next question rereads all of it cheaply.
+    var messages: [LLMMessage] {
+        var result: [LLMMessage] = []
+        for (index, turn) in turns.enumerated() {
+            let lead = index == 0 && !summary.isEmpty ? summary + "\n\n" : ""
+            result.append(LLMMessage(role: .user, text: lead + turn.question))
+            result.append(LLMMessage(role: .assistant, text: turn.answer))
+        }
+        if !result.isEmpty { result[result.count - 1].cacheMark = true }
+        return result
+    }
+
+    /// The same window for a request that sends `messages`: only the summary stays in the prompt,
+    /// and only when no turn carries it.
+    var forMessages: HistoryWindow {
+        var copy = self
+        copy.text = turns.isEmpty ? summary : ""
+        return copy
+    }
+}
+
+struct HistoryTurn: Equatable, Sendable {
+    var question: String
+    var answer: String
 }
 
 /// Chooses and trims earlier turns so a follow-up still sees what was said, within the model's budget.
@@ -24,23 +54,34 @@ enum ChatHistory {
         budget: ContextBudget,
         summary: ChatSummary? = nil,
         omittedImageTurns: Set<UUID> = [],
-        dated: Bool = true
+        dated: Bool = true,
+        stableStart: Bool = false
     ) -> HistoryWindow {
         let answered = answeredTurns(turns)
         let summaryBlock = summary.map { "Summary of earlier conversation (reference only):\n\($0.text)" } ?? ""
         let room = max(budget.history / 2, budget.history - summaryBlock.count)
-        var shown: [(UUID, String)] = []
+        var shown: [(UUID, String, HistoryTurn)] = []
         var used = 0
         for turn in answered.reversed() {
-            var text = render(turn, answerLimit: budget.turnAnswer, image: omittedImageTurns.contains(turn.id), dated: dated)
+            let image = omittedImageTurns.contains(turn.id)
+            var answerLimit = budget.turnAnswer
+            var text = render(turn, answerLimit: answerLimit, image: image, dated: dated)
             if shown.isEmpty, text.count > room {
-                let answerRoom = max(200, room - min(turn.question.count, questionLimit) - 60)
-                text = render(turn, answerLimit: answerRoom, image: omittedImageTurns.contains(turn.id), dated: dated)
+                answerLimit = max(200, room - min(turn.question.count, questionLimit) - 60)
+                text = render(turn, answerLimit: answerLimit, image: image, dated: dated)
             } else if !shown.isEmpty, used + text.count > room {
                 break
             }
-            shown.append((turn.id, text))
+            shown.append((turn.id, text, messageParts(turn, answerLimit: answerLimit, image: image, dated: dated)))
             used += text.count
+        }
+        // Older turns leave in blocks of four rather than one per question, so several questions
+        // in a row start with the same turns and the service can reuse its cache.
+        // It only drops turns when at least half the window stays, so a small budget keeps its context.
+        if stableStart, shown.count > 1 {
+            let start = answered.count - shown.count
+            let keep = answered.count - (start + 3) / 4 * 4
+            if keep >= max(2, shown.count / 2), keep < shown.count { shown = Array(shown.prefix(keep)) }
         }
         guard !shown.isEmpty || !summaryBlock.isEmpty else { return .empty }
         var parts: [String] = []
@@ -53,7 +94,9 @@ enum ChatHistory {
         return HistoryWindow(
             text: parts.joined(separator: "\n\n"),
             includedTurns: Set(shown.map(\.0)),
-            omittedOlderTurns: max(0, older - covered)
+            omittedOlderTurns: max(0, older - covered),
+            turns: shown.reversed().map(\.2),
+            summary: summaryBlock
         )
     }
 
@@ -70,6 +113,16 @@ enum ChatHistory {
     /// One turn as it appears in a prompt.
     static func rendered(_ turn: ChatTurn, answerLimit: Int, dated: Bool = true) -> String {
         render(turn, answerLimit: answerLimit, image: false, dated: dated)
+    }
+
+    /// One turn as a question message and an answer message.
+    private static func messageParts(_ turn: ChatTurn, answerLimit: Int, image: Bool, dated: Bool) -> HistoryTurn {
+        let stamp = dated ? "[\(timeStamp(turn.createdAt))] " : ""
+        var question = stamp + trimmed(turn.question, limit: questionLimit)
+        if image { question += "\n用户发过一张图片" }
+        var answer = cleanedAnswer(turn.answer, limit: answerLimit)
+        if turn.interrupted == true { answer = "(Interrupted by the student.)\n" + answer }
+        return HistoryTurn(question: question, answer: answer)
     }
 
     private static func render(_ turn: ChatTurn, answerLimit: Int, image: Bool, dated: Bool) -> String {

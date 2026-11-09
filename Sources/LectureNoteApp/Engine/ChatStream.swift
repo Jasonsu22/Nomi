@@ -43,6 +43,22 @@ enum ChatStream {
         /// Parsed events and the last stop reason, reported when a reply comes back empty.
         var events = 0
         var finishReason: String?
+        var usage = LLMUsage()
+
+        /// What the model thought before answering: `reasoning_content`, a Responses reasoning
+        /// summary, Anthropic thinking, or a `<think>` block at the start of the text.
+        var thinking: String {
+            var parts: [String] = []
+            let own = reasoning.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !own.isEmpty { parts.append(own) }
+            if let start = content.range(of: "<think>") {
+                let rest = content[start.upperBound...]
+                let inner = rest.range(of: "</think>").map { rest[..<$0.lowerBound] } ?? rest
+                let text = inner.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty { parts.append(text) }
+            }
+            return parts.joined(separator: "\n\n")
+        }
 
         var display: String {
             let body = ChatStream.visible(content)
@@ -65,6 +81,7 @@ enum ChatStream {
         mutating func apply(_ object: [String: Any]) -> String? {
             events += 1
             noteFinishReason(object)
+            if object["type"] == nil, let used = object["usage"] as? [String: Any] { noteUsage(used) }
             if let message = Self.failure(in: object) { return message }
             if let kind = object["type"] as? String, apply(kind: kind, object: object) { return nil }
             if applyLocal(object) { return nil }
@@ -91,6 +108,8 @@ enum ChatStream {
                 guard let delta = object["delta"] as? [String: Any] else { return true }
                 if delta["type"] as? String == "text_delta", let text = delta["text"] as? String {
                     content += text
+                } else if delta["type"] as? String == "thinking_delta", let text = delta["thinking"] as? String {
+                    reasoning += text
                 } else if delta["type"] as? String == "citations_delta" {
                     addLink(delta["citation"] as? [String: Any])
                 }
@@ -98,10 +117,26 @@ enum ChatStream {
             case "response.output_text.delta":
                 if let text = object["delta"] as? String { content += text }
                 return true
+            case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+                if let text = object["delta"] as? String { reasoning += text }
+                return true
+            case "response.reasoning_summary_part.added":
+                if !reasoning.isEmpty { reasoning += "\n\n" }
+                return true
+            case "message_start":
+                if let used = (object["message"] as? [String: Any])?["usage"] as? [String: Any] { noteUsage(used) }
+                return true
+            case "message_delta":
+                if let used = object["usage"] as? [String: Any] { noteUsage(used) }
+                return true
             case "response.output_text.annotation.added":
                 addLink(object["annotation"] as? [String: Any])
                 return true
-            case "message_stop", "response.completed":
+            case "message_stop":
+                finished = true
+                return true
+            case "response.completed":
+                if let used = (object["response"] as? [String: Any])?["usage"] as? [String: Any] { noteUsage(used) }
                 finished = true
                 return true
             case "error":
@@ -141,6 +176,9 @@ enum ChatStream {
 
         private mutating func applyAnthropic(_ object: [String: Any]) -> Bool {
             guard object["choices"] == nil, let blocks = object["content"] as? [[String: Any]] else { return false }
+            let thoughts = blocks.filter { $0["type"] as? String == "thinking" }.compactMap { $0["thinking"] as? String }
+            if !thoughts.isEmpty { reasoning = thoughts.joined(separator: "\n\n") }
+            if let used = object["usage"] as? [String: Any] { noteUsage(used) }
             let texts = blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }
             guard !texts.isEmpty || blocks.contains(where: { ($0["type"] as? String) == "text" }) else { return false }
             content = texts.joined(separator: "\n")
@@ -154,6 +192,11 @@ enum ChatStream {
         private mutating func applyResponses(_ object: [String: Any]) -> Bool {
             guard let output = object["output"] as? [[String: Any]] else { return false }
             var parts: [String] = []
+            for item in output where item["type"] as? String == "reasoning" {
+                let summary = (item["summary"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
+                if !summary.isEmpty { reasoning = summary.joined(separator: "\n\n") }
+            }
+            if let used = object["usage"] as? [String: Any] { noteUsage(used) }
             for item in output where item["type"] as? String == "message" {
                 for block in item["content"] as? [[String: Any]] ?? [] {
                     if let text = block["text"] as? String { parts.append(text) }
@@ -163,6 +206,22 @@ enum ChatStream {
             content = parts.joined(separator: "\n")
             finished = true
             return true
+        }
+
+        /// Token counts in any of the services' shapes. Later reports fill in what earlier ones lacked.
+        private mutating func noteUsage(_ used: [String: Any]) {
+            func int(_ value: Any?) -> Int? { (value as? Int) ?? (value as? NSNumber)?.intValue }
+            let details = (used["prompt_tokens_details"] ?? used["input_tokens_details"]) as? [String: Any]
+            if let input = int(used["prompt_tokens"]) ?? int(used["input_tokens"]) {
+                // Anthropic counts cached input apart from `input_tokens`.
+                let anthropicCached = int(used["cache_read_input_tokens"]) ?? 0
+                let created = int(used["cache_creation_input_tokens"]) ?? 0
+                usage.input = input + anthropicCached + created
+            }
+            if let cached = int(details?["cached_tokens"]) ?? int(used["prompt_cache_hit_tokens"]) ?? int(used["cache_read_input_tokens"]) {
+                usage.cached = cached
+            }
+            if let output = int(used["completion_tokens"]) ?? int(used["output_tokens"]) { usage.output = output }
         }
 
         /// Chat Completions `finish_reason`, Anthropic `stop_reason`, or a Responses `status`.

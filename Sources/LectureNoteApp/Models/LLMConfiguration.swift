@@ -13,6 +13,36 @@ enum LLMAPIFormat: String, Codable, CaseIterable, Identifiable, Sendable {
     var title: String { self == .openAI ? tr("OpenAI 兼容") : "Anthropic Messages" }
 }
 
+/// Which OpenAI-style endpoint a profile talks to. Anthropic always uses Messages.
+enum LLMAPIMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case chatCompletions, responses
+    var id: String { rawValue }
+    var title: String { self == .chatCompletions ? "Chat Completions" : "Responses" }
+}
+
+/// How hard an API model thinks before it answers. Each provider gets its own parameter for it.
+enum ThinkingLevel: String, Codable, CaseIterable, Identifiable, Sendable {
+    case off, low, medium, high
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .off: tr("关")
+        case .low: tr("低")
+        case .medium: tr("中")
+        case .high: tr("高")
+        }
+    }
+    /// Anthropic's thinking budget for this level, in tokens.
+    var anthropicBudget: Int {
+        switch self {
+        case .off: 0
+        case .low: 2048
+        case .medium: 8000
+        case .high: 16000
+        }
+    }
+}
+
 struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
     var providerID = "custom"
@@ -24,6 +54,24 @@ struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
     /// How many characters one request may carry, for a model with a small window. Nil uses
     /// `ContextBudget.api`. Not shown in Settings; edit it for a model that rejects long prompts.
     var contextCharacters: Int?
+    var apiMode = LLMAPIMode.chatCompletions
+    var thinking = ThinkingLevel.low
+    /// The service answered 404 to Responses; requests use Chat Completions instead.
+    var responsesUnsupported = false
+    /// Models whose service rejected the thinking parameter; requests to them leave it out.
+    var noThinkingModels: [String] = []
+
+    var thinkingUnsupported: Bool { noThinkingModels.contains(modelID) }
+
+    /// The endpoint actually used: Anthropic and services without Responses use their own.
+    var effectiveAPIMode: LLMAPIMode {
+        format == .anthropic || responsesUnsupported ? .chatCompletions : apiMode
+    }
+
+    /// The thinking level actually sent.
+    var effectiveThinking: ThinkingLevel {
+        thinkingUnsupported ? .off : thinking
+    }
 
     init(
         id: UUID = UUID(),
@@ -45,6 +93,7 @@ struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, providerID, name, baseURL, modelID, format, savedModelIDs, contextCharacters
+        case apiMode, thinking, responsesUnsupported, noThinkingModels
     }
 
     init(from decoder: Decoder) throws {
@@ -57,6 +106,10 @@ struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
         format = try container.decodeIfPresent(LLMAPIFormat.self, forKey: .format) ?? .openAI
         savedModelIDs = try container.decodeIfPresent([String].self, forKey: .savedModelIDs) ?? []
         contextCharacters = try container.decodeIfPresent(Int.self, forKey: .contextCharacters)
+        apiMode = try container.decodeIfPresent(LLMAPIMode.self, forKey: .apiMode) ?? .chatCompletions
+        thinking = try container.decodeIfPresent(ThinkingLevel.self, forKey: .thinking) ?? .low
+        responsesUnsupported = try container.decodeIfPresent(Bool.self, forKey: .responsesUnsupported) ?? false
+        noThinkingModels = try container.decodeIfPresent([String].self, forKey: .noThinkingModels) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -69,6 +122,10 @@ struct LLMAPIProfile: Codable, Identifiable, Equatable, Sendable {
         try container.encode(format, forKey: .format)
         try container.encode(savedModelIDs, forKey: .savedModelIDs)
         try container.encodeIfPresent(contextCharacters, forKey: .contextCharacters)
+        try container.encode(apiMode, forKey: .apiMode)
+        try container.encode(thinking, forKey: .thinking)
+        if responsesUnsupported { try container.encode(true, forKey: .responsesUnsupported) }
+        if !noThinkingModels.isEmpty { try container.encode(noThinkingModels, forKey: .noThinkingModels) }
     }
 
     var isLoopback: Bool {
@@ -175,8 +232,16 @@ final class LLMConfiguration {
     }
 
     func save(_ draft: LLMAPIProfile, key: String) throws {
-        let value = try draft.validated()
+        var value = try draft.validated()
         let existing = profiles.first { $0.id == value.id }
+        // A new address may be a different service: let it try Responses and thinking again.
+        if let existing, existing.baseURL != value.baseURL {
+            value.responsesUnsupported = false
+            value.noThinkingModels = []
+        }
+        // Choosing a setting again in Settings tries it again.
+        if let existing, existing.apiMode != value.apiMode { value.responsesUnsupported = false }
+        if let existing, existing.thinking != value.thinking { value.noThinkingModels = [] }
         let replacement = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if !value.isLoopback && replacement.isEmpty {
             let kept = existing?.baseURL == value.baseURL ? ((try? LLMKeys.read(value)) ?? "") : ""
@@ -188,6 +253,15 @@ final class LLMConfiguration {
         else { profiles.append(value) }
         persist()
         if activeID == nil { activate(value.id) }
+    }
+
+    /// Records what a service turned out not to support, so later requests leave it out.
+    func noteUnsupported(profileID: UUID, responses: Bool, thinking: Bool) {
+        guard responses || thinking, let index = profiles.firstIndex(where: { $0.id == profileID }) else { return }
+        if responses { profiles[index].responsesUnsupported = true }
+        let model = profiles[index].modelID
+        if thinking, !profiles[index].noThinkingModels.contains(model) { profiles[index].noThinkingModels.append(model) }
+        persist()
     }
 
     func delete(_ profile: LLMAPIProfile) throws {

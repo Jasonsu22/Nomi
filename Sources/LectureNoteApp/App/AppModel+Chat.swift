@@ -308,20 +308,32 @@ extension AppModel {
             }
             do {
                 let contextBudget = ContextBudget.current(mode: mode, profile: profile)
+                // API models get earlier turns as real messages and keep one system prompt for the whole
+                // answer, so each request starts with the bytes of the one before and hits the service's cache.
+                let usesMessages = mode == .api
                 // Attached files come first, each with its share; the scope gets what is left, and at least a quarter.
                 var fileBlocks: [[ContextBlock]] = []
-                for source in attached {
-                    fileBlocks.append(await self.passageBlocks(meetings: [], sources: [source]))
+                if !attached.isEmpty {
+                    let names = attached.map(\.fileName).joined(separator: "、")
+                    let step = self.beginStep(id, .files, trf("正在读取 %@…", AnswerStepSummary.quoted(names)), count: attached.count)
+                    for source in attached {
+                        fileBlocks.append(await self.passageBlocks(meetings: [], sources: [source]))
+                    }
+                    self.finishStep(id, step, attached.count == 1
+                        ? trf("读取了 %@", AnswerStepSummary.quoted(names))
+                        : trf("读取了 %d 个文件 · %@", attached.count, AnswerStepSummary.quoted(names)))
                 }
                 let filePassages = ChatContext.packFiles(fileBlocks, question: question, budget: contextBudget.scope)
                 if !attached.isEmpty && filePassages.isEmpty { throw llmError(tr("附加的文件里没有可以阅读的文字。")) }
                 let fileUsed = filePassages.reduce(0) { $0 + $1.body.count }
                 let scopeBudget = attached.isEmpty ? contextBudget.scope : max(contextBudget.scope / 4, contextBudget.scope - fileUsed)
+                let scopeStep = pickedMeetings.isEmpty && pickedSources.isEmpty ? nil : self.beginStep(id, .files, tr("正在阅读所选的课和资料…"))
                 let packed = filePassages + ChatContext.pack(
                     await self.passageBlocks(meetings: pickedMeetings, sources: pickedSources, summaryAbove: scopeBudget),
                     question: question,
                     budget: scopeBudget
                 )
+                if let scopeStep { self.finishStep(id, scopeStep, trf("读了 %d 段课和资料", packed.count - filePassages.count)) }
                 if hasScope && packed.isEmpty { throw llmError(tr("所选范围里还没有可以阅读的文字。")) }
                 try Task.checkCancellation()
                 let seesImages = ChatImages.seesImages(mode: mode, modelID: profile?.modelID ?? "")
@@ -331,7 +343,8 @@ extension AppModel {
                     history,
                     budget: contextBudget,
                     summary: chatSummary,
-                    omittedImageTurns: seesImages ? imagePlan.omittedTurnIDs : []
+                    omittedImageTurns: seesImages ? imagePlan.omittedTurnIDs : [],
+                    stableStart: usesMessages
                 )
                 var blocks = packed
                 var answer = ""
@@ -348,11 +361,24 @@ extension AppModel {
                     meetings: chosenMeetings,
                     sources: chosenSources
                 )
-                func searchLibrary(_ request: LibraryRequest) async -> [ContextBlock] {
+                @MainActor func searchLibrary(_ request: LibraryRequest) async -> [ContextBlock] {
+                    let step = self.beginStep(id, .library, trf("正在资料库中搜索「%@」…", AnswerStepSummary.quoted(request.query)))
                     if libraryDocuments == nil { libraryDocuments = await self.libraryDocuments(excluding: excluded) }
                     let documents = libraryDocuments ?? []
                     let budget = contextBudget.library
-                    return await Task.detached(priority: .userInitiated) { LibrarySearch.run(request, in: documents, budget: budget) }.value
+                    let found = await Task.detached(priority: .userInitiated) { LibrarySearch.run(request, in: documents, budget: budget) }.value
+                    self.finishStep(id, step, found.isEmpty ? tr("资料库里没有找到相关内容") : trf("在资料库找到 %d 段", found.count))
+                    return found
+                }
+                @MainActor func searchWeb(_ queries: ArraySlice<String>) async throws -> (blocks: [ContextBlock], notice: String?) {
+                    let shown = queries.map { "「\(AnswerStepSummary.quoted($0))」" }.joined()
+                    let step = self.beginStep(id, .web, trf("正在联网搜索%@…", shown))
+                    let found = try await self.searchPasses(queries)
+                    let sites = AnswerStepSummary.sites(found.blocks)
+                    self.finishStep(id, step, found.blocks.isEmpty
+                        ? tr("联网搜索没有结果")
+                        : (sites.isEmpty ? trf("找到 %d 个网页", found.blocks.count) : trf("找到 %d 个网页 · %@", found.blocks.count, sites)))
+                    return found
                 }
                 // A question about last week, an earlier chat, or what the teacher said gets searched before the first answer.
                 // In a class's own chat, the teacher and today mean that class, so only a question pointing elsewhere searches.
@@ -368,7 +394,7 @@ extension AppModel {
                 }
                 // With Web on, search the question itself first so a search happens even when the model would skip it.
                 if allowsWeb, let query = ChatContext.searchQuery(question: question, history: history) {
-                    let found = try await self.searchPasses([query][...])
+                    let found = try await searchWeb([query][...])
                     if found.blocks.isEmpty {
                         if let notice = found.notice {
                             webNotice = notice
@@ -379,60 +405,121 @@ extension AppModel {
                         prefetched = true
                     }
                 }
+                let thinkingLevel: ThinkingLevel = usesMessages ? (profile?.effectiveThinking ?? .off) : .off
+                var messages: [LLMMessage] = []
+                var system = ""
+                var sentPassages = 0
+                var lastRaw = ""
                 for round in 0..<3 {
                     let webTool: ChatContext.WebTool
                     if !webReachable { webTool = .off }
                     else if searched { webTool = .used }
                     else { webTool = prefetched ? .prefetched : .available }
-                    let system = ChatContext.composedSystemPrompt(
-                        override: self.prompts.systemOverride,
-                        language: language,
-                        allowsWeb: blocks.count > packed.count,
-                        hasPassages: !blocks.isEmpty,
-                        skills: self.prompts.skills,
-                        tools: true,
-                        webTool: webTool,
-                        library: library,
-                        currentClass: boundClass.map { ChatContext.classLabel(title: $0.title, startedAt: $0.startedAt) },
-                        memory: remembered
-                    )
                     let libraryOpen = library == .available || library == .prefetched
                     let mayStillSearch = (webReachable && !searched) || libraryOpen
-                    var prompt = ChatContext.userPrompt(
-                        question: question,
-                        history: historyWindow,
-                        blocks: blocks,
-                        mentionsOlderImages: seesImages && imagePlan.mentionsOlderImages,
-                        mentionsLibrary: libraryOpen,
-                        steered: steered,
-                        attachedFiles: attached.map(\.title)
-                    )
-                    if round > 0 {
-                        let draft = answer.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if draft.isEmpty {
-                            prompt += "\n\nThe lookup finished and its results are in the numbered passages. Answer the question in Markdown."
+                    let request: LLMRequest
+                    if usesMessages {
+                        if round == 0 {
+                            system = ChatContext.composedSystemPrompt(
+                                override: self.prompts.systemOverride,
+                                language: language,
+                                allowsWeb: allowsWeb,
+                                hasPassages: !blocks.isEmpty,
+                                skills: self.prompts.skills,
+                                tools: true,
+                                webTool: webTool,
+                                library: library,
+                                currentClass: boundClass.map { ChatContext.classLabel(title: $0.title, startedAt: $0.startedAt) },
+                                memory: remembered
+                            )
+                            let prompt = ChatContext.userPrompt(
+                                question: question,
+                                history: historyWindow.forMessages,
+                                blocks: blocks,
+                                mentionsOlderImages: seesImages && imagePlan.mentionsOlderImages,
+                                mentionsLibrary: libraryOpen,
+                                steered: steered,
+                                attachedFiles: attached.map(\.title)
+                            )
+                            messages = historyWindow.messages + [LLMMessage(role: .user, text: prompt, images: promptImages)]
                         } else {
-                            prompt += "\n\nDraft already shown to the user:\n\(draft)\n\nContinue from here. Do not repeat the draft."
+                            // Only what is new: the draft as the model wrote it, then the lookup's results.
+                            // Marking the first question lets this round reread everything before from cache.
+                            messages[historyWindow.messages.count].cacheMark = true
+                            messages.append(LLMMessage(role: .assistant, text: lastRaw))
+                            messages.append(LLMMessage(role: .user, text: ChatContext.continuationPrompt(
+                                newBlocks: Array(blocks[sentPassages...]),
+                                startingAt: sentPassages,
+                                webFinished: allowsWeb && (searched || !webReachable),
+                                libraryFinished: library == .used,
+                                draftEmpty: answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                                searchFailed: webNotice != nil
+                            )))
                         }
-                        if webNotice != nil, blocks.count == packed.count {
-                            prompt += "\n\nThe search returned nothing. Answer from the material you already have."
+                        sentPassages = blocks.count
+                        request = LLMRequest(system: system, messages: messages, thinking: thinkingLevel, cacheKey: id.uuidString,
+                                             label: round == 0 ? "answer" : "answer-\(round + 1)")
+                    } else {
+                        let localSystem = ChatContext.composedSystemPrompt(
+                            override: self.prompts.systemOverride,
+                            language: language,
+                            allowsWeb: blocks.count > packed.count,
+                            hasPassages: !blocks.isEmpty,
+                            skills: self.prompts.skills,
+                            tools: true,
+                            webTool: webTool,
+                            library: library,
+                            currentClass: boundClass.map { ChatContext.classLabel(title: $0.title, startedAt: $0.startedAt) },
+                            memory: remembered
+                        )
+                        var prompt = ChatContext.userPrompt(
+                            question: question,
+                            history: historyWindow,
+                            blocks: blocks,
+                            mentionsOlderImages: seesImages && imagePlan.mentionsOlderImages,
+                            mentionsLibrary: libraryOpen,
+                            steered: steered,
+                            attachedFiles: attached.map(\.title)
+                        )
+                        if round > 0 {
+                            let draft = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if draft.isEmpty {
+                                prompt += "\n\nThe lookup finished and its results are in the numbered passages. Answer the question in Markdown."
+                            } else {
+                                prompt += "\n\nDraft already shown to the user:\n\(draft)\n\nContinue from here. Do not repeat the draft."
+                            }
+                            if webNotice != nil, blocks.count == packed.count {
+                                prompt += "\n\nThe search returned nothing. Answer from the material you already have."
+                            }
                         }
+                        request = .single(system: localSystem, prompt: prompt, images: promptImages, label: "answer")
                     }
                     let carried = answer
                     let cited = blocks
+                    let thinks = thinkingLevel != .off
+                    let waitStep = self.beginStep(id, thinks ? .thinking : .writing,
+                                                  thinks ? tr("正在思考…") : (round == 0 ? tr("正在写回答…") : tr("正在继续写回答…")))
+                    self.chatRuns[id]?.thinking = ""
                     let text = try await self.completeChat(
                         mode: mode,
                         profile: profile,
-                        system: system,
-                        prompt: prompt,
-                        images: promptImages
-                    ) { [weak self] partial in
-                        let shown = ChatTools.parse(ChatContext.streamingDisplay(partial), streaming: true, stopAtSearch: mayStillSearch).visible
-                        let combined = self?.joinedAnswer(carried, shown) ?? shown
-                        self?.chatRuns[id]?.answer = combined
-                        self?.chatRuns[id]?.citations = ChatContext.citations(in: combined, blocks: cited)
+                        request: request
+                    ) { [weak self] progress in
+                        guard let self else { return }
+                        if !progress.thinking.isEmpty {
+                            self.chatRuns[id]?.thinking = progress.thinking
+                            // A model can think without being asked (DeepSeek-R1, <think> tags); the line says so.
+                            self.markThinking(id, waitStep)
+                        }
+                        let shown = ChatTools.parse(ChatContext.streamingDisplay(progress.answer), streaming: true, stopAtSearch: mayStillSearch).visible
+                        if !shown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { self.finishWaiting(id, waitStep) }
+                        let combined = self.joinedAnswer(carried, shown)
+                        self.chatRuns[id]?.answer = combined
+                        self.chatRuns[id]?.citations = ChatContext.citations(in: combined, blocks: cited)
                     }
+                    self.finishWaiting(id, waitStep)
                     try Task.checkCancellation()
+                    lastRaw = text
                     let parsed = ChatTools.parse(ChatContext.splitVisual(text, streaming: false).text, streaming: false, stopAtSearch: mayStillSearch)
                     answer = joinedAnswer(answer, parsed.visible)
                     briefs.append(contentsOf: parsed.calls.filter { $0.name == ChatTools.createDemo }.map(\.body))
@@ -448,7 +535,7 @@ extension AppModel {
                     if webReachable, !searched, !queries.isEmpty {
                         looked = true
                         searched = true
-                        let found = try await self.searchPasses(queries.prefix(2))
+                        let found = try await searchWeb(queries.prefix(2))
                         if found.blocks.isEmpty {
                             if !prefetched {
                                 webNotice = found.notice ?? tr("联网搜索没有返回结果，这次只根据会议和资料回答。")
@@ -459,8 +546,10 @@ extension AppModel {
                     }
                     guard looked else { break }
                 }
+                let run = self.chatRuns[id]
                 let stored = self.storedImages(images)
-                let turnID = self.finishChat(id, question: question, answer: answer, modelName: name, citations: ChatContext.citations(in: answer, blocks: blocks), error: nil, images: stored, files: self.fileRefs(attached))
+                let turnID = self.finishChat(id, question: question, answer: answer, modelName: name, citations: ChatContext.citations(in: answer, blocks: blocks), error: nil, images: stored, files: self.fileRefs(attached),
+                                             steps: run?.steps ?? [], seconds: run.map { Date().timeIntervalSince($0.startedAt) })
                 self.chatRuns[id] = nil
                 if let webNotice { self.chatError = webNotice }
                 self.scheduleAfterAnswerWork(chatID: id)
@@ -537,22 +626,61 @@ extension AppModel {
     private func completeChat(
         mode: LLMMode,
         profile: LLMAPIProfile?,
-        system: String,
-        prompt: String,
-        images: [ModelImage] = [],
+        request: LLMRequest,
         localMaxTokens: Int = 2048,
-        onUpdate: @escaping @MainActor (String) -> Void
+        onProgress: @escaping @MainActor (LLMProgress) -> Void
     ) async throws -> String {
         if mode == .api {
             guard let profile else { throw llmError(tr("请先在设置中选择 API 配置。")) }
             let key = try LLMKeys.read(profile)
             guard profile.isLoopback || !key.isEmpty else { throw llmError(tr("请输入 API 密钥。")) }
-            return try await RemoteLLMClient.generate(profile: profile, key: key, system: system, prompt: prompt, images: images, onUpdate: onUpdate)
+            let result = try await RemoteLLMClient.stream(profile: profile, key: key, request: request, onProgress: onProgress)
+            // Remembered, so later questions skip what this service turned down.
+            llmConfiguration.noteUnsupported(profileID: profile.id, responses: result.responsesRejected, thinking: result.thinkingRejected)
+            return result.answer
         }
         guard let engine = self.engine as? LocalEngine else { throw llmError(tr("本地引擎未启动。")) }
         await waitForAfterAnswerWork()
         await waitForQuestionWork()
-        return try await engine.generate(system: system, prompt: prompt, maxTokens: localMaxTokens, onUpdate: onUpdate)
+        let prompt = request.messages.last?.text ?? ""
+        return try await engine.generate(system: request.system, prompt: prompt, maxTokens: localMaxTokens) { text in
+            onProgress(LLMProgress(answer: text))
+        }
+    }
+
+    /// Adds a running step to an answer and returns its id.
+    @discardableResult
+    func beginStep(_ chatID: UUID, _ kind: AnswerStep.Kind, _ title: String, count: Int = 0) -> UUID {
+        var step = AnswerStep(kind: kind, title: title, startedAt: .now)
+        step.count = count
+        chatRuns[chatID]?.steps.append(step)
+        return step.id
+    }
+
+    /// Ends a step with what it found. A step ended with no detail leaves the list.
+    func finishStep(_ chatID: UUID, _ stepID: UUID, _ detail: String) {
+        guard let index = chatRuns[chatID]?.steps.firstIndex(where: { $0.id == stepID }),
+              chatRuns[chatID]?.steps[index].isRunning == true else { return }
+        chatRuns[chatID]?.steps[index].detail = detail
+        chatRuns[chatID]?.steps[index].endedAt = .now
+    }
+
+    /// The waiting line turns into "正在思考…" when thinking text starts to arrive.
+    private func markThinking(_ chatID: UUID, _ stepID: UUID) {
+        guard let index = chatRuns[chatID]?.steps.firstIndex(where: { $0.id == stepID }),
+              let step = chatRuns[chatID]?.steps[index], step.isRunning, step.kind != .thinking else { return }
+        chatRuns[chatID]?.steps[index].kind = .thinking
+        chatRuns[chatID]?.steps[index].title = tr("正在思考…")
+    }
+
+    /// Ends the thinking or writing line once the answer starts: "思考了 N 秒" when there was
+    /// thinking, which can be opened to read it again; otherwise the line just goes.
+    private func finishWaiting(_ chatID: UUID, _ stepID: UUID) {
+        guard let run = chatRuns[chatID], let index = run.steps.firstIndex(where: { $0.id == stepID }),
+              run.steps[index].isRunning else { return }
+        let thought = run.thinking.trimmingCharacters(in: .whitespacesAndNewlines)
+        chatRuns[chatID]?.steps[index].thought = thought
+        finishStep(chatID, stepID, thought.isEmpty ? "" : trf("思考了 %d 秒", run.steps[index].seconds))
     }
 
     private func startVisual(
@@ -591,8 +719,7 @@ extension AppModel {
                     let visual = try await self.completeChat(
                         mode: mode,
                         profile: profile,
-                        system: system,
-                        prompt: prompt,
+                        request: .single(system: system, prompt: prompt, label: "demo"),
                         localMaxTokens: 4096
                     ) { _ in }
                     try Task.checkCancellation()
@@ -701,9 +828,9 @@ extension AppModel {
         }
     }
 
-    private func finishChat(_ id: UUID, question: String, answer: String, modelName: String, citations: [ChatCitation], error: String?, images: [ChatImage] = [], files: [ChatFileRef] = []) -> UUID? {
+    private func finishChat(_ id: UUID, question: String, answer: String, modelName: String, citations: [ChatCitation], error: String?, images: [ChatImage] = [], files: [ChatFileRef] = [], steps: [AnswerStep] = [], seconds: Double? = nil) -> UUID? {
         guard chats.contains(where: { $0.id == id }) else { return nil }
-        let turn = ChatTurn(
+        var turn = ChatTurn(
             question: question,
             answer: answer,
             modelName: modelName,
@@ -712,6 +839,9 @@ extension AppModel {
             images: images,
             files: files
         )
+        let kept = AnswerStepSummary.kept(steps)
+        if !kept.isEmpty { turn.steps = kept }
+        if error == nil { turn.answerSeconds = seconds }
         mutate(id) { session in
             if !session.titleCustom && session.title.isEmpty {
                 let source = question.isEmpty ? (files.first?.name ?? images.first?.name ?? "") : question

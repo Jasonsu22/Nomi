@@ -33,6 +33,11 @@ struct ChatRun: Equatable {
     var mode: LLMMode
     var answer = ""
     var citations: [ChatCitation] = []
+    /// What Nomi is doing and has done for this answer, in order.
+    var steps: [AnswerStep] = []
+    /// The model's thinking as it streams in. Shown live, not saved.
+    var thinking = ""
+    var startedAt = Date()
 }
 
 /// A message sent while another answer was still coming, waiting for its turn.

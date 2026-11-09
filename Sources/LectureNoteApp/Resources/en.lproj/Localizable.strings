@@ -590,3 +590,35 @@
 "缩小" = "Zoom Out";
 "放大" = "Zoom In";
 "适合窗口" = "Fit to Window";
+
+/* Answer steps */
+"正在读取 %@…" = "Reading %@…";
+"读取了 %@" = "Read %@";
+"读取了 %d 个文件 · %@" = "Read %d files · %@";
+"正在阅读所选的课和资料…" = "Reading the chosen classes and files…";
+"读了 %d 段课和资料" = "Read %d passages from classes and files";
+"正在资料库中搜索「%@」…" = "Searching your library for “%@”…";
+"资料库里没有找到相关内容" = "Nothing related in your library";
+"在资料库找到 %d 段" = "Found %d passages in your library";
+"正在联网搜索%@…" = "Searching the web for %@…";
+"联网搜索没有结果" = "The web search found nothing";
+"找到 %d 个网页" = "Found %d pages";
+"找到 %d 个网页 · %@" = "Found %d pages · %@";
+"正在思考…" = "Thinking…";
+"正在写回答…" = "Writing the answer…";
+"正在继续写回答…" = "Continuing the answer…";
+"思考了 %d 秒" = "Thought for %d s";
+"用时 %d 秒" = "%d s";
+"读了 %d 个文件" = "Read %d files";
+"搜索 %d 次" = "Searched %d times";
+"关" = "Off";
+"低" = "Low";
+"中" = "Medium";
+"高" = "High";
+"接口模式" = "API Mode";
+"深入思考" = "Thinking";
+"这个模型不接受思考参数，回答时会自动不带它。重新选择后会再试一次。" = "This model does not accept a thinking setting, so answers are sent without it. Choose a level again to retry.";
+"模型先思考再回答，思考过程会在聊天里实时显示。级别越高越慢，也越费 token。" = "The model thinks before it answers, and you can watch the thinking in the chat. Higher levels are slower and use more tokens.";
+"Anthropic 使用自己的 Messages 接口，不支持 Responses。" = "Anthropic uses its own Messages API and does not support Responses.";
+"这个服务没有 Responses 接口，回答时已改用 Chat Completions。重新选择后会再试一次。" = "This service has no Responses API, so answers use Chat Completions. Choose Responses again to retry.";
+"OpenAI 的推理模型只有用 Responses 才会显示思考过程。" = "OpenAI's reasoning models show their thinking only through Responses.";

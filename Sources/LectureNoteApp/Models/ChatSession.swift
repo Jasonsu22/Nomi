@@ -249,6 +249,10 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
     var memoryNote: [String]? = nil
     /// The student steered away while this answer was being written; it holds what was shown.
     var interrupted: Bool? = nil
+    /// What Nomi did for this answer (files read, searches, thinking time), shown folded above it.
+    var steps: [AnswerStep]? = nil
+    /// From sending the question to the end of the answer.
+    var answerSeconds: Double? = nil
 
     init(
         id: UUID = UUID(),
@@ -285,6 +289,8 @@ struct ChatTurn: Codable, Equatable, Identifiable, Sendable {
         files = try container.decodeIfPresent([ChatFileRef].self, forKey: .files)
         memoryNote = try container.decodeIfPresent([String].self, forKey: .memoryNote)
         interrupted = try container.decodeIfPresent(Bool.self, forKey: .interrupted)
+        steps = try container.decodeIfPresent([AnswerStep].self, forKey: .steps)
+        answerSeconds = try container.decodeIfPresent(Double.self, forKey: .answerSeconds)
     }
 }
 

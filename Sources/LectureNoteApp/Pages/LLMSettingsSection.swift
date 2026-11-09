@@ -186,6 +186,41 @@ struct APIProfileEditor: View {
                     .labelsHidden()
                     .clickCursor()
                 }
+                fieldRow(tr("接口模式")) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker(tr("接口模式"), selection: $draft.apiMode) {
+                            ForEach(LLMAPIMode.allCases) { mode in Text(mode.title).tag(mode) }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
+                        .disabled(draft.format == .anthropic)
+                        .clickCursor()
+                        if let note = apiModeNote {
+                            Text(note)
+                                .font(.system(size: 11))
+                                .foregroundStyle(AppColor.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                fieldRow(tr("深入思考")) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker(tr("深入思考"), selection: $draft.thinking) {
+                            ForEach(ThinkingLevel.allCases) { level in Text(level.title).tag(level) }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
+                        .clickCursor()
+                        Text(draft.thinkingUnsupported && draft.thinking != .off
+                             ? tr("这个模型不接受思考参数，回答时会自动不带它。重新选择后会再试一次。")
+                             : tr("模型先思考再回答，思考过程会在聊天里实时显示。级别越高越慢，也越费 token。"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppColor.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 fieldRow(tr("API 密钥")) {
                     SecureField(tr("API 密钥"), text: $key)
                 }
@@ -294,6 +329,15 @@ struct APIProfileEditor: View {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var apiModeNote: String? {
+        if draft.format == .anthropic { return tr("Anthropic 使用自己的 Messages 接口，不支持 Responses。") }
+        if draft.apiMode == .responses && draft.responsesUnsupported {
+            return tr("这个服务没有 Responses 接口，回答时已改用 Chat Completions。重新选择后会再试一次。")
+        }
+        if draft.apiMode == .responses { return tr("OpenAI 的推理模型只有用 Responses 才会显示思考过程。") }
+        return nil
     }
 
     private var modelChoices: [String] {
