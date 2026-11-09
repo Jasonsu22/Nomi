@@ -264,7 +264,6 @@ struct AskView: View {
                         onRemoveLastImage: removeLastImage,
                         onSubmitAlternate: { send(mode: BusySendMode.current.other) }
                     )
-                    .frame(height: composerHeight)
                 }
                 sendControls
             }
@@ -508,13 +507,6 @@ struct AskView: View {
             || !scope.meetingIDs.isEmpty || !scope.sourceIDs.isEmpty
     }
 
-    private var composerHeight: CGFloat {
-        let lines = draft.utf8.reduce(into: 1) { count, byte in
-            if byte == 0x0A { count += 1 }
-        }
-        return min(96, max(36, CGFloat(lines) * 22 + 8))
-    }
-
     /// While an answer is coming the model is busy, but a message can still be queued or steer it.
     private var canSend: Bool {
         hasDraft && (busyAction != nil || model.canGenerateAssistant)
@@ -562,7 +554,7 @@ struct AskView: View {
                 Spacer(minLength: 80)
                 VStack(alignment: .trailing, spacing: Space.s2) {
                     if !run.images.isEmpty {
-                        ChatImageStrip(items: run.images)
+                        ChatImageStrip(items: run.images, trailing: true)
                     }
                     if !question.isEmpty {
                         Text(question)

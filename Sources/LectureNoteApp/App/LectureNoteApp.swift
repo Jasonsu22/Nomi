@@ -15,6 +15,7 @@ struct LectureNoteApp: App {
                 }
                 .onAppear {
                     NSApplication.shared.setActivationPolicy(.regular)
+                    InputMethodKeys.install()
                     if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
                        let image = NSImage(contentsOf: url) {
                         NSApplication.shared.applicationIconImage = image

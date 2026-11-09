@@ -196,11 +196,14 @@ struct ChatThumbRow: View {
 
 struct ChatImageStrip: View {
     var items: [ChatImageDraft]
+    /// True above a sent question, so the images sit over its bubble on the right.
+    var trailing = false
     var onRemove: ((ChatImageDraft) -> Void)?
 
     var body: some View {
         ChatThumbRow(
             images: items.map { ($0.id, $0.fileURL, $0.name) },
+            trailing: trailing,
             onRemove: onRemove.map { remove in
                 { id in
                     guard let item = items.first(where: { $0.id == id }) else { return }

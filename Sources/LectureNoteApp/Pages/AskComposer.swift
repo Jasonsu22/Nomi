@@ -12,10 +12,34 @@ struct AskComposerField: NSViewRepresentable {
     /// ⌘Enter: the other way of sending while an answer is coming (queue or steer).
     var onSubmitAlternate: () -> Void = {}
 
+    /// The box grows with the text, wrapped lines included, up to this many lines; past that it scrolls.
+    static let maxLines = 8
+    static let minHeight: CGFloat = 36
+
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? 240, height: proposal.height ?? 36)
+        let width = proposal.width ?? 240
+        guard let textView = nsView.documentView as? NSTextView else { return CGSize(width: width, height: Self.minHeight) }
+        return CGSize(width: width, height: Self.height(of: textView.string, width: width, in: textView))
+    }
+
+    /// The height that shows `text` wrapped at `width`, between one line and `maxLines`.
+    static func height(of text: String, width: CGFloat, in textView: NSTextView) -> CGFloat {
+        let font = textView.font ?? .systemFont(ofSize: 15)
+        let inset = textView.textContainerInset
+        let padding = textView.textContainer?.lineFragmentPadding ?? 5
+        let lineHeight = textView.layoutManager?.defaultLineHeight(for: font) ?? ceil(font.ascender - font.descender + font.leading)
+        // A trailing newline starts a line that string measuring would not count.
+        let measured = text.hasSuffix("\n") || text.isEmpty ? text + " " : text
+        let bounds = (measured as NSString).boundingRect(
+            with: NSSize(width: max(width - inset.width * 2 - padding * 2, 1), height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        let content = max(lineHeight, ceil(bounds.height))
+        let cap = lineHeight * CGFloat(maxLines)
+        return max(minHeight, min(content, cap) + inset.height * 2)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -48,7 +72,8 @@ struct AskComposerField: NSViewRepresentable {
 
         let scroll = NSScrollView()
         scroll.drawsBackground = false
-        scroll.hasVerticalScroller = false
+        // Shown only once the text is taller than the box.
+        scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
         scroll.focusRingType = .none
