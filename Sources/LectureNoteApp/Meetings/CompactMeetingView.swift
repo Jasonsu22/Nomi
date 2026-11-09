@@ -85,7 +85,7 @@ struct CompactMeetingView: View {
         }
         .padding(Space.s4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(AppColor.canvas.ignoresSafeArea().gesture(WindowDragGesture()))
+        .background(AppColor.canvas.ignoresSafeArea().windowBarGestures())
     }
 
     private var sessionControl: some View {

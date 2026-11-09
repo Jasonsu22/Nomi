@@ -9,7 +9,7 @@ struct TopBar: View {
         .frame(height: 52)
         .background {
             AppColor.canvas
-                .gesture(WindowDragGesture())
+                .windowBarGestures()
         }
     }
 
