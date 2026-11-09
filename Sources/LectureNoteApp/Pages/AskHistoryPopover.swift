@@ -61,7 +61,9 @@ struct AskHistoryPopover: View {
                 }
             }
         }
-        .frame(width: anchorMeetingID == nil ? 360 : 300, height: isEmpty ? 220 : (anchorMeetingID == nil ? 420 : 320))
+        // At most this tall, and shorter when the window is: the list scrolls rather than pushing the window taller.
+        .frame(width: anchorMeetingID == nil ? 360 : 300)
+        .frame(maxHeight: isEmpty ? 220 : (anchorMeetingID == nil ? 420 : 320))
         .background(AppColor.surface)
         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(AppColor.separator))
