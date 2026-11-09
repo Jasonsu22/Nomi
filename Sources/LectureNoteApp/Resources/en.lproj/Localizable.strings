@@ -587,3 +587,6 @@
 "移走文件" = "Remove file";
 "会把附加文件里的相关文字发给 %@。" = "Relevant text from the attached files will be sent to %@.";
 "第 %d 张图片" = "Picture %d";
+"缩小" = "Zoom Out";
+"放大" = "Zoom In";
+"适合窗口" = "Fit to Window";

@@ -141,8 +141,14 @@ struct ChatThumb: View {
                 }
                 .frame(width: Self.side, height: Self.side)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                // Darker while the pointer is on it, like a file chip, so it reads as something to open.
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.black.opacity(hovering && image != nil ? 0.22 : 0))
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain.clicking())
             .contextMenu {
                 if let image {
                     Button(tr("拷贝图片")) { ChatImageActions.copy(image, fileURL: url) }
@@ -401,24 +407,18 @@ struct ChatImageLightbox: View {
     var reduceMotion: Bool
     var onClose: () -> Void
     @State private var shown = false
+    @State private var zoom = ImageZoom()
 
     var body: some View {
         ZStack {
+            // No tap here: clicks on the picture reach this background too, and closed the viewer.
+            // The picture's own view closes it on a click beside the picture.
             Color.black.opacity(0.72)
                 .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture(perform: close)
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.medium)
-                .scaledToFit()
-                .padding(48)
+            ZoomableImage(image: image, name: name, fileURL: fileURL, zoom: zoom, onClose: close)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contextMenu {
-                    Button(tr("拷贝图片")) { ChatImageActions.copy(image, fileURL: fileURL) }
-                    Button(tr("将图片存储为…")) { ChatImageActions.save(image, name: name, fileURL: fileURL) }
-                }
         }
+        .overlay(alignment: .bottom) { zoomBar.padding(.bottom, 14) }
         .overlay(alignment: .topTrailing) {
             Button(action: close) {
                 Image(systemName: "xmark")
@@ -444,6 +444,40 @@ struct ChatImageLightbox: View {
         }
     }
 
+    /// Zoom out, the current size (click to fit), zoom in. ⌘−, ⌘0 and ⌘= do the same.
+    private var zoomBar: some View {
+        HStack(spacing: 2) {
+            zoomButton("minus", help: tr("缩小"), key: "-") { zoom.step(1 / 1.5) }
+            Button { zoom.fit() } label: {
+                Text("\(Int((zoom.percent).rounded()))%")
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 52, minHeight: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain.clicking())
+            .keyboardShortcut("0", modifiers: .command)
+            .help(tr("适合窗口"))
+            zoomButton("plus", help: tr("放大"), key: "=") { zoom.step(1.5) }
+        }
+        .padding(.horizontal, 4)
+        .background(Color.black.opacity(0.6), in: Capsule())
+    }
+
+    private func zoomButton(_ symbol: String, help: String, key: KeyEquivalent, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain.clicking())
+        .keyboardShortcut(key, modifiers: .command)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+
     private func close() {
         guard shown else { return }
         guard !reduceMotion else {
@@ -456,6 +490,168 @@ struct ChatImageLightbox: View {
             onClose()
         }
     }
+}
+
+/// The zoom of the picture viewer, shared by its buttons and the scroll view that draws the picture.
+@MainActor
+@Observable
+final class ImageZoom {
+    /// Shown size as a percentage of the picture's own size.
+    var percent: CGFloat = 100
+    fileprivate weak var scrollView: ImageScrollView?
+
+    func step(_ factor: CGFloat) {
+        guard let scrollView else { return }
+        let clip = scrollView.contentView
+        let center = CGPoint(x: clip.bounds.midX, y: clip.bounds.midY)
+        scrollView.animateMagnification(to: scrollView.magnification * factor, centeredAt: center)
+    }
+
+    func fit() {
+        scrollView?.animateMagnification(to: scrollView?.fitMagnification ?? 1, centeredAt: nil)
+    }
+}
+
+/// The picture inside a native scroll view: pinch to zoom around the pointer, scroll or drag two
+/// fingers to move around, double-click to zoom in on a spot and again to fit. A click beside the
+/// picture closes the viewer.
+private struct ZoomableImage: NSViewRepresentable {
+    var image: NSImage
+    var name: String
+    var fileURL: URL?
+    var zoom: ImageZoom
+    var onClose: () -> Void
+
+    func makeNSView(context: Context) -> ImageScrollView {
+        let scroll = ImageScrollView()
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
+        scroll.allowsMagnification = true
+        scroll.maxMagnification = 8
+        let clip = CenteringClipView()
+        clip.drawsBackground = false
+        scroll.contentView = clip
+        let picture = PictureView(frame: CGRect(origin: .zero, size: image.size))
+        picture.image = image
+        picture.imageScaling = .scaleProportionallyUpOrDown
+        scroll.documentView = picture
+        scroll.zoom = zoom
+        zoom.scrollView = scroll
+        scroll.followMagnification()
+        update(scroll)
+        return scroll
+    }
+
+    func updateNSView(_ scroll: ImageScrollView, context: Context) {
+        update(scroll)
+    }
+
+    private func update(_ scroll: ImageScrollView) {
+        (scroll.contentView as? CenteringClipView)?.onClickBeside = onClose
+        guard let picture = scroll.documentView as? PictureView else { return }
+        picture.menuProvider = { [image, name, fileURL] in ChatImageActions.menu(image: image, name: name, fileURL: fileURL) }
+        if picture.image !== image {
+            picture.image = image
+            picture.setFrameSize(image.size)
+            scroll.fitted = false
+            scroll.needsLayout = true
+        }
+    }
+}
+
+fileprivate final class ImageScrollView: NSScrollView {
+    weak var zoom: ImageZoom?
+    var fitted = false
+
+    /// Room left around the picture when it is fitted.
+    static let margin: CGFloat = 48
+
+    /// The magnification that shows the whole picture with a margin; never above its own size.
+    var fitMagnification: CGFloat {
+        guard let size = documentView?.frame.size, size.width > 0, size.height > 0 else { return 1 }
+        let room = CGSize(width: max(contentSize.width - Self.margin * 2, 1), height: max(contentSize.height - Self.margin * 2, 1))
+        return min(1, room.width / size.width, room.height / size.height)
+    }
+
+    override func layout() {
+        super.layout()
+        minMagnification = min(fitMagnification, 1) * 0.5
+        if !fitted, contentSize.width > 1 {
+            fitted = true
+            magnification = fitMagnification
+        }
+        report()
+    }
+
+    /// Zoom changes the visible area, so the label follows the clip view's bounds. Overriding the
+    /// magnification setters instead crashed: the zoom animation calls them on an animator proxy.
+    func followMagnification() {
+        contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(boundsChanged), name: NSView.boundsDidChangeNotification, object: contentView)
+    }
+
+    @objc private func boundsChanged(_ note: Notification) {
+        report()
+    }
+
+    /// Animated zoom; `point` is in the picture's coordinates, or nil to keep the picture centred.
+    func animateMagnification(to target: CGFloat, centeredAt point: CGPoint?) {
+        let clamped = max(minMagnification, min(maxMagnification, target))
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            if let point {
+                self.animator().setMagnification(clamped, centeredAt: point)
+            } else {
+                self.animator().magnification = clamped
+            }
+        }
+    }
+
+    func report() {
+        let percent = magnification * 100
+        if let zoom, abs(zoom.percent - percent) > 0.5 { zoom.percent = percent }
+    }
+}
+
+/// Keeps a picture smaller than the window in the middle, instead of in the bottom-left corner.
+private final class CenteringClipView: NSClipView {
+    var onClickBeside: (() -> Void)?
+
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var rect = super.constrainBoundsRect(proposedBounds)
+        guard let document = documentView else { return rect }
+        if rect.width > document.frame.width { rect.origin.x = (document.frame.width - rect.width) / 2 }
+        if rect.height > document.frame.height { rect.origin.y = (document.frame.height - rect.height) / 2 }
+        return rect
+    }
+
+    /// A click on the dark area beside the picture closes the viewer.
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        guard let document = documentView, event.clickCount == 1 else { return }
+        if !document.bounds.contains(document.convert(event.locationInWindow, from: nil)) { onClickBeside?() }
+    }
+}
+
+private final class PictureView: NSImageView {
+    var menuProvider: (() -> NSMenu)?
+
+    override func mouseDown(with event: NSEvent) {
+        guard event.clickCount == 2, let scroll = enclosingScrollView as? ImageScrollView else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        let fit = scroll.fitMagnification
+        if scroll.magnification > fit * 1.05 {
+            scroll.animateMagnification(to: fit, centeredAt: nil)
+        } else {
+            scroll.animateMagnification(to: max(1, fit * 2.5), centeredAt: point)
+        }
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() }
 }
 
 enum AppImagePresenter {
