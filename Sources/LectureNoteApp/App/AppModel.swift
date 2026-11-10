@@ -109,6 +109,8 @@ final class AppModel {
     @ObservationIgnored var quickQuestionCheck: Task<Void, Never>?
     /// Asks a meeting's side panel to switch tab (Open in Q&A).
     var detailTabRequest: DetailTabRequest?
+    /// A cited PDF shown in Nomi at its page.
+    var pdfViewer: PDFViewerRequest?
     /// Work that runs after an answer (chat summary, then memory), if it is waiting or running.
     @ObservationIgnored var afterAnswerTask: Task<Void, Never>?
     /// That work has started generating, so a local question waits for it instead of cancelling it.
@@ -233,6 +235,7 @@ final class AppModel {
             guard let self, let id = self.liveMeetingID, let index = self.meetings.firstIndex(where: { $0.id == id }) else { return }
             self.meetings[index].inputDeviceName = name
         }
+        installCitationLookup()
         engine.transcript.onCommitted = { [weak self] in
             self?.schedulePersistence()
             self?.checkLatestLineForQuestion()

@@ -83,6 +83,9 @@ struct AppShell: View {
         .sheet(isPresented: $model.recordingSetupPresented) {
             RecordingSetupView(model: model)
         }
+        .sheet(item: $model.pdfViewer) { request in
+            PDFViewerSheet(request: request) { model.pdfViewer = nil }
+        }
         .alert(tr("导出失败"), isPresented: exportFailed) {
             Button(tr("好"), role: .cancel) {}
         } message: {

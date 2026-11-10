@@ -1,0 +1,368 @@
+<title>Nomi Citation Previews</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: the chat answer on the left, what a click opens on the right; stacked on narrow screens. Colors are Nomi's own tokens. */
+:root{
+  --canvas:#E9EDF6;--surface:#FFFFFF;--inset:#EBF0F6;--line:#D5DCE6;--outline:#B0B4BD;
+  --text:#111418;--muted:#5D6573;--accent:#004A77;--accent-soft:#E3F3FF;--selection:#C2E8FF;--leaf:#20B68A;
+  --shadow:0 12px 32px rgba(17,20,24,.16),0 2px 6px rgba(17,20,24,.08);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --canvas:#0F1216;--surface:#181C21;--inset:#1F242B;--line:#2A3038;--outline:#3A414A;
+  --text:#E6E8EB;--muted:#9AA3AE;--accent:#7CC4F2;--accent-soft:#1A2C3A;--selection:#1D3A50;--leaf:#34C99B;
+  --shadow:0 14px 36px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.35);color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#0F1216;--surface:#181C21;--inset:#1F242B;--line:#2A3038;--outline:#3A414A;
+  --text:#E6E8EB;--muted:#9AA3AE;--accent:#7CC4F2;--accent-soft:#1A2C3A;--selection:#1D3A50;--leaf:#34C99B;
+  --shadow:0 14px 36px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.35);color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--canvas);color:var(--text);font:14px/1.55 var(--font)}
+main{max-width:1180px;margin:0 auto;padding-block:24px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between}
+h1{font-size:24px;margin:0;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+.lead{color:var(--muted);margin:4px 0 0;max-width:70ch}
+.seg{display:flex;gap:6px}
+.seg button{font:inherit;font-size:12.5px;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:999px;padding:5px 12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:880px){.layout{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border-radius:18px;padding:20px;min-width:0}
+.panel h2{font-size:13px;margin:0 0 12px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.q{margin-left:auto;width:fit-content;max-width:85%;background:var(--accent-soft);border-radius:18px;padding:9px 14px;margin-bottom:16px}
+.found{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.found .label{font-size:12.5px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.answer p{margin:0 0 12px;line-height:1.75}
+.answer ul{margin:0 0 12px;padding-left:20px;line-height:1.75}
+.cite{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;vertical-align:1px;border:0;font-family:inherit;line-height:1.7}
+.cite:hover,.cite.on{background:var(--selection)}
+.cite:focus-visible,.seg button:focus-visible,.card button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cite svg{width:12px;height:12px;flex:none}
+.chips .cite{font-size:13px;padding:5px 12px;line-height:1.4}
+.chips .cite.chat{background:var(--inset);color:var(--muted)}
+/* Hover card */
+.card{position:fixed;z-index:20;width:340px;max-width:calc(100vw - 32px);background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:14px;display:flex;flex-direction:column;gap:9px;opacity:0;transform:translateY(4px);transition:opacity .14s ease,transform .14s ease;pointer-events:none}
+.card.show{opacity:1;transform:none;pointer-events:auto}
+.card .top{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);min-width:0}
+.card .top svg{width:14px;height:14px;color:var(--accent);flex:none}
+.card .top .where{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .top .where b{color:var(--accent);font-weight:600}
+.card .open{margin-left:auto;font:inherit;font-size:12.5px;font-weight:600;color:var(--accent);background:none;border:0;cursor:pointer;padding:0;white-space:nowrap}
+.card .title{font-weight:600;font-size:13.5px;line-height:1.4}
+.card .quote{font-size:13px;line-height:1.6;color:var(--text)}
+.card .quote mark{background:var(--selection);color:inherit;border-radius:3px;padding:0 2px}
+.card .quote .dim{color:var(--muted)}
+.card .trans{font-size:12px;color:var(--muted);line-height:1.55}
+.card .row{display:flex;gap:10px;align-items:flex-start;min-width:0}
+.card .row > div{min-width:0}
+.card .actions{display:flex;gap:8px;flex-wrap:wrap}
+.card .actions button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--inset);color:var(--text);border-radius:8px;padding:4px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.card .actions button svg{width:11px;height:11px}
+.play{position:relative;overflow:hidden}
+.play .bar{position:absolute;left:0;bottom:0;height:2px;background:var(--leaf);width:0}
+.thumb{flex:none;width:74px;aspect-ratio:8.5/11;background:#fff;border:1px solid var(--outline);border-radius:4px;padding:7px 6px;display:flex;flex-direction:column;gap:3px;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.thumb i{display:block;height:3px;border-radius:2px;background:#C9CED6}
+.thumb i.h{height:5px;background:#5D6573;width:70%;margin-bottom:2px}
+.thumb i.m{background:#7CC4F2}
+.slide{flex:none;width:112px;aspect-ratio:16/9;border-radius:5px;background:linear-gradient(135deg,#1F4E79,#2E86C1);color:#fff;font-size:8.5px;font-weight:600;padding:7px;display:flex;flex-direction:column;justify-content:space-between}
+.slide span{font-weight:400;opacity:.85}
+.webimg{height:92px;border-radius:9px;background:radial-gradient(circle at 25% 40%,#7CC4F2 0 18%,transparent 19%),radial-gradient(circle at 60% 55%,#34C99B 0 14%,transparent 15%),linear-gradient(120deg,#16324A,#1F5B7A);position:relative;overflow:hidden}
+.webimg::after{content:"";position:absolute;left:12%;right:12%;top:52%;height:2px;background:rgba(255,255,255,.65);transform:rotate(-8deg)}
+.fav{width:16px;height:16px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex:none}
+.photo{height:110px;border-radius:9px;background:linear-gradient(160deg,#F2F4F7,#DDE3EA);display:flex;align-items:center;justify-content:center;color:#3A414A;font-size:11px;position:relative;overflow:hidden}
+.photo .board{width:78%;height:72%;background:#2F3B33;border-radius:4px;color:#E8F2EA;font:12px/1.4 "Chalkboard SE","Comic Sans MS",cursive;padding:8px 10px}
+.missing{font-size:12.5px;color:var(--muted);background:var(--inset);border-radius:8px;padding:8px 10px}
+.kbd{font-size:11px;color:var(--muted)}
+/* Right side: what a click opens */
+.viewer{display:flex;flex-direction:column;gap:10px;min-height:420px}
+.vhead{display:flex;align-items:center;gap:8px;font-weight:600}
+.vhead small{font-weight:400;color:var(--muted)}
+.transcript{height:380px;overflow:auto;border-radius:12px;background:var(--canvas);padding:6px;scroll-behavior:smooth}
+.line{display:flex;gap:12px;padding:9px 10px;border-radius:8px;transition:background-color .6s ease}
+.line .t{width:46px;flex:none;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;padding-top:2px}
+.line .s{font-size:14px;line-height:1.55}
+.line .s small{display:block;color:var(--muted);font-size:12.5px;margin-top:3px}
+.line.lit{background:var(--selection);transition:background-color .2s ease}
+.pdf{height:380px;border-radius:12px;background:var(--canvas);display:flex;align-items:center;justify-content:center;padding:14px}
+.page{width:min(100%,290px);aspect-ratio:8.5/11;background:#fff;color:#1d2229;border-radius:4px;box-shadow:0 2px 10px rgba(0,0,0,.25);padding:18px;font-size:9.5px;line-height:1.5;display:flex;flex-direction:column;gap:6px;overflow:hidden}
+.page h4{margin:0;font-size:12px}
+.page .hl{background:#FFF3A3}
+.page .pg{margin-top:auto;text-align:center;color:#8a929c}
+.empty{color:var(--muted);font-size:13px;margin:auto;text-align:center;max-width:32ch}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--surface);padding:8px 14px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .2s,transform .2s;z-index:30;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.legend{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.legend div{background:var(--surface);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--muted)}
+.legend b{color:var(--text);display:block;margin-bottom:2px;font-size:13.5px}
+@media (prefers-reduced-motion: reduce){.card,.line,.transcript{transition:none;scroll-behavior:auto}}
+</style>
+
+<main>
+  <header>
+    <div>
+      <h1>Nomi citation previews</h1>
+      <p class="lead">Hover any blue citation in the answer to see its preview. Each kind of source has its own card. Click a lecture citation to jump the transcript on the right to that moment; click the PDF to open it at the cited page.</p>
+    </div>
+    <div class="seg" role="group" aria-label="Theme">
+      <button data-theme-set="auto" aria-pressed="true">Auto</button>
+      <button data-theme-set="light" aria-pressed="false">Light</button>
+      <button data-theme-set="dark" aria-pressed="false">Dark</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section class="panel" aria-label="Chat answer">
+      <div class="q">What did the teacher say about the exam, and why does myelin speed up the signal?</div>
+      <div class="found">
+        <span class="label">Found in 7 sources</span>
+        <div class="chips" id="chips"></div>
+      </div>
+      <div class="answer" id="answer">
+        <p>The midterm covers lectures 4 to 7, with the most weight on action potentials <span data-cite="lec1"></span>. You can bring one page of handwritten notes <span data-cite="lec2"></span>, and it is on November 18 in Hall B <span data-cite="pdf"></span>.</p>
+        <p>Myelin speeds up the signal because it insulates the axon, so the impulse jumps between the gaps, called nodes of Ranvier, instead of travelling along the whole membrane <span data-cite="slides"></span> <span data-cite="web1"></span>. That is saltatory conduction, and in thick myelinated axons it reaches about 120 m/s <span data-cite="web2"></span>.</p>
+        <ul>
+          <li>The teacher drew the action potential graph on the board <span data-cite="photo"></span>, and the week 6 summary lists it as a key figure <span data-cite="summary"></span>.</li>
+          <li>Your lab notes have the measured speeds <span data-cite="doc"></span>, and you asked a similar question last week <span data-cite="chat"></span>.</li>
+          <li>One citation points to a file that was removed <span data-cite="gone"></span>.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="panel viewer" aria-label="What a click opens" id="viewer">
+      <h2>What a click opens</h2>
+      <div class="empty" id="viewerEmpty">Click a lecture citation to jump to its moment, or the PDF citation to open it at the page.</div>
+    </section>
+  </div>
+
+  <div class="legend">
+    <div><b>Opens after 350 ms</b>A pointer passing over a citation does not flash a card.</div>
+    <div><b>Moves into the card</b>It closes 250 ms after the pointer leaves, so you can reach Open or Play.</div>
+    <div><b>Switches instantly</b>Moving from one citation to the next swaps the card with no second wait.</div>
+    <div><b>Esc closes it</b>Clicking the citation does the card's main action.</div>
+  </div>
+</main>
+
+<div class="card" id="card" role="dialog" aria-live="polite"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const icons = {
+  clock:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.6V8l2.3 1.5" stroke-linecap="round"/></svg>',
+  doc:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 1.8h5.2L12.5 5v9.2H4z" stroke-linejoin="round"/><path d="M9 1.8V5h3.4M6 8h4.5M6 10.6h4.5"/></svg>',
+  slides:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.8" y="3" width="12.4" height="8.4" rx="1.2"/><path d="M8 11.4V14M5.5 14h5"/></svg>',
+  globe:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c2 2 2 10.4 0 12.4M8 1.8c-2 2-2 10.4 0 12.4"/></svg>',
+  photo:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.5"/><circle cx="5.6" cy="6.3" r="1.2"/><path d="M2.5 12l3.8-3.6 2.6 2.4 2-1.8 2.6 2.4"/></svg>',
+  spark:'<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l1.4 4.1 4.1 1.4-4.1 1.4L8 12.5 6.6 8.4 2.5 7l4.1-1.4z"/></svg>',
+  chat:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.2 3.2h11.6v7.6H7.4L4.2 13.4v-2.6h-2z" stroke-linejoin="round"/></svg>',
+  arrow:'<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 8.5l5-5M4.5 3.5h4v4" stroke-linecap="round"/></svg>',
+  play:'<svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 1.8l7 4.2-7 4.2z"/></svg>',
+  copy:'<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3.8" y="3.8" width="6.4" height="6.4" rx="1"/><path d="M8.2 3.8V2.2a.6.6 0 0 0-.6-.6H2.2a.6.6 0 0 0-.6.6v5.4a.6.6 0 0 0 .6.6h1.6"/></svg>',
+  warn:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l6.2 11H1.8z" stroke-linejoin="round"/><path d="M8 6.5v3M8 11.4v.1" stroke-linecap="round"/></svg>'
+};
+
+// Example sources for this preview, not real recordings.
+const cites = {
+  lec1:{kind:'lecture',icon:'clock',chip:'Lecture 6 · 41:18',source:'Lecture 6 · Oct 14',at:2478,
+    where:'Lecture 6 · Oct 14 · <b>41:18</b>',
+    quote:'<span class="dim">Okay, a few words about the exam. </span><mark>For the midterm, it\'s lectures four to seven. Most of the marks are on action potentials,</mark><span class="dim"> so make sure you can draw that graph.</span>',
+    trans:'期中考试考第四到第七讲，大部分分数在动作电位上，一定要会画那张图。'},
+  lec2:{kind:'lecture',icon:'clock',chip:'Lecture 6 · 43:02',source:'Lecture 6 · Oct 14',at:2582,
+    where:'Lecture 6 · Oct 14 · <b>43:02</b>',
+    quote:'<mark>You can bring one page of notes, handwritten, both sides are fine.</mark><span class="dim"> No printed slides, please.</span>',
+    trans:'可以带一页手写笔记，正反面都可以。不能带打印的幻灯片。'},
+  pdf:{kind:'pdf',icon:'doc',chip:'Syllabus.pdf · p. 3',source:'Syllabus.pdf',page:3,
+    where:'Syllabus.pdf · <b>Page 3</b>',
+    quote:'Assessment. <mark>Midterm exam: Wednesday, November 18, 9:00, Hall B.</mark> Closed book; one handwritten page allowed. Final exam: see the registrar\'s schedule.'},
+  slides:{kind:'slides',icon:'slides',chip:'Week 7 slides · 12',source:'Week7-Neurons.pptx',
+    where:'Week7-Neurons.pptx · <b>Slide 12</b>',
+    slideTitle:'Saltatory conduction',slideSub:'Action potential jumps node to node',
+    quote:'<mark>Myelin sheath insulates the axon; depolarisation happens only at the nodes of Ranvier.</mark> Speaker notes: compare with an unmyelinated axon.'},
+  web1:{kind:'web',icon:'globe',chip:'britannica.com',site:'britannica.com',fav:['#0066A1','B'],
+    title:'Saltatory conduction | Physiology, Nerve & Myelin',date:'Updated 2025',
+    quote:'In myelinated fibres, <mark>the nerve impulse jumps from one node of Ranvier to the next</mark>, which is much faster than continuous conduction along the membrane.',image:true},
+  web2:{kind:'web',icon:'globe',chip:'nature.com',site:'nature.com',fav:['#C0392B','N'],
+    title:'Conduction velocity in mammalian nerve fibres',date:'2019',
+    quote:'Large myelinated axons conduct at <mark>up to 120 m/s</mark>, while small unmyelinated C fibres conduct at around 1 m/s.'},
+  photo:{kind:'photo',icon:'photo',chip:'Board photo',source:'IMG_2041.jpg',
+    where:'IMG_2041.jpg · added to Lecture 6',
+    quote:'Text read from the picture: <mark>"Resting −70 mV → threshold −55 mV → peak +40 mV → hyperpolarisation"</mark>'},
+  summary:{kind:'summary',icon:'spark',chip:'Lecture 6 summary',source:'Lecture 6 · Oct 14',
+    where:'Lecture 6 · <b>Summary</b>',
+    quote:'Key figures to know: <mark>the action potential curve with resting, threshold and peak values</mark>, and the refractory period.'},
+  doc:{kind:'word',icon:'doc',chip:'Lab notes.docx',source:'Lab notes.docx',
+    where:'Lab notes.docx · <b>Results</b>',
+    quote:'Measured conduction speed: <mark>frog sciatic nerve 32 m/s; after cooling to 10 °C, 18 m/s.</mark> Temperature slows the channels.'},
+  chat:{kind:'chat',icon:'chat',chip:'Chat · Exam prep',source:'Chat · Exam prep',
+    where:'Chat · Exam prep · Nov 2',
+    title:'You: "Which lectures matter most for the midterm?"',
+    quote:'Nomi: Lectures 6 and 7, because the teacher said most marks are on action potentials and synapses…'},
+  gone:{kind:'missing',icon:'warn',chip:'Old handout.pdf',
+    where:'Old handout.pdf',
+    missing:'This file was removed from Sources, so it can\'t be shown. The answer still keeps its citation.'}
+};
+
+// Inline chips and the "Found in" row.
+function chip(id, big){
+  const c = cites[id], el = document.createElement('button');
+  el.type = 'button'; el.className = 'cite' + (c.kind === 'chat' && big ? ' chat' : ''); el.dataset.id = id;
+  el.innerHTML = icons[c.icon] + '<span></span>';
+  el.querySelector('span').textContent = big ? (c.source || c.chip) : c.chip;
+  return el;
+}
+document.querySelectorAll('[data-cite]').forEach(span => span.replaceWith(chip(span.dataset.cite)));
+const seen = new Set();
+['lec1','pdf','slides','web1','web2','doc','chat'].forEach(id => {
+  const key = cites[id].source || cites[id].chip; if (seen.has(key)) return; seen.add(key);
+  document.getElementById('chips').append(chip(id, true));
+});
+
+// Cards
+const card = document.getElementById('card');
+function cardHTML(id){
+  const c = cites[id];
+  const open = c.kind === 'lecture' ? 'Jump' : c.kind === 'missing' ? '' : 'Open';
+  let top = `<div class="top">${c.kind === 'web' ? `<span class="fav" style="background:${c.fav[0]}">${c.fav[1]}</span>` : icons[c.icon]}<span class="where">${c.kind === 'web' ? `${c.site} · ${c.date}` : c.where}</span>${open ? `<button class="open" data-act="open">${open} ${icons.arrow.replace('<svg','<svg width="11" height="11"')}</button>` : ''}</div>`;
+  let body = '';
+  switch (c.kind){
+    case 'lecture':
+      body = `<div class="quote">“${c.quote}”</div><div class="trans">${c.trans}</div>
+        <div class="actions"><button class="play" data-act="play">${icons.play}<span>Play this moment</span><i class="bar"></i></button><button data-act="copy">${icons.copy}Copy quote</button></div>`; break;
+    case 'pdf':
+      body = `<div class="row"><div class="thumb" aria-hidden="true"><i class="h"></i><i></i><i></i><i class="m"></i><i class="m"></i><i></i><i></i><i style="width:60%"></i></div><div class="quote">${c.quote}</div></div>`; break;
+    case 'slides':
+      body = `<div class="row"><div class="slide" aria-hidden="true">${c.slideTitle}<span>${c.slideSub}</span></div><div class="quote">${c.quote}</div></div>`; break;
+    case 'web':
+      body = `${c.image ? '<div class="webimg" aria-hidden="true"></div>' : ''}<div class="title">${c.title}</div><div class="quote">${c.quote}</div>`; break;
+    case 'photo':
+      body = `<div class="photo" aria-hidden="true"><div class="board">−70 → −55 → +40 mV<br>refractory ↓</div></div><div class="quote">${c.quote}</div>`; break;
+    case 'chat':
+      body = `<div class="title">${c.title}</div><div class="quote">${c.quote}</div>`; break;
+    case 'missing':
+      body = `<div class="missing">${c.missing}</div>`; break;
+    default:
+      body = `<div class="quote">${c.quote}</div><div class="actions"><button data-act="copy">${icons.copy}Copy quote</button></div>`;
+  }
+  return top + body;
+}
+
+let shownId = null, openTimer = null, closeTimer = null, anchor = null;
+function place(el){
+  const r = el.getBoundingClientRect(), w = card.offsetWidth, h = card.offsetHeight;
+  let left = Math.min(Math.max(12, r.left + r.width / 2 - w / 2), window.innerWidth - w - 12);
+  let top = r.bottom + 8;
+  if (top + h > window.innerHeight - 12) top = Math.max(12, r.top - h - 8);
+  card.style.left = left + 'px'; card.style.top = top + 'px';
+}
+function show(el){
+  clearTimeout(closeTimer); clearTimeout(openTimer);
+  document.querySelectorAll('.cite.on').forEach(x => x.classList.remove('on'));
+  el.classList.add('on'); anchor = el; shownId = el.dataset.id;
+  card.innerHTML = cardHTML(shownId); place(el); card.classList.add('show');
+}
+function hide(){
+  card.classList.remove('show'); shownId = null;
+  document.querySelectorAll('.cite.on').forEach(x => x.classList.remove('on'));
+}
+document.addEventListener('pointerover', e => {
+  const el = e.target.closest('.cite'); if (!el) return;
+  clearTimeout(closeTimer);
+  // Already showing a card: switch at once. Otherwise wait for intent.
+  if (shownId) { if (el.dataset.id !== shownId || el !== anchor) show(el); return; }
+  clearTimeout(openTimer); openTimer = setTimeout(() => show(el), 350);
+});
+document.addEventListener('pointerout', e => {
+  const el = e.target.closest('.cite'); if (!el) return;
+  if (el.contains(e.relatedTarget)) return;
+  clearTimeout(openTimer);
+  if (shownId) closeTimer = setTimeout(hide, 250);
+});
+card.addEventListener('pointerenter', () => clearTimeout(closeTimer));
+card.addEventListener('pointerleave', () => { closeTimer = setTimeout(hide, 250); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
+document.addEventListener('focusin', e => { const el = e.target.closest && e.target.closest('.cite'); if (el) show(el); });
+
+// Actions
+const toast = document.getElementById('toast');
+let toastTimer;
+function say(text){ toast.textContent = text; toast.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 1800); }
+function act(id){
+  const c = cites[id];
+  if (c.kind === 'lecture') return jump(c);
+  if (c.kind === 'pdf') return openPDF(c);
+  if (c.kind === 'web') return say('Opens ' + c.site + ' in your browser');
+  if (c.kind === 'chat') return say('Opens the chat "Exam prep"');
+  if (c.kind === 'summary') return say('Opens Lecture 6 on its Summary tab');
+  if (c.kind === 'missing') return say('The file was removed');
+  say('Opens ' + (c.source || c.chip));
+}
+document.addEventListener('click', e => {
+  const el = e.target.closest('.cite'); if (el) { hide(); act(el.dataset.id); return; }
+  const button = e.target.closest('[data-act]'); if (!button || !shownId) return;
+  const id = shownId, kind = button.dataset.act;
+  if (kind === 'open') { hide(); act(id); }
+  if (kind === 'copy') {
+    const text = card.querySelector('.quote')?.textContent.replace(/[“”]/g, '').trim() || '';
+    Promise.resolve().then(() => navigator.clipboard.writeText(text)).then(() => say('Quote copied'), () => say('Select the quote to copy it'));
+  }
+  if (kind === 'play') {
+    const bar = button.querySelector('.bar'), label = button.querySelector('span');
+    label.textContent = 'Playing 41:18–41:28'; bar.style.transition = 'none'; bar.style.width = '0';
+    requestAnimationFrame(() => { bar.style.transition = 'width 3s linear'; bar.style.width = '100%'; });
+    setTimeout(() => { label.textContent = 'Play this moment'; bar.style.transition = 'none'; bar.style.width = '0'; }, 3100);
+  }
+});
+
+// Right side: a transcript that jumps and lights the line, or a PDF at the page.
+const viewer = document.getElementById('viewer');
+const lines = [
+  [2391,'So the membrane potential rests at about minus seventy millivolts.','膜电位静息时大约是负七十毫伏。'],
+  [2412,'When it reaches threshold, around minus fifty-five, the neuron fires.','达到阈值、大约负五十五时，神经元就会放电。'],
+  [2440,'That spike is the action potential, and it is all or nothing.','这个峰就是动作电位，它是全或无的。'],
+  [2461,'Okay, a few words about the exam.','好，说几句考试的事。'],
+  [2478,'For the midterm, it\'s lectures four to seven. Most of the marks are on action potentials, so make sure you can draw that graph.','期中考试考第四到第七讲，大部分分数在动作电位上，一定要会画那张图。'],
+  [2510,'Questions on synapses will be short answer.','关于突触的题是简答题。'],
+  [2547,'Bring a calculator for the conduction speed question.','带计算器，有一道传导速度的计算题。'],
+  [2582,'You can bring one page of notes, handwritten, both sides are fine. No printed slides, please.','可以带一页手写笔记，正反面都可以。不能带打印的幻灯片。'],
+  [2610,'Next week we start the synapse.','下周我们开始讲突触。'],
+  [2644,'Read chapter eight before then.','在那之前读第八章。']
+];
+const clock = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+let litTimer;
+function jump(c){
+  viewer.innerHTML = `<h2>What a click opens</h2><div class="vhead">${icons.clock.replace('<svg','<svg width="16" height="16" style="color:var(--accent)"')}Lecture 6 <small>· Oct 14 · transcript</small></div><div class="transcript" id="tr"></div>`;
+  const tr = document.getElementById('tr');
+  // Start from the top, as the meeting opens, then glide to the moment.
+  lines.forEach(([t, s, z]) => {
+    const row = document.createElement('div'); row.className = 'line'; row.dataset.t = t;
+    row.innerHTML = `<span class="t">${clock(t)}</span><span class="s"></span>`;
+    row.querySelector('.s').textContent = s;
+    const small = document.createElement('small'); small.textContent = z; row.querySelector('.s').append(small);
+    tr.append(row);
+  });
+  const target = [...tr.children].filter(r => +r.dataset.t <= c.at + 1.5).pop();
+  tr.scrollTop = 0;
+  setTimeout(() => {
+    tr.scrollTo({ top: target.offsetTop - 6, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    clearTimeout(litTimer);
+    setTimeout(() => {
+      target.classList.add('lit');
+      litTimer = setTimeout(() => target.classList.remove('lit'), 1100);
+    }, 380);
+  }, 120);
+  if (window.innerWidth < 880) viewer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function openPDF(c){
+  viewer.innerHTML = `<h2>What a click opens</h2><div class="vhead">${icons.doc.replace('<svg','<svg width="16" height="16" style="color:var(--accent)"')}Syllabus.pdf <small>· opened at page ${c.page} in Nomi</small></div>
+    <div class="pdf"><div class="page"><h4>3. Assessment</h4><div>Coursework 30% · Lab reports 20% · Exams 50%.</div><div class="hl">Midterm exam: Wednesday, November 18, 9:00, Hall B. Closed book; one handwritten page allowed.</div><div>Final exam: see the registrar's schedule. Late work loses 10% per day unless agreed in advance.</div><div>Academic integrity applies to all assessed work.</div><div class="pg">3</div></div></div>`;
+  if (window.innerWidth < 880) viewer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+window.addEventListener('scroll', () => { if (shownId && anchor) place(anchor); }, { passive: true });
+window.addEventListener('resize', () => { if (shownId && anchor) place(anchor); });
+
+document.querySelectorAll('[data-theme-set]').forEach(b => b.onclick = () => {
+  const m = b.dataset.themeSet;
+  if (m === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = m;
+  document.querySelectorAll('[data-theme-set]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+});
+</script>

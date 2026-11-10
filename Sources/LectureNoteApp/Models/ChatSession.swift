@@ -194,6 +194,14 @@ struct ChatCitation: Codable, Equatable, Identifiable, Sendable {
     var passage: Int?
     /// An earlier chat this passage came from.
     var chatID: UUID?
+    /// Seconds into the meeting, for a lecture citation; it jumps the transcript there.
+    var at: TimeInterval? = nil
+    /// The page or slide of a cited file.
+    var page: Int? = nil
+    /// The sentences of the passage the answer relied on, marked in the preview.
+    var quote: String? = nil
+    /// A little of the passage around `quote`, shown in the preview.
+    var excerpt: String? = nil
 
     var inlineLabel: String {
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)

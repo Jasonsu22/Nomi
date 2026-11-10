@@ -262,7 +262,7 @@ enum QuestionFinder {
     /// Transcript around the moment the question was asked comes first, so the teacher's own explanation is used.
     static func moment(_ question: MeetingQuestion, in lines: [Line], meetingID: UUID, title: String) -> [ContextBlock] {
         lines.filter { $0.at >= question.at - 120 && $0.at <= question.at + 240 }.map { line in
-            ContextBlock(title: title, detail: formatClock(line.at), body: line.text, meetingID: meetingID, pinned: true)
+            ContextBlock(title: title, detail: formatClock(line.at), body: line.text, meetingID: meetingID, pinned: true, at: line.at)
         }
     }
 

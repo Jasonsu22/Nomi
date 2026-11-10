@@ -217,10 +217,21 @@ extension AppModel {
     func openCitation(_ citation: ChatCitation) {
         if let id = citation.meetingID, meetings.contains(where: { $0.id == id }) {
             openMeeting(id)
+            if CitationKind.of(citation) == .summary {
+                detailTabRequest = DetailTabRequest(meetingID: id, tab: .summary)
+            } else if let at = citation.at ?? CitationQuote.clockSeconds(in: citation.detail) {
+                // The transcript scrolls to that moment and lights the line.
+                jumpTranscript(id, to: at)
+            }
             return
         }
         if let id = citation.sourceID, let source = sources.first(where: { $0.id == id }) {
-            NSWorkspace.shared.open(SourceStore.fileURL(for: source))
+            let file = SourceStore.fileURL(for: source)
+            if file.pathExtension.lowercased() == "pdf" {
+                showPDF(file, page: citation.page ?? CitationQuote.pageNumber(in: citation.detail), quote: citation.quote)
+            } else {
+                NSWorkspace.shared.open(file)
+            }
             return
         }
         if let id = citation.chatID, let chat = chats.first(where: { $0.id == id }) {
@@ -974,7 +985,8 @@ extension AppModel {
                     title: meeting.title,
                     detail: formatClock(paragraph.openedAt),
                     body: text,
-                    meetingID: meeting.id
+                    meetingID: meeting.id,
+                    at: paragraph.openedAt
                 ))
             }
         }

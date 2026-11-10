@@ -207,6 +207,7 @@
           chip.className = "cite";
           chip.textContent = citation.label;
           chip.dataset.url = citation.url;
+          chip.dataset.kind = citation.kind || "web";
           // A space before each chip, so copied text does not run the source into the sentence.
           fragment.append(document.createTextNode(" "), chip);
           added++;
@@ -272,7 +273,37 @@
       linkFiles(payload.files, node);
     }
     fillCards(added);
+    showSources(payload.sources, payload.sourcesLabel);
     report();
+    reportSoon();
+  }
+
+  // One chip per distinct source, above the answer. Hovering and clicking work like the inline ones.
+  const sourcesRow = document.getElementById("sources");
+  let sourcesKey = "";
+  function showSources(sources, label) {
+    const key = JSON.stringify(sources || []) + (label || "");
+    if (key === sourcesKey) return;
+    sourcesKey = key;
+    sourcesRow.textContent = "";
+    sourcesRow.hidden = !sources || sources.length === 0;
+    if (sourcesRow.hidden) return;
+    const title = document.createElement("span");
+    title.className = "label";
+    title.textContent = label || "";
+    const chips = document.createElement("div");
+    chips.className = "chips";
+    for (const source of sources) {
+      const chip = document.createElement("a");
+      chip.className = "cite";
+      chip.dataset.url = source.url;
+      chip.dataset.kind = source.kind;
+      const text = document.createElement("span");
+      text.textContent = source.label;
+      chip.append(text);
+      chips.append(chip);
+    }
+    sourcesRow.append(title, chips);
   }
 
   // Blocks that did not change stay as they are: a demo keeps running, and a selection in the part
@@ -300,8 +331,11 @@
   // Where each demo card sits, so a right-click anywhere on it can show the menu for its saved file.
   // The click itself lands inside the card's sandboxed frame, where this page cannot see it.
   let reportedCards = "";
+  // Measured from the top of the page to a marker after the answer, so the sources row and every
+  // margin count. Measuring the answer block alone left its last line under whatever came next.
+  const endMarker = document.getElementById("end");
   function report() {
-    const height = Math.ceil(root.getBoundingClientRect().height);
+    const height = Math.ceil(endMarker.getBoundingClientRect().top + window.scrollY) + 2;
     if (height !== reported) {
       reported = height;
       post({ height });
@@ -318,6 +352,14 @@
     }
   }
   new ResizeObserver(report).observe(root);
+  new ResizeObserver(report).observe(document.body);
+  window.addEventListener("resize", report);
+  // Fonts and chips can settle a moment after drawing and change how lines wrap.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(report);
+  function reportSoon() {
+    requestAnimationFrame(() => requestAnimationFrame(report));
+    setTimeout(report, 250);
+  }
 
   document.addEventListener("click", (event) => {
     const target = event.target.closest("a, img.remote");
@@ -328,25 +370,47 @@
     if (url) post({ open: url });
   });
 
-  // Hovering a source for half a second shows its preview card, drawn natively by the app.
+  // Resting on a source for a moment shows its preview card, drawn natively by the app. Once a card
+  // is up, moving straight to the next source swaps it at once instead of waiting again.
   let hoverTimer = null;
   let hovered = null;
+  let cardShown = false;
+  let leftAt = 0;
+  function showCard(chip) {
+    const rect = chip.getBoundingClientRect();
+    cardShown = true;
+    post({ hover: chip.dataset.url, label: chip.textContent, rect: [rect.left, rect.top, rect.width, rect.height] });
+  }
   document.addEventListener("mouseover", (event) => {
     const chip = event.target.closest("a.cite");
     if (chip === hovered) return;
     clearTimeout(hoverTimer);
-    if (hovered) post({ unhover: true });
+    if (hovered) {
+      post({ unhover: true });
+      leftAt = Date.now();
+    }
     hovered = chip;
     if (!chip) return;
-    hoverTimer = setTimeout(() => {
-      const rect = chip.getBoundingClientRect();
-      post({ hover: chip.dataset.url, label: chip.textContent, rect: [rect.left, rect.top, rect.width, rect.height] });
-    }, 500);
+    if (cardShown && Date.now() - leftAt < 400) {
+      showCard(chip);
+      return;
+    }
+    cardShown = false;
+    hoverTimer = setTimeout(() => showCard(chip), 350);
   });
   document.addEventListener("mouseleave", () => {
     clearTimeout(hoverTimer);
-    if (hovered) post({ unhover: true });
+    if (hovered) {
+      post({ unhover: true });
+      leftAt = Date.now();
+    }
     hovered = null;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    clearTimeout(hoverTimer);
+    cardShown = false;
+    post({ escape: true });
   });
 
   // WebKit leaves the boxes formulas are drawn in unpainted inside a selection, so a selected formula

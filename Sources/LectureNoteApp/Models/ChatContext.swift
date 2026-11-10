@@ -11,6 +11,10 @@ struct ContextBlock: Equatable, Sendable {
     var chatID: UUID? = nil
     /// Always kept by `pack`, ahead of ranked passages, such as a long meeting's saved summary.
     var pinned = false
+    /// Seconds into the meeting where this passage starts, so a citation can jump there.
+    var at: TimeInterval? = nil
+    /// The page or slide of a file this passage is from.
+    var page: Int? = nil
 }
 
 enum ChatContext {
@@ -530,6 +534,7 @@ enum ChatContext {
             guard let number = Int(match.1), seenNumbers.insert(number).inserted,
                   blocks.indices.contains(number - 1) else { continue }
             let block = blocks[number - 1]
+            let picked = CitationQuote.pick(in: block.body, for: CitationQuote.claim(in: answer, before: match.range.lowerBound))
             result.append(ChatCitation(
                 title: block.title,
                 detail: block.detail,
@@ -537,7 +542,11 @@ enum ChatContext {
                 sourceID: block.sourceID,
                 url: block.url,
                 passage: number,
-                chatID: block.chatID
+                chatID: block.chatID,
+                at: block.at ?? (block.meetingID != nil ? CitationQuote.clockSeconds(in: block.detail) : nil),
+                page: block.page ?? CitationQuote.pageNumber(in: block.detail),
+                quote: picked.quote.isEmpty ? nil : picked.quote,
+                excerpt: picked.excerpt.isEmpty ? nil : picked.excerpt
             ))
         }
         let citedURLs = Set(result.compactMap(\.url))

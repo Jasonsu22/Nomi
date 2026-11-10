@@ -185,7 +185,8 @@ enum SourceText {
                 title: title,
                 detail: trf("第 %d 页", index + 1),
                 body: String(text.prefix(4_000)),
-                sourceID: sourceID
+                sourceID: sourceID,
+                page: index + 1
             ))
         }
         return blocks

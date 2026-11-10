@@ -62,6 +62,8 @@ struct AnswerBody: View {
             "streaming": streaming,
             "dark": dark,
             "citations": Self.citationChips(prepared.citations),
+            "sources": streaming ? [] : Self.sourceRow(prepared.citations),
+            "sourcesLabel": trf("来自 %d 个来源", Self.sourceRow(prepared.citations).count),
             "files": prepared.export.named.mapValues(\.absoluteString),
             "widgets": widgets,
             "fenceRoles": AnswerDocument.fenceRoles(in: source, streaming: streaming).map(\.rawValue),
@@ -83,9 +85,46 @@ struct AnswerBody: View {
                 "label": oneMeeting && !moment.isEmpty ? moment : citation.inlineLabel,
                 "key": AnswerInline.citationSourceKey(citation),
                 "url": url.absoluteString,
+                "kind": chipKind(citation),
             ]
         }
         return chips
+    }
+
+    /// The icon a citation chip shows, named for the page's stylesheet.
+    static func chipKind(_ citation: ChatCitation) -> String {
+        switch CitationKind.of(citation) {
+        case .lecture: "lecture"
+        case .summary: "summary"
+        case .pdf, .document, .missing: "doc"
+        case .slides: "slides"
+        case .picture: "photo"
+        case .web: "web"
+        case .chat: "chat"
+        }
+    }
+
+    /// Each distinct source the answer cites, in the order first cited, for the row above it.
+    /// Shown when an answer draws on two or more.
+    static func sourceRow(_ citations: [Int: ChatCitation]) -> [[String: String]] {
+        var seen = Set<String>()
+        var row: [[String: String]] = []
+        for number in citations.keys.sorted() {
+            guard let citation = citations[number], let url = citation.inlineURL else { continue }
+            let key = AnswerInline.citationSourceKey(citation)
+            guard seen.insert(key).inserted else { continue }
+            let label: String
+            switch CitationKind.of(citation) {
+            case .lecture, .summary: label = citation.title
+            case .chat: label = trf("对话 · %@", citation.title)
+            case .web, .missing: label = url.host.map { $0.hasPrefix("www.") ? String($0.dropFirst(4)) : $0 } ?? citation.inlineLabel
+            default: label = citation.title
+            }
+            // The row names whole sources, so a meeting shows as a lecture even when its summary was cited.
+            let kind = CitationKind.of(citation) == .summary ? "lecture" : chipKind(citation)
+            row.append(["url": url.absoluteString, "kind": kind, "label": label.isEmpty ? citation.inlineLabel : label])
+        }
+        return row.count >= 2 ? row : []
     }
 
     private func open(_ url: URL) {
@@ -350,6 +389,8 @@ private struct AnswerPage: NSViewRepresentable {
             } else if let raw = body["hover"] as? String, let url = URL(string: raw),
                       let rect = body["rect"] as? [NSNumber], rect.count == 4 {
                 showCard(url: url, label: body["label"] as? String ?? "", rect: rect.map { CGFloat($0.doubleValue) })
+            } else if body["escape"] != nil {
+                closeCard()
             } else if body["unhover"] != nil {
                 scheduleClose()
             } else if let cards = body["cards"] as? [[Any]] {
@@ -367,7 +408,10 @@ private struct AnswerPage: NSViewRepresentable {
             guard let webView else { return }
             closeTicket += 1
             let card = self.card ?? makeCard()
-            card.host.rootView = AnyView(CitePreviewCard(preview: preview(for: url, label: label), onOpen: { [weak self] in
+            let cited = citation(for: url)
+            let details = cited.flatMap { CitationLookup.details?($0) }
+                ?? CitationDetails(kind: .web, origin: CiteLink.host(url), title: label == CiteLink.host(url) ? "" : label, webURL: url)
+            card.host.rootView = AnyView(CitationCard(details: details, citation: cited, onOpen: { [weak self] in
                 self?.closeCard()
                 self?.onOpen(url)
             }, onInside: { [weak self] inside in
@@ -406,23 +450,6 @@ private struct AnswerPage: NSViewRepresentable {
             return (popover, host)
         }
 
-        private func preview(for url: URL, label: String) -> CitePreview {
-            if let citation = citation(for: url) {
-                let web = url.scheme == "http" || url.scheme == "https"
-                let host = web ? CiteLink.host(url) : ""
-                let title = citation.title.isEmpty || citation.title == host || citation.title == citation.url ? label : citation.title
-                let detail = citation.detail == title || citation.detail == host || citation.detail == citation.url ? "" : citation.detail
-                return CitePreview(title: title, host: host, detail: detail, symbol: citation.symbolName, url: url)
-            }
-            return CitePreview(
-                title: label,
-                host: CiteLink.host(url),
-                detail: "",
-                symbol: ChatCitation.symbolName(title: label, detail: "", url: url.absoluteString),
-                url: url
-            )
-        }
-
         private func citation(for url: URL) -> ChatCitation? {
             if url.scheme == "nomi-cite", let id = UUID(uuidString: url.host ?? "") {
                 return citations.first { $0.id == id }
@@ -458,14 +485,6 @@ private struct AnswerPage: NSViewRepresentable {
     }
 }
 
-private struct CitePreview: Equatable {
-    var title: String
-    var host: String
-    var detail: String
-    var symbol: String
-    var url: URL
-}
-
 private enum CiteLink {
     static func host(_ url: URL) -> String {
         guard let host = url.host, !host.isEmpty else { return "" }
@@ -482,56 +501,6 @@ private enum CiteLink {
         scheme == .dark
             ? NSColor(srgbRed: 124 / 255, green: 196 / 255, blue: 242 / 255, alpha: 1)
             : NSColor(srgbRed: 0, green: 74 / 255, blue: 119 / 255, alpha: 1)
-    }
-}
-
-private struct CitePreviewCard: View {
-    var preview: CitePreview
-    var onOpen: () -> Void
-    var onInside: (Bool) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(spacing: Space.s2) {
-                Image(systemName: preview.symbol)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppColor.accent)
-                Text(preview.host.isEmpty ? preview.title : preview.host)
-                    .font(AppFont.caption)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineLimit(1)
-                Spacer(minLength: Space.s2)
-                Button(action: onOpen) {
-                    HStack(spacing: 3) {
-                        Text(tr("打开"))
-                        Image(systemName: "arrow.up.right")
-                    }
-                    .font(AppFont.caption.weight(.medium))
-                    .foregroundStyle(AppColor.accent)
-                }
-                .buttonStyle(.plain.clicking())
-            }
-            if !preview.host.isEmpty, preview.title != preview.host {
-                Text(preview.title)
-                    .font(AppFont.secondary.weight(.semibold))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .lineLimit(2)
-            }
-            if !preview.detail.isEmpty {
-                Text(preview.detail)
-                    .font(AppFont.caption)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineLimit(3)
-            }
-        }
-        .padding(Space.s3)
-        .frame(width: 300, alignment: .leading)
-        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-                .stroke(AppColor.separator, lineWidth: 1)
-        }
-        .onHover(perform: onInside)
     }
 }
 

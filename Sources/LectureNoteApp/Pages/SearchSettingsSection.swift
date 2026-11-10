@@ -3,10 +3,26 @@ import SwiftUI
 struct SearchSettingsSection: View {
     var model: AppModel
     @State private var editing: SearchVendor?
+    @AppStorage(WebPreviews.settingKey) private var linkPreviews = true
 
     var body: some View {
         SettingsSection(tr("联网搜索")) {
             ForEach(SearchVendor.allCases) { vendor in row(vendor) }
+            HStack(alignment: .center, spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(tr("引用预览显示网站图标和配图"))
+                    Text(tr("鼠标停在网页引用上时，从该网站获取图标和配图。关闭后只显示标题和摘录。"))
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: Space.s3)
+                Toggle(tr("引用预览显示网站图标和配图"), isOn: $linkPreviews)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .clickCursor()
+            }
+            .padding(.vertical, 4)
         } footer: {
             Text(tr("选择一个已配置的服务用于联网搜索。密钥只保存在这台 Mac 上。"))
         }

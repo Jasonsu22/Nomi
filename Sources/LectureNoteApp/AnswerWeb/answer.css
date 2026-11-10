@@ -2,11 +2,13 @@
    transparent so it sits on the chat like the rest of the text. */
 :root {
   --text: #111418; --text-2: #5E6670; --accent: #004A77; --inset: #EBF0F6; --separator: #D5DCE6;
+  --accent-soft: #E3F3FF; --selection: #C2E8FF;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
   color-scheme: light;
 }
 :root[data-scheme="dark"] {
   --text: #E6E8EB; --text-2: #9AA3AD; --accent: #7CC4F2; --inset: #1F242B; --separator: #2A3038;
+  --accent-soft: #1A2C3A; --selection: #1D3A50;
   color-scheme: dark;
 }
 html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
@@ -17,6 +19,8 @@ body {
   overflow-wrap: anywhere;
 }
 #answer { max-width: 680px; }
+/* Marks the end of everything drawn; the page's height is measured down to it. */
+#end { height: 0; clear: both; }
 #answer > :first-child { margin-top: 0; }
 #answer > :last-child { margin-bottom: 0; }
 
@@ -54,8 +58,30 @@ th { font-weight: 600; }
 
 img.remote { display: block; max-width: 100%; border-radius: 16px; margin: 0 0 0.9em; cursor: zoom-in; }
 
-/* A source after a sentence: the meeting moment, file or page it came from. */
-a.cite { font-size: 14px; font-weight: 500; white-space: nowrap; }
+/* A source after a sentence: a capsule with an icon for its kind (the lecture moment, file, page,
+   site or chat it came from). The icon is drawn by CSS, so copied text keeps only the label. */
+a.cite { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent); font-size: 12.5px; font-weight: 500; line-height: 1.75;
+  white-space: nowrap; vertical-align: 1px; text-decoration: none; transition: background-color 0.12s ease; }
+a.cite:hover { background: var(--selection); text-decoration: none; }
+a.cite::before { content: ""; flex: none; width: 12px; height: 12px; background: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat; }
+a.cite[data-kind="lecture"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='6.2'/%3E%3Cpath d='M8 4.6V8l2.3 1.5'/%3E%3C/svg%3E"); }
+a.cite[data-kind="summary"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='black'%3E%3Cpath d='M8 1.5l1.4 4.1 4.1 1.4-4.1 1.4L8 12.5 6.6 8.4 2.5 7l4.1-1.4z'/%3E%3C/svg%3E"); }
+a.cite[data-kind="doc"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.8h5.2L12.5 5v9.2H4z'/%3E%3Cpath d='M9 1.8V5h3.4M6 8h4.5M6 10.6h4.5'/%3E%3C/svg%3E"); }
+a.cite[data-kind="slides"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.8' y='3' width='12.4' height='8.4' rx='1.2'/%3E%3Cpath d='M8 11.4V14M5.5 14h5'/%3E%3C/svg%3E"); }
+a.cite[data-kind="photo"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.8' y='2.8' width='12.4' height='10.4' rx='1.5'/%3E%3Ccircle cx='5.6' cy='6.3' r='1.2'/%3E%3Cpath d='M2.5 12l3.8-3.6 2.6 2.4 2-1.8 2.6 2.4'/%3E%3C/svg%3E"); }
+a.cite[data-kind="web"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='6.2'/%3E%3Cpath d='M1.8 8h12.4M8 1.8c2 2 2 10.4 0 12.4M8 1.8c-2 2-2 10.4 0 12.4'/%3E%3C/svg%3E"); }
+a.cite[data-kind="chat"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.2 3.2h11.6v7.6H7.4L4.2 13.4v-2.6h-2z'/%3E%3C/svg%3E"); }
+a.cite[data-kind="chat"] { background: var(--inset); color: var(--text-2); }
+
+/* "Found in 3 sources": each source once, above the answer, in the same capsules a little larger.
+   Kept out of copied text. */
+#sources { display: flex; flex-direction: column; gap: 8px; margin: 0 0 14px; user-select: none; -webkit-user-select: none; }
+#sources .label { font-size: 12.5px; color: var(--text-2); }
+#sources .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+#sources a.cite { font-size: 13px; padding: 4px 12px; gap: 6px; line-height: 1.4; max-width: 260px; vertical-align: 0; }
+#sources a.cite span { overflow: hidden; text-overflow: ellipsis; }
 a.file { font-family: var(--mono); font-size: 0.87em; font-weight: 500; }
 
 .card { margin: 0.2em 0 1em; }
