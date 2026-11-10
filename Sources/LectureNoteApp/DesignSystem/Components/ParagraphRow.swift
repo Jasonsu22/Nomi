@@ -6,6 +6,8 @@ struct ParagraphRow: View, Equatable {
     var targetLanguage: String
     var compare: Bool
     var fontSize: Double
+    /// The paragraph a Q&A timestamp jumped to: filled for a moment, then it fades.
+    var highlighted = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
@@ -49,7 +51,11 @@ struct ParagraphRow: View, Equatable {
         .padding(.horizontal, Space.s2)
         .padding(.vertical, 10)
         .background {
-            if paragraph.isLive {
+            if highlighted {
+                RoundedRectangle(cornerRadius: Radius.tag, style: .continuous)
+                    .fill(AppColor.selection)
+                    .transition(.opacity)
+            } else if paragraph.isLive {
                 RoundedRectangle(cornerRadius: Radius.tag, style: .continuous)
                     .fill(AppColor.accentSoft)
             }

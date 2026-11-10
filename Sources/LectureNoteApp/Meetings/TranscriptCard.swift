@@ -19,6 +19,9 @@ struct TranscriptCard: View {
     /// Whether the view is at the newest line. A plain box, not view state, so scrolling
     /// never rebuilds the whole transcript; only a change of `followsLatest` does.
     @State private var scrollEdge = ScrollEdge()
+    /// The paragraph a Q&A timestamp jumped to, lit for a moment.
+    @State private var highlighted: Int?
+    @State private var highlightFade: Task<Void, Never>?
 
     var body: some View {
         let paragraphs = paragraphs
@@ -116,7 +119,8 @@ struct TranscriptCard: View {
                                 sourceLanguage: meeting.sourceLanguage,
                                 targetLanguage: meeting.targetLanguage,
                                 compare: sideBySide,
-                                fontSize: fontSize
+                                fontSize: fontSize,
+                                highlighted: paragraph.id == highlighted
                             )
                             .equatable()
                         }
@@ -138,6 +142,8 @@ struct TranscriptCard: View {
                 switch phase {
                 case .interacting, .tracking, .decelerating:
                     userScrolling = true
+                    // Scrolling away by hand means the student has found the line.
+                    if highlighted != nil, phase == .interacting { clearHighlight() }
                 case .idle:
                     let wasDragging = userScrolling
                     userScrolling = false
@@ -195,11 +201,27 @@ struct TranscriptCard: View {
 
     /// Scrolls to the paragraph that was being spoken at `time`, and stops following the live end.
     private func show(_ time: TimeInterval, in paragraphs: [Paragraph], proxy: ScrollViewProxy) {
-        guard let target = paragraphs.last(where: { $0.openedAt <= time + 0.5 }) ?? paragraphs.first else { return }
+        // A question's time and its line's start differ by a fraction of a second, so the line that
+        // starts just after it still counts as the one being spoken.
+        guard let target = paragraphs.last(where: { $0.openedAt <= time + 1.5 }) ?? paragraphs.first else { return }
         followsLatest = false
         withAnimation(Motion.layout(reduceMotion)) {
             proxy.scrollTo(target.id, anchor: .top)
         }
+        highlightFade?.cancel()
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { highlighted = target.id }
+        highlightFade = Task { @MainActor in
+            // Long enough to catch the eye once the scroll lands, then it fades.
+            try? await Task.sleep(for: .seconds(1.6))
+            guard !Task.isCancelled else { return }
+            clearHighlight()
+        }
+    }
+
+    private func clearHighlight() {
+        highlightFade?.cancel()
+        highlightFade = nil
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.6)) { highlighted = nil }
     }
 
     private func stick(_ proxy: ScrollViewProxy) {
