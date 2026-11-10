@@ -42,7 +42,7 @@ h1{font-size:24px;margin:0;font-weight:600;letter-spacing:-.01em;text-wrap:balan
 .chips .cite{font-size:13px;padding:5px 12px;line-height:1.4}
 .chips .cite.chat{background:var(--inset);color:var(--muted)}
 /* Hover card */
-.card{position:fixed;z-index:20;width:340px;max-width:calc(100vw - 32px);background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:14px;display:flex;flex-direction:column;gap:9px;opacity:0;transform:translateY(4px);transition:opacity .14s ease,transform .14s ease;pointer-events:none}
+.card{position:fixed;z-index:20;width:340px;max-width:calc(100vw - 32px);background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:14px;display:flex;flex-direction:column;gap:9px;opacity:0;transform:translateY(4px);transition:opacity .14s ease,transform .14s ease;will-change:opacity,transform;pointer-events:none}
 .card.show{opacity:1;transform:none;pointer-events:auto}
 .card .top{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);min-width:0}
 .card .top svg{width:14px;height:14px;color:var(--accent);flex:none}
@@ -252,7 +252,7 @@ function place(el){
   let left = Math.min(Math.max(12, r.left + r.width / 2 - w / 2), window.innerWidth - w - 12);
   let top = r.bottom + 8;
   if (top + h > window.innerHeight - 12) top = Math.max(12, r.top - h - 8);
-  card.style.left = left + 'px'; card.style.top = top + 'px';
+  card.style.left = Math.round(left) + 'px'; card.style.top = Math.round(top) + 'px';
 }
 function show(el){
   clearTimeout(closeTimer); clearTimeout(openTimer);

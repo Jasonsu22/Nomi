@@ -325,46 +325,49 @@ final class WebPreviews {
     }
 }
 
-/// Whether the card is showing; the fade and rise follow it.
-@MainActor
-@Observable
-final class CardAppearance {
-    var visible = false
-}
-
-/// The card's shadow and the way it appears: it fades in while rising 4 pt, over 0.14 s, and fades
-/// out the same way. The same look and timing as the preview page (`Design/Previews/citation-preview.html`).
+/// The card's shadow, with room around it inside the panel. The card keeps to the edge that faces
+/// the citation, so a part that arrives late (a site icon, a picture) grows it away from the citation
+/// instead of re-centring the words, and the panel is resized to fit.
 private struct CardChrome<Content: View>: View {
-    var state: CardAppearance
     var content: Content
+    var pinTop: Bool
+    var onSize: (CGSize) -> Void
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let dark = colorScheme == .dark
         content
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { onSize($0) }
             .compositingGroup()
             .shadow(color: .black.opacity(dark ? 0.5 : 0.16), radius: 16, x: 0, y: 12)
             .shadow(color: .black.opacity(dark ? 0.35 : 0.08), radius: 3, x: 0, y: 2)
-            .opacity(state.visible ? 1 : 0)
-            .offset(y: state.visible || reduceMotion ? 0 : 4)
             .padding(CitationCardPanel.shadowRoom)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: pinTop ? .top : .bottom)
     }
 }
 
 /// A borderless, see-through window that holds the citation card above the chat. Unlike a popover
-/// it has no arrow or system frame, and it can fade and rise like the preview page. It is attached
-/// to the app's window, so it moves with it.
+/// it has no arrow or system frame, and it can fade and rise like the preview page
+/// (`Design/Previews/citation-preview.html`): 0.14 s, rising 4 pt.
+///
+/// The fade and rise run in Core Animation on the layer that holds the whole card, so the card is
+/// drawn once and moved as one picture. Animating it in SwiftUI instead redraws the words at every
+/// in-between position, snapped to whole pixels, so they trail the box and settle a moment late.
 @MainActor
 final class CitationCardPanel {
     static let shadowRoom: CGFloat = 32
     static let gap: CGFloat = 8
     static let fade = 0.14
+    static let rise: CGFloat = 4
 
     private let panel: NSPanel
+    private let box = NSView()
     private let host = NSHostingView(rootView: AnyView(EmptyView()))
-    private let state = CardAppearance()
     private var hiding: Task<Void, Never>?
+    private var shown = false
+    /// The card is under the citation (true) or above it, which decides the edge kept still on a resize.
+    private var below = true
 
     init() {
         panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -376,18 +379,27 @@ final class CitationCardPanel {
         panel.acceptsMouseMovedEvents = true
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = true
-        panel.contentView = host
+        box.wantsLayer = true
+        host.sizingOptions = [.intrinsicContentSize]  // For `fittingSize`; the panel itself is sized by hand.
+        host.autoresizingMask = [.width, .height]
+        box.addSubview(host)
+        panel.contentView = box
     }
 
-    var isShown: Bool { panel.isVisible && state.visible }
+    var isShown: Bool { panel.isVisible && shown }
 
     /// Shows `card` under `anchor` (in screen coordinates), or above it when there is no room below.
     func show(_ card: some View, under anchor: CGRect, in window: NSWindow) {
         hiding?.cancel()
         hiding = nil
-        state.visible = false
-        host.rootView = AnyView(CardChrome(state: state, content: card).environment(\.colorScheme, window.effectiveAppearance.isDark ? .dark : .light))
+        let scheme: ColorScheme = window.effectiveAppearance.isDark ? .dark : .light
         panel.appearance = window.effectiveAppearance
+        func root(pinTop: Bool) -> AnyView {
+            AnyView(CardChrome(content: card, pinTop: pinTop) { [weak self] size in
+                DispatchQueue.main.async { self?.refit(cardHeight: size.height) }
+            }.environment(\.colorScheme, scheme))
+        }
+        host.rootView = root(pinTop: true)
         let size = host.fittingSize
         let room = Self.shadowRoom
         let area = (window.screen ?? NSScreen.main)?.visibleFrame ?? window.frame
@@ -395,24 +407,32 @@ final class CitationCardPanel {
         x = min(max(x, area.minX + 8 - room), area.maxX - size.width - 8 + room)
         // Below the citation: the card's top edge sits `gap` under it.
         var y = anchor.minY - Self.gap + room - size.height
-        if y + room < area.minY + 8 {
+        below = y + room >= area.minY + 8
+        if !below {
             y = anchor.maxY + Self.gap - room
+            host.rootView = root(pinTop: false)
         }
-        panel.setFrame(CGRect(x: x, y: y, width: size.width, height: size.height), display: false)
+        let frame = CGRect(x: x.rounded(), y: y.rounded(), width: size.width, height: size.height)
+        panel.setFrame(frame, display: false)
+        box.frame = CGRect(origin: .zero, size: frame.size)
+        host.frame = box.bounds
         if panel.parent !== window {
             panel.parent?.removeChildWindow(panel)
             window.addChildWindow(panel, ordered: .above)
         }
+        if !shown, !panel.isVisible { setLayer(visible: false) }
+        // Draw the card fully before it appears, so the first frame of the fade already has the words.
+        host.layoutSubtreeIfNeeded()
+        panel.display()
         panel.orderFront(nil)
-        // On the next turn, so the hidden state is drawn first and the change animates.
-        DispatchQueue.main.async { [state] in
-            withAnimation(.easeOut(duration: Self.fade)) { state.visible = true }
-        }
+        shown = true
+        animate(visible: true)
     }
 
     func hide() {
         guard panel.isVisible, hiding == nil else { return }
-        withAnimation(.easeOut(duration: Self.fade)) { state.visible = false }
+        shown = false
+        animate(visible: false)
         hiding = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(Int(Self.fade * 1000) + 20))
             guard let self, !Task.isCancelled else { return }
@@ -421,6 +441,61 @@ final class CitationCardPanel {
             self.host.rootView = AnyView(EmptyView())
             self.hiding = nil
         }
+    }
+
+    /// Fits the panel to the card when a late part changes its height, keeping the edge next to the
+    /// citation where it is.
+    private func refit(cardHeight: CGFloat) {
+        guard shown else { return }
+        let height = (cardHeight + Self.shadowRoom * 2).rounded(.up)
+        var frame = panel.frame
+        guard abs(frame.height - height) > 0.5 else { return }
+        if below { frame.origin.y = frame.maxY - height }
+        frame.size.height = height
+        panel.setFrame(frame, display: true)
+    }
+
+    private var hiddenTransform: CATransform3D {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? CATransform3DIdentity
+            : CATransform3DMakeTranslation(0, -Self.rise, 0)  // Layers count y upward: this is 4 pt lower.
+    }
+
+    private func setLayer(visible: Bool) {
+        guard let layer = box.layer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.removeAllAnimations()
+        layer.opacity = visible ? 1 : 0
+        layer.sublayerTransform = visible ? CATransform3DIdentity : hiddenTransform
+        CATransaction.commit()
+    }
+
+    /// Fades and moves the whole card from wherever it is now, so a reversal mid-fade doesn't jump.
+    private func animate(visible: Bool) {
+        guard let layer = box.layer else { return }
+        let now = layer.presentation() ?? layer
+        let fromOpacity = now.opacity, fromTransform = now.sublayerTransform
+        let toOpacity: Float = visible ? 1 : 0
+        let toTransform = visible ? CATransform3DIdentity : hiddenTransform
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.opacity = toOpacity
+        layer.sublayerTransform = toTransform
+        // CSS `ease`, as on the preview page.
+        let timing = CAMediaTimingFunction(name: .default)
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = fromOpacity
+        fade.toValue = toOpacity
+        let move = CABasicAnimation(keyPath: "sublayerTransform")
+        move.fromValue = NSValue(caTransform3D: fromTransform)
+        move.toValue = NSValue(caTransform3D: toTransform)
+        for animation in [fade, move] {
+            animation.duration = Self.fade
+            animation.timingFunction = timing
+            layer.add(animation, forKey: animation.keyPath)
+        }
+        CATransaction.commit()
     }
 }
 
