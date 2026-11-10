@@ -80,7 +80,12 @@ struct AnswerBody: View {
         var chips: [String: [String: String]] = [:]
         for (number, citation) in citations {
             guard !citation.inlineLabel.isEmpty, let url = citation.inlineURL else { continue }
-            let moment = citation.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            var moment = citation.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            // A lecture chip names the cited sentence's own time, not where its search chunk began.
+            if citation.meetingID != nil, let details = CitationLookup.details?(citation), details.kind == .lecture,
+               let at = details.lineAt ?? details.at, let clock = moment.firstMatch(of: /\d{1,2}:\d{2}(?::\d{2})?$/) {
+                moment.replaceSubrange(clock.range, with: formatClock(at))
+            }
             chips[String(number)] = [
                 "label": oneMeeting && !moment.isEmpty ? moment : citation.inlineLabel,
                 "key": AnswerInline.citationSourceKey(citation),

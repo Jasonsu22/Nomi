@@ -16,6 +16,33 @@
   const allowLink = md.validateLink;
   md.validateLink = (url) => /^https?:\/\//i.test(url.trim()) && allowLink(url);
 
+  // ---------- Bold next to Chinese ----------
+  // CommonMark only closes ** when it is not wedged between punctuation and a letter, so
+  // "**先考虑目的。**老师说" stays as raw asterisks. Chinese has no spaces around bold, so when a CJK
+  // character or CJK punctuation touches either marker, a **…** pair on one line is bold anyway.
+  const CJK = /[‘-‟　-〿぀-ヿ㐀-䶿一-鿿豈-﫿＀-￯]/;
+  md.inline.ruler.before("emphasis", "cjk_strong", (state, silent) => {
+    const src = state.src, start = state.pos;
+    if (src.charCodeAt(start) !== 0x2A || src.charCodeAt(start + 1) !== 0x2A || src.charCodeAt(start + 2) === 0x2A) return false;
+    const end = src.indexOf("**", start + 2);
+    if (end < 0 || end === start + 2 || end + 2 > state.posMax) return false;
+    const inner = src.slice(start + 2, end);
+    if (inner.includes("\n") || /^\s|\s$/.test(inner)) return false;
+    const touches = [src[start - 1] || "", src[end + 2] || "", inner[0], inner[inner.length - 1]];
+    if (!touches.some((ch) => CJK.test(ch))) return false;
+    if (!silent) {
+      state.push("strong_open", "strong", 1).markup = "**";
+      const max = state.posMax;
+      state.pos = start + 2;
+      state.posMax = end;
+      state.md.inline.tokenize(state);
+      state.posMax = max;
+      state.push("strong_close", "strong", -1).markup = "**";
+    }
+    state.pos = end + 2;
+    return true;
+  });
+
   // ---------- Formulas ----------
   // Formulas are cut out before Markdown runs, so underscores and backslashes inside them are not
   // read as emphasis or escapes. The rules match AnswerDocument.swift: \[…\], $$…$$, \(…\) and $…$.

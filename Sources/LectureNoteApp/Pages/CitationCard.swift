@@ -16,9 +16,12 @@ struct CitationCard: View {
     @State private var picture: NSImage?
     @State private var icon: NSImage?
     @State private var playing = false
+    @State private var playRun: UUID?
     @State private var copied = false
 
     static let width: CGFloat = 340
+    /// A lecture's words and translation scroll past this height.
+    static let lectureHeight: CGFloat = 300
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -87,12 +90,17 @@ struct CitationCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(AppColor.surfaceInset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         case .lecture:
-            passage(quoted: true)
-            if !details.translation.isEmpty {
-                Text(details.translation)
-                    .font(.system(size: 12))
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineLimit(3)
+            Scrolling(maxHeight: Self.lectureHeight) {
+                VStack(alignment: .leading, spacing: 9) {
+                    passage(quoted: true, lineLimit: nil)
+                    if !details.translation.isEmpty {
+                        Text(Self.marked(details.translation, quote: details.translationQuote, quoted: false, base: AppColor.textSecondary, markWhole: true))
+                            .font(.system(size: 12))
+                            .lineSpacing(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                }
             }
             HStack(spacing: 8) {
                 if details.hasAudio, let id = details.meetingID, let at = details.at {
@@ -100,12 +108,14 @@ struct CitationCard: View {
                         if playing {
                             MomentPlayer.shared.stop()
                             playing = false
-                        } else {
-                            CitationLookup.playMoment?(id, at)
+                        } else if let seconds = CitationLookup.playMoment?(id, at, details.until) {
+                            // Plays all the cited words; the button turns back when they end.
+                            let run = UUID()
+                            playRun = run
                             playing = true
                             Task { @MainActor in
-                                try? await Task.sleep(for: .seconds(MomentPlayer.clipSeconds))
-                                playing = false
+                                try? await Task.sleep(for: .seconds(seconds))
+                                if playRun == run { playing = false }
                             }
                         }
                     }
@@ -165,24 +175,25 @@ struct CitationCard: View {
 
     /// The excerpt with the cited words marked; a lecture's words in quotation marks.
     @ViewBuilder
-    private func passage(quoted: Bool) -> some View {
+    private func passage(quoted: Bool, lineLimit: Int? = 9) -> some View {
         let excerpt = details.excerpt.isEmpty ? (loadedExcerpt ?? "") : details.excerpt
         let text = excerpt.isEmpty ? details.quote : excerpt
         if !text.isEmpty {
             Text(Self.marked(text, quote: details.quote, quoted: quoted))
                 .font(.system(size: 13))
                 .lineSpacing(2)
-                .lineLimit(9)
+                .lineLimit(lineLimit)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
         }
     }
 
-    static func marked(_ text: String, quote: String, quoted: Bool) -> AttributedString {
+    /// `markWhole` marks the quote even when it is all of `text`, as for a one-sentence translation.
+    static func marked(_ text: String, quote: String, quoted: Bool, base: Color = AppColor.textPrimary, markWhole: Bool = false) -> AttributedString {
         var result = AttributedString(quoted ? "“\(text)”" : text)
-        result.foregroundColor = AppColor.textPrimary
+        result.foregroundColor = base
         let needle = quote.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty, needle.count < text.count || quoted, let range = result.range(of: needle) else { return result }
+        guard !needle.isEmpty, needle.count < text.count || quoted || markWhole, let range = result.range(of: needle) else { return result }
         result[range].backgroundColor = AppColor.selection
         result[range].foregroundColor = AppColor.textPrimary
         return result
@@ -242,6 +253,27 @@ struct CitationCard: View {
         default:
             break
         }
+    }
+}
+
+/// Content as tall as it needs, up to `maxHeight`; past that it scrolls. The hidden copy sets the
+/// height, so the card's window is sized right on its first frame.
+private struct Scrolling<Content: View>: View {
+    var maxHeight: CGFloat
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .hidden()
+            .frame(maxHeight: maxHeight, alignment: .top)
+            .overlay(alignment: .top) {
+                ScrollView(.vertical) {
+                    content
+                }
+                .scrollIndicators(.automatic)
+                .scrollBounceBehavior(.basedOnSize)
+            }
+            .accessibilityElement(children: .contain)
     }
 }
 

@@ -18,6 +18,8 @@ struct AskView: View {
     @State private var deletingChat = false
     @State private var deleteID: UUID?
     @State private var imageNotice: String?
+    @State private var follow = ChatFollow()
+    @State private var scrollPosition = ScrollPosition(edge: .bottom)
 
     private let examples = ["这门课的重点是什么？", "有哪些需要记住的术语？", "作业或下一步是什么？"]
 
@@ -130,7 +132,7 @@ struct AskView: View {
                                         .equatable()
                                     if model.preparingVisualTurnIDs.contains(turn.id) {
                                         HStack(spacing: Space.s2) {
-                                            LeafOrbit(size: 16)
+                                            DotLoader(style: .breeze)
                                             Text(tr("正在准备图示…"))
                                                 .font(AppFont.secondary)
                                                 .foregroundStyle(AppColor.textSecondary)
@@ -151,6 +153,20 @@ struct AskView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .defaultScrollAnchor(.bottom)
+                        .scrollPosition($scrollPosition)
+                        .onScrollGeometryChange(for: ChatFollow.Geometry.self) { geometry in
+                            ChatFollow.Geometry(visibleBottom: geometry.visibleRect.maxY, contentHeight: geometry.contentSize.height)
+                        } action: { old, new in
+                            if follow.update(from: old, to: new) { scrollPosition.scrollTo(edge: .bottom) }
+                        }
+                        .overlay(alignment: .bottom) {
+                            if follow.showsJumpButton {
+                                JumpToEndButton(unseen: follow.unseen) { jumpToEnd(animated: true) }
+                                    .padding(.bottom, Space.s3)
+                            }
+                        }
+                        .animation(.easeOut(duration: 0.18), value: follow)
+                        .onChange(of: session.id) { follow = ChatFollow(); jumpToEnd(animated: false) }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -575,7 +591,7 @@ struct AskView: View {
                 // Before the first step starts (a local model waiting for its worker, say).
                 if !run.steps.contains(where: \.isRunning) {
                     HStack(spacing: Space.s2) {
-                        LeafOrbit(size: 18)
+                        DotLoader(style: .circle)
                         Text(tr("正在回答…"))
                             .font(AppFont.secondary)
                             .foregroundStyle(AppColor.textSecondary)
@@ -649,11 +665,22 @@ struct AskView: View {
         composerFocused = true
     }
 
+    /// Back to the newest message, following new text again.
+    private func jumpToEnd(animated: Bool) {
+        follow.jumpToEnd()
+        if animated {
+            withAnimation(.easeOut(duration: 0.3)) { scrollPosition.scrollTo(edge: .bottom) }
+        } else {
+            scrollPosition.scrollTo(edge: .bottom)
+        }
+    }
+
     private func send(mode: BusySendMode) {
         guard let id = composerChatID() else { return }
         let images = model.composerImages[id] ?? []
         let text = draft
         guard model.submit(text, images: images, anchor: anchorMeetingID, mode: mode) else { return }
+        jumpToEnd(animated: true)
         draft = ""
         model.composerImages[id] = []
         imageNotice = nil
@@ -867,14 +894,16 @@ private struct AskTurnRow: View, Equatable {
                     .font(AppFont.secondary)
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
-            } else if !turn.answer.isEmpty {
+            } else if !turn.answer.isEmpty || turn.interrupted == true {
                 if turn.steps != nil || turn.answerSeconds != nil {
                     AnswerStepsFold(steps: turn.steps ?? [], seconds: turn.answerSeconds)
                 }
-                AnswerBody(source: turn.answer, citations: turn.citations) { citation in
-                    onOpenCitation(citation)
+                if !turn.answer.isEmpty {
+                    AnswerBody(source: turn.answer, citations: turn.citations) { citation in
+                        onOpenCitation(citation)
+                    }
+                    .frame(maxWidth: 680, alignment: .leading)
                 }
-                .frame(maxWidth: 680, alignment: .leading)
             }
             if turn.interrupted == true {
                 Label(tr("已打断"), systemImage: "arrow.uturn.right")

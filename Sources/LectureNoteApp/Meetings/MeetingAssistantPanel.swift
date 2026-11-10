@@ -79,7 +79,7 @@ struct MeetingAssistantPanel: View {
             }
             HStack {
                 if state?.isGenerating == true {
-                    LeafOrbit(size: 16)
+                    DotLoader(style: .breeze)
                     Text(tr("正在生成…")).font(AppFont.caption).foregroundStyle(AppColor.textSecondary).shimmering()
                 }
                 Spacer()

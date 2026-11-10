@@ -57,10 +57,18 @@ struct CitationDetails: Equatable {
     var excerpt = ""
     /// The translation of a lecture line.
     var translation = ""
+    /// The translation of the quoted sentences, marked inside `translation`.
+    var translationQuote = ""
     var fileURL: URL?
     var page: Int?
     var meetingID: UUID?
+    /// Where the cited words are spoken: the recording plays from here.
     var at: TimeInterval?
+    /// The transcript line that holds them. A sentence can start a little before its line opens,
+    /// so the jump and the shown time use the line's own time, as the transcript does.
+    var lineAt: TimeInterval?
+    /// Where the cited words end, so "Play this moment" plays all of them.
+    var until: TimeInterval?
     var webURL: URL?
     /// Set when the source was removed; the card says so instead of showing nothing.
     var missing: String?
@@ -73,7 +81,8 @@ struct CitationDetails: Equatable {
 enum CitationLookup {
     static var details: ((ChatCitation) -> CitationDetails)?
     static var fileExcerpt: ((ChatCitation) async -> String)?
-    static var playMoment: ((UUID, TimeInterval) -> Void)?
+    /// Plays a meeting from a moment to `until`; returns how many seconds it will play.
+    static var playMoment: ((UUID, TimeInterval, TimeInterval?) -> TimeInterval?)?
 }
 
 extension AppModel {
@@ -84,9 +93,9 @@ extension AppModel {
         CitationLookup.fileExcerpt = { [weak self] citation in
             await self?.citationFileExcerpt(citation) ?? ""
         }
-        CitationLookup.playMoment = { [weak self] meetingID, at in
-            guard let self, let meeting = self.meetings.first(where: { $0.id == meetingID }) else { return }
-            MomentPlayer.shared.play(meeting, at: at)
+        CitationLookup.playMoment = { [weak self] meetingID, at, until in
+            guard let self, let meeting = self.meetings.first(where: { $0.id == meetingID }) else { return nil }
+            return MomentPlayer.shared.play(meeting, at: at, until: until)
         }
     }
 
@@ -108,7 +117,27 @@ extension AppModel {
                     meetingID: id
                 )
             }
-            let at = citation.at ?? CitationQuote.clockSeconds(in: citation.detail)
+            let near = citation.at ?? CitationQuote.clockSeconds(in: citation.detail)
+            // The sentences themselves, found again in the transcript from the quoted words: the
+            // citation's own time is only where its search chunk started.
+            let needle = [citation.quote, citation.excerpt].compactMap { $0 }.first { !$0.isEmpty } ?? ""
+            if let moment = LectureMoments.locate(in: meeting.paragraphs, near: near, needle: needle,
+                                                  sourceLanguage: meeting.sourceLanguage, targetLanguage: meeting.targetLanguage) {
+                let paragraph = meeting.paragraphs[moment.paragraph]
+                let quote = moment.source, translated = moment.translation
+                let lineAt = max(moment.at, paragraph.openedAt)
+                var details = CitationDetails(kind: .lecture, origin: origin, place: formatClock(lineAt), meetingID: id, at: moment.at, lineAt: lineAt)
+                details.quote = quote
+                // The whole line, which the card scrolls; it starts just before the quote so the marked
+                // words show first.
+                details.excerpt = Self.fromNear(paragraph.renderedSource(language: meeting.sourceLanguage), quote: quote)
+                details.translationQuote = translated
+                details.translation = Self.fromNear(paragraph.renderedTranslation(language: meeting.targetLanguage), quote: translated)
+                details.until = moment.end
+                details.hasAudio = !(meeting.audioFiles ?? []).isEmpty
+                return details
+            }
+            let at = near
             var details = CitationDetails(kind: .lecture, origin: origin, place: at.map(formatClock) ?? citation.detail, meetingID: id, at: at)
             if let at, let index = meeting.paragraphs.lastIndex(where: { $0.openedAt <= at + 1.5 }) ?? meeting.paragraphs.indices.first {
                 let paragraph = meeting.paragraphs[index]
@@ -126,6 +155,7 @@ extension AppModel {
                 details.excerpt = Self.window(picked.1.isEmpty ? spoken : picked.1, around: picked.0)
                 let translated = paragraph.renderedTranslation(language: meeting.targetLanguage).trimmingCharacters(in: .whitespacesAndNewlines)
                 details.translation = translated.count > 260 ? String(translated.prefix(260)) + "…" : translated
+                details.until = paragraph.commits.last?.end
             } else {
                 details.quote = citation.quote ?? ""
                 details.excerpt = citation.excerpt ?? ""
@@ -180,13 +210,28 @@ extension AppModel {
         return CitationQuote.pick(in: body, for: "").excerpt
     }
 
-    /// Up to `CitationQuote.excerptLimit` characters of `text`, kept around `quote`.
-    static func window(_ text: String, around quote: String) -> String {
-        let limit = CitationQuote.excerptLimit
+    /// `text` from a little before `quote` on, up to `limit` characters.
+    static func fromNear(_ text: String, quote: String, lead: Int = 120, limit: Int = 2_400) -> String {
+        guard !quote.isEmpty, let range = text.range(of: quote) else { return text.count > limit ? String(text.prefix(limit)) + "…" : text }
+        let start = text.distance(from: text.startIndex, to: range.lowerBound)
+        var head = text.startIndex
+        if start > lead + 40 {
+            // Back up to a sentence end within the lead, so the text starts with a whole sentence.
+            let earliest = text.index(text.startIndex, offsetBy: start - lead)
+            let ends: Set<Character> = ["。", "！", "？", ".", "!", "?"]
+            head = text[earliest..<range.lowerBound].firstIndex { ends.contains($0) }.map { text.index(after: $0) } ?? earliest
+            while head < range.lowerBound, text[head].isWhitespace { head = text.index(after: head) }
+        }
+        let tail = text.index(head, offsetBy: limit, limitedBy: text.endIndex) ?? text.endIndex
+        return (head > text.startIndex ? "…" : "") + String(text[head..<tail]) + (tail < text.endIndex ? "…" : "")
+    }
+
+    /// Up to `limit` characters of `text`, kept around `quote`.
+    static func window(_ text: String, around quote: String, limit: Int = CitationQuote.excerptLimit) -> String {
         guard text.count > limit else { return text }
         guard !quote.isEmpty, let range = text.range(of: quote) else { return String(text.prefix(limit)) + "…" }
         let start = text.distance(from: text.startIndex, to: range.lowerBound)
-        let from = max(0, min(start - 120, text.count - limit))
+        let from = max(0, min(start - limit / 4, text.count - limit))
         let head = text.index(text.startIndex, offsetBy: from)
         let tail = text.index(head, offsetBy: limit, limitedBy: text.endIndex) ?? text.endIndex
         return (from > 0 ? "…" : "") + String(text[head..<tail]) + (tail < text.endIndex ? "…" : "")
@@ -195,42 +240,84 @@ extension AppModel {
 
 /// Plays ten seconds of a meeting's recording from a moment. A meeting recorded in several runs
 /// keeps one file per run; the moment is found by adding up the earlier files' lengths.
+///
+/// Lengths and positions are counted in samples. `AVAudioPlayer` only estimates them for the app's
+/// AAC files, and for a long lecture it was off by twenty minutes, so late moments played from the
+/// wrong file and earlier ones drifted.
 @MainActor
 final class MomentPlayer {
     static let shared = MomentPlayer()
-    static let clipSeconds: TimeInterval = 10
+    /// How long a moment plays when where its words end is not known.
+    nonisolated static let clipSeconds: TimeInterval = 10
+    /// A little after the last word, so it is not cut off; and a cap for very long passages.
+    nonisolated static let tail: TimeInterval = 1.0
+    nonisolated static let longest: TimeInterval = 180
 
-    private var player: AVAudioPlayer?
+    /// Seconds to play from `moment` (less the lead-in) to just after `until`.
+    nonisolated static func length(from moment: TimeInterval, until: TimeInterval?) -> TimeInterval {
+        guard let until, until > moment else { return clipSeconds + leadIn }
+        return min(longest, until - moment + leadIn + tail)
+    }
+    /// Starts a little before the words, so the first one is not clipped.
+    nonisolated static let leadIn: TimeInterval = 0.8
+
+    private let engine = AVAudioEngine()
+    private let node = AVAudioPlayerNode()
+    private var attached = false
+    private var playing = false
     private var stopTask: Task<Void, Never>?
 
-    func play(_ meeting: Meeting, at moment: TimeInterval) {
+    /// Which file holds `moment`, and how far into it, given each file's length in seconds.
+    nonisolated static func locate(_ moment: TimeInterval, in lengths: [TimeInterval]) -> (file: Int, offset: TimeInterval)? {
+        guard !lengths.isEmpty else { return nil }
+        var start: TimeInterval = 0
+        for (index, length) in lengths.enumerated() {
+            if moment < start + length || index == lengths.count - 1 {
+                return (index, max(0, min(moment - start, length)))
+            }
+            start += length
+        }
+        return nil
+    }
+
+    /// Plays from just before `moment` to just after `until`. Returns the seconds it will play.
+    @discardableResult
+    func play(_ meeting: Meeting, at moment: TimeInterval, until: TimeInterval? = nil) -> TimeInterval? {
         stop()
         let folder = MeetingStore.audioDirectory(for: meeting.id)
-        var start: TimeInterval = 0
-        for name in meeting.audioFiles ?? [] {
-            guard let file = try? AVAudioPlayer(contentsOf: folder.appendingPathComponent(name)) else { continue }
-            if moment < start + file.duration || name == meeting.audioFiles?.last {
-                file.currentTime = max(0, min(moment - start - 0.5, file.duration - 0.5))
-                file.prepareToPlay()
-                file.play()
-                player = file
-                stopTask = Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .seconds(Self.clipSeconds))
-                    guard !Task.isCancelled else { return }
-                    self?.stop()
-                }
-                return
-            }
-            start += file.duration
+        let files = (meeting.audioFiles ?? []).compactMap { try? AVAudioFile(forReading: folder.appendingPathComponent($0)) }
+        let lengths = files.map { Double($0.length) / $0.fileFormat.sampleRate }
+        guard let (index, offset) = Self.locate(moment, in: lengths) else { return nil }
+        let file = files[index]
+        let rate = file.processingFormat.sampleRate
+        let first = min(AVAudioFramePosition(max(0, offset - Self.leadIn) * rate), max(0, file.length - 1))
+        let count = AVAudioFrameCount(max(0, min(Double(file.length - first), Self.length(from: moment, until: until) * rate)))
+        guard count > 0 else { return nil }
+        if !attached {
+            engine.attach(node)
+            attached = true
         }
+        engine.disconnectNodeOutput(node)
+        engine.connect(node, to: engine.mainMixerNode, format: file.processingFormat)
+        do { try engine.start() } catch { return nil }
+        node.scheduleSegment(file, startingFrame: first, frameCount: count, at: nil)
+        node.play()
+        playing = true
+        stopTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Double(count) / rate))
+            guard !Task.isCancelled else { return }
+            self?.stop()
+        }
+        return Double(count) / rate
     }
 
     func stop() {
         stopTask?.cancel()
         stopTask = nil
-        player?.stop()
-        player = nil
+        if attached { node.stop() }
+        if engine.isRunning { engine.stop() }
+        playing = false
     }
 
-    var isPlaying: Bool { player?.isPlaying == true }
+    var isPlaying: Bool { playing }
 }

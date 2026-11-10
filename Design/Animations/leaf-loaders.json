@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "savedAt": "2026-11-10T04:48:40.887Z",
+  "note": "Loader for each answer step. Units: period in seconds per loop; size, spread, spacing and window are multipliers of the template (1 = as designed).",
+  "steps": {
+    "files": { "template": "hop", "track": "hop", "motion": "seed", "count": 3, "period": 1.2, "size": 1, "spread": 1, "spacing": 1, "window": 1, "reverse": false, "templateName": "Hop", "changed": { "motion": { "template": "leaf", "now": "seed" } } },
+    "library": { "template": "gather", "track": "spiral", "motion": "seed", "count": 3, "period": 3, "size": 1, "spread": 1, "spacing": 1, "window": 1, "reverse": false, "templateName": "Gather", "changed": { "motion": { "template": "bloom", "now": "seed" }, "period": { "template": 2.6, "now": 3 } } },
+    "web": { "template": "seedInf", "track": "infinity", "motion": "seed", "count": 3, "period": 4.2, "size": 1, "spread": 1, "spacing": 1, "window": 1, "reverse": false, "templateName": "Seed infinity", "changed": { "period": { "template": 2.8, "now": 4.2 } } },
+    "thinking": { "template": "bloomInf", "track": "circle", "motion": "seed", "count": 3, "period": 3, "size": 1, "spread": 1, "spacing": 1, "window": 1, "reverse": false, "templateName": "Bloom infinity", "changed": { "track": { "template": "infinity", "now": "circle" }, "motion": { "template": "bloom", "now": "seed" } } },
+    "writing": { "template": "breeze", "track": "wave", "motion": "seed", "count": 3, "period": 2.8, "size": 1, "spread": 1, "spacing": 1, "window": 1, "reverse": false, "templateName": "Breeze", "changed": { "motion": { "template": "flutter", "now": "seed" } } }
+  }
+}

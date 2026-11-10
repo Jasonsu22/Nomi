@@ -100,9 +100,15 @@ enum ChatHistory {
         )
     }
 
-    /// Turns with an answer, in order. Failed or empty turns never reach a prompt.
+    /// Turns with an answer, in order. Failed or empty turns never reach a prompt, except a question
+    /// the student interrupted before it was answered: it still stands, so the model sees it.
     static func answeredTurns(_ turns: [ChatTurn]) -> [ChatTurn] {
-        turns.filter { $0.error == nil && !$0.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        turns.filter { $0.error == nil && ($0.interrupted == true || !$0.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+    }
+
+    /// An interrupted answer as the model rereads it.
+    private static func interruptedAnswer(_ answer: String) -> String {
+        answer.isEmpty ? "(Interrupted by the student before any answer was written.)" : "(Interrupted by the student.)\n" + answer
     }
 
     /// How many of `answered` a summary through `turnID` covers.
@@ -121,14 +127,16 @@ enum ChatHistory {
         var question = stamp + trimmed(turn.question, limit: questionLimit)
         if image { question += "\n用户发过一张图片" }
         var answer = cleanedAnswer(turn.answer, limit: answerLimit)
-        if turn.interrupted == true { answer = "(Interrupted by the student.)\n" + answer }
+        if turn.interrupted == true { answer = interruptedAnswer(answer) }
         return HistoryTurn(question: question, answer: answer)
     }
 
     private static func render(_ turn: ChatTurn, answerLimit: Int, image: Bool, dated: Bool) -> String {
         let stamp = dated ? "[\(timeStamp(turn.createdAt))] " : ""
         let label = turn.interrupted == true ? "Answer (interrupted by the student)" : "Answer"
-        var text = "\(stamp)Question: \(trimmed(turn.question, limit: questionLimit))\n\(label): \(cleanedAnswer(turn.answer, limit: answerLimit))"
+        let answer = cleanedAnswer(turn.answer, limit: answerLimit)
+        let shown = turn.interrupted == true && answer.isEmpty ? "(none yet: the student interrupted before any answer was written)" : answer
+        var text = "\(stamp)Question: \(trimmed(turn.question, limit: questionLimit))\n\(label): \(shown)"
         if image { text += "\n用户发过一张图片" }
         return text
     }

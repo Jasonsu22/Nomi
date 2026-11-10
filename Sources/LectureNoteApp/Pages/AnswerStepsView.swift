@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What Nomi is doing for an answer, one line per step. The running step has the leaf orbit, a
+/// What Nomi is doing for an answer, one line per step. The running step has its own dot loader, a
 /// shimmer and its seconds; finished steps show what they found. While the model thinks, its
 /// thinking streams in under the step; afterwards "思考了 N 秒 ›" opens it again.
 struct AnswerStepsView: View {
@@ -33,7 +33,7 @@ struct AnswerStepsView: View {
     private func running(_ step: AnswerStep) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                LeafOrbit(size: 18)
+                DotLoader(style: DotLoader.Style(step.kind))
                 Text(step.title)
                     .font(AppFont.secondary)
                     .foregroundStyle(AppColor.textSecondary)
@@ -72,7 +72,7 @@ struct AnswerStepsView: View {
                 Image(systemName: "checkmark")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(AppColor.accentGreen)
-                    .frame(width: 18)
+                    .frame(width: 32)
                 if step.thought.isEmpty {
                     Text(step.detail)
                         .font(AppFont.secondary)

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "leaf-loaders",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["Design/Animations/serve.py", "8765"],
+      "port": 8765
+    }
+  ]
+}

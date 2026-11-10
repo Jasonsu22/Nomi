@@ -219,7 +219,7 @@ extension AppModel {
             openMeeting(id)
             if CitationKind.of(citation) == .summary {
                 detailTabRequest = DetailTabRequest(meetingID: id, tab: .summary)
-            } else if let at = citation.at ?? CitationQuote.clockSeconds(in: citation.detail) {
+            } else if let at = { let details = citationDetails(citation); return details.lineAt ?? details.at }() {
                 // The transcript scrolls to that moment and lights the line.
                 jumpTranscript(id, to: at)
             }
@@ -813,9 +813,10 @@ extension AppModel {
         }
         let run = chatRuns[id]
         let shown = (run?.answer ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        // Nothing shown yet: the question is simply replaced, unless it carried images worth keeping.
-        if !shown.isEmpty || !images.isEmpty {
-            let turnID = finishChat(id, question: question, answer: shown, modelName: modelName, citations: run?.citations ?? [], error: nil, images: storedImages(images), files: fileRefs(images.compactMap(existingSource)))
+        // The interrupted question is always kept, even before any answer appeared, so the model gets
+        // both it and the new message.
+        do {
+            let turnID = finishChat(id, question: question, answer: shown, modelName: modelName, citations: run?.citations ?? [], error: nil, images: storedImages(images), files: fileRefs(images.compactMap(existingSource)), steps: run?.steps ?? [])
             if let turnID, let chatIndex = chats.firstIndex(where: { $0.id == id }),
                let turnIndex = chats[chatIndex].turns.firstIndex(where: { $0.id == turnID }) {
                 chats[chatIndex].turns[turnIndex].interrupted = true
@@ -826,8 +827,6 @@ extension AppModel {
                     }
                 }
             }
-        } else {
-            images.forEach(ChatImages.discard)
         }
         // Runs after this answer's task has cleared its run.
         Task { @MainActor [weak self] in
