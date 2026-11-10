@@ -27,11 +27,12 @@ struct CitationCard: View {
         }
         .padding(14)
         .frame(width: Self.width, alignment: .leading)
-        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .background(AppColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-                .stroke(AppColor.separator, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(AppColor.separator, lineWidth: 1)
         }
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onHover(perform: onInside)
         .task(id: details.origin + details.place) { await load() }
         .onDisappear { if playing { MomentPlayer.shared.stop() } }
@@ -322,4 +323,107 @@ final class WebPreviews {
             }
         }
     }
+}
+
+/// Whether the card is showing; the fade and rise follow it.
+@MainActor
+@Observable
+final class CardAppearance {
+    var visible = false
+}
+
+/// The card's shadow and the way it appears: it fades in while rising 4 pt, over 0.14 s, and fades
+/// out the same way. The same look and timing as the preview page (`Design/Previews/citation-preview.html`).
+private struct CardChrome<Content: View>: View {
+    var state: CardAppearance
+    var content: Content
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        content
+            .compositingGroup()
+            .shadow(color: .black.opacity(dark ? 0.5 : 0.16), radius: 16, x: 0, y: 12)
+            .shadow(color: .black.opacity(dark ? 0.35 : 0.08), radius: 3, x: 0, y: 2)
+            .opacity(state.visible ? 1 : 0)
+            .offset(y: state.visible || reduceMotion ? 0 : 4)
+            .padding(CitationCardPanel.shadowRoom)
+    }
+}
+
+/// A borderless, see-through window that holds the citation card above the chat. Unlike a popover
+/// it has no arrow or system frame, and it can fade and rise like the preview page. It is attached
+/// to the app's window, so it moves with it.
+@MainActor
+final class CitationCardPanel {
+    static let shadowRoom: CGFloat = 32
+    static let gap: CGFloat = 8
+    static let fade = 0.14
+
+    private let panel: NSPanel
+    private let host = NSHostingView(rootView: AnyView(EmptyView()))
+    private let state = CardAppearance()
+    private var hiding: Task<Void, Never>?
+
+    init() {
+        panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.isReleasedWhenClosed = false
+        panel.animationBehavior = .none
+        panel.acceptsMouseMovedEvents = true
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.hidesOnDeactivate = true
+        panel.contentView = host
+    }
+
+    var isShown: Bool { panel.isVisible && state.visible }
+
+    /// Shows `card` under `anchor` (in screen coordinates), or above it when there is no room below.
+    func show(_ card: some View, under anchor: CGRect, in window: NSWindow) {
+        hiding?.cancel()
+        hiding = nil
+        state.visible = false
+        host.rootView = AnyView(CardChrome(state: state, content: card).environment(\.colorScheme, window.effectiveAppearance.isDark ? .dark : .light))
+        panel.appearance = window.effectiveAppearance
+        let size = host.fittingSize
+        let room = Self.shadowRoom
+        let area = (window.screen ?? NSScreen.main)?.visibleFrame ?? window.frame
+        var x = anchor.midX - size.width / 2
+        x = min(max(x, area.minX + 8 - room), area.maxX - size.width - 8 + room)
+        // Below the citation: the card's top edge sits `gap` under it.
+        var y = anchor.minY - Self.gap + room - size.height
+        if y + room < area.minY + 8 {
+            y = anchor.maxY + Self.gap - room
+        }
+        panel.setFrame(CGRect(x: x, y: y, width: size.width, height: size.height), display: false)
+        if panel.parent !== window {
+            panel.parent?.removeChildWindow(panel)
+            window.addChildWindow(panel, ordered: .above)
+        }
+        panel.orderFront(nil)
+        // On the next turn, so the hidden state is drawn first and the change animates.
+        DispatchQueue.main.async { [state] in
+            withAnimation(.easeOut(duration: Self.fade)) { state.visible = true }
+        }
+    }
+
+    func hide() {
+        guard panel.isVisible, hiding == nil else { return }
+        withAnimation(.easeOut(duration: Self.fade)) { state.visible = false }
+        hiding = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(Int(Self.fade * 1000) + 20))
+            guard let self, !Task.isCancelled else { return }
+            self.panel.parent?.removeChildWindow(self.panel)
+            self.panel.orderOut(nil)
+            self.host.rootView = AnyView(EmptyView())
+            self.hiding = nil
+        }
+    }
+}
+
+private extension NSAppearance {
+    var isDark: Bool { bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
 }

@@ -136,9 +136,9 @@ h1{font-size:24px;margin:0;font-weight:600;letter-spacing:-.01em;text-wrap:balan
   </div>
 
   <div class="legend">
-    <div><b>Opens after 350 ms</b>A pointer passing over a citation does not flash a card.</div>
+    <div><b>Opens after 500 ms</b>Each citation waits on its own, so passing over several shows nothing.</div>
     <div><b>Moves into the card</b>It closes 250 ms after the pointer leaves, so you can reach Open or Play.</div>
-    <div><b>Switches instantly</b>Moving from one citation to the next swaps the card with no second wait.</div>
+    <div><b>Every citation waits</b>Moving onto another citation closes the open card; the next one shows after its own 500 ms.</div>
     <div><b>Esc closes it</b>Clicking the citation does the card's main action.</div>
   </div>
 </main>
@@ -267,9 +267,10 @@ function hide(){
 document.addEventListener('pointerover', e => {
   const el = e.target.closest('.cite'); if (!el) return;
   clearTimeout(closeTimer);
-  // Already showing a card: switch at once. Otherwise wait for intent.
-  if (shownId) { if (el.dataset.id !== shownId || el !== anchor) show(el); return; }
-  clearTimeout(openTimer); openTimer = setTimeout(() => show(el), 350);
+  if (el === anchor && shownId) return;
+  // Each citation waits on its own: a card already open for another one closes first.
+  if (shownId) hide();
+  clearTimeout(openTimer); openTimer = setTimeout(() => show(el), 500);
 });
 document.addEventListener('pointerout', e => {
   const el = e.target.closest('.cite'); if (!el) return;

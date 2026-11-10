@@ -46,10 +46,10 @@ Common to all of them:
 
 ### 3.2 Hover behaviour (from Radix HoverCard, Wikipedia Page Previews, Telerik Citation)
 
-- The card opens after **350 ms** on the chip and closes **250 ms** after the pointer leaves. The
+- The card opens after **500 ms** on each chip and closes **250 ms** after the pointer leaves. The
   pointer can travel into the card without it closing.
-- Moving straight from one citation to the next **switches the card at once**, with no second wait,
-  the way Telerik's citation popover does.
+- **Every citation waits on its own.** Moving onto another citation closes the open card, and the
+  next one shows after its own 500 ms, so sweeping the pointer across a line shows nothing.
 - Esc closes the card. Clicking the chip does the card's main action, as in the table above.
 
 ### 3.3 "Found in N sources" row (as in the promo video)

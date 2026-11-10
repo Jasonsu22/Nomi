@@ -370,46 +370,31 @@
     if (url) post({ open: url });
   });
 
-  // Resting on a source for a moment shows its preview card, drawn natively by the app. Once a card
-  // is up, moving straight to the next source swaps it at once instead of waiting again.
+  // Resting on a source for half a second shows its preview card, drawn natively by the app. Every
+  // citation waits on its own, so moving the pointer across several shows nothing until it stops.
   let hoverTimer = null;
   let hovered = null;
-  let cardShown = false;
-  let leftAt = 0;
-  function showCard(chip) {
-    const rect = chip.getBoundingClientRect();
-    cardShown = true;
-    post({ hover: chip.dataset.url, label: chip.textContent, rect: [rect.left, rect.top, rect.width, rect.height] });
-  }
   document.addEventListener("mouseover", (event) => {
     const chip = event.target.closest("a.cite");
     if (chip === hovered) return;
     clearTimeout(hoverTimer);
-    if (hovered) {
-      post({ unhover: true });
-      leftAt = Date.now();
-    }
+    // Onto another citation: close this card now. Elsewhere (on the way into the card): close after a grace period.
+    if (hovered) post(chip ? { unhover: true, now: true } : { unhover: true });
     hovered = chip;
     if (!chip) return;
-    if (cardShown && Date.now() - leftAt < 400) {
-      showCard(chip);
-      return;
-    }
-    cardShown = false;
-    hoverTimer = setTimeout(() => showCard(chip), 350);
+    hoverTimer = setTimeout(() => {
+      const rect = chip.getBoundingClientRect();
+      post({ hover: chip.dataset.url, label: chip.textContent, rect: [rect.left, rect.top, rect.width, rect.height] });
+    }, 500);
   });
   document.addEventListener("mouseleave", () => {
     clearTimeout(hoverTimer);
-    if (hovered) {
-      post({ unhover: true });
-      leftAt = Date.now();
-    }
+    if (hovered) post({ unhover: true });
     hovered = null;
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     clearTimeout(hoverTimer);
-    cardShown = false;
     post({ escape: true });
   });
 

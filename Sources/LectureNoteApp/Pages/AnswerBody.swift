@@ -362,7 +362,7 @@ private struct AnswerPage: NSViewRepresentable {
         var onHeight: (CGFloat) -> Void = { _ in }
         private var ready = false
         private var rendered: NSDictionary?
-        private var card: (popover: NSPopover, host: NSHostingController<AnyView>)?
+        private var card: CitationCardPanel?
         private var pointerInsideCard = false
         private var closeTicket = 0
 
@@ -392,7 +392,8 @@ private struct AnswerPage: NSViewRepresentable {
             } else if body["escape"] != nil {
                 closeCard()
             } else if body["unhover"] != nil {
-                scheduleClose()
+                // Moving onto another citation closes this card at once; the next waits its own turn.
+                if body["now"] != nil, !pointerInsideCard { closeCard() } else { scheduleClose() }
             } else if let cards = body["cards"] as? [[Any]] {
                 webView?.cards = cards.compactMap { card in
                     let values = card.prefix(4).compactMap { ($0 as? NSNumber).map { CGFloat($0.doubleValue) } }
@@ -407,21 +408,24 @@ private struct AnswerPage: NSViewRepresentable {
         private func showCard(url: URL, label: String, rect: [CGFloat]) {
             guard let webView else { return }
             closeTicket += 1
-            let card = self.card ?? makeCard()
+            guard let window = webView.window else { return }
+            let card = self.card ?? CitationCardPanel()
+            self.card = card
             let cited = citation(for: url)
             let details = cited.flatMap { CitationLookup.details?($0) }
                 ?? CitationDetails(kind: .web, origin: CiteLink.host(url), title: label == CiteLink.host(url) ? "" : label, webURL: url)
-            card.host.rootView = AnyView(CitationCard(details: details, citation: cited, onOpen: { [weak self] in
+            let view = CitationCard(details: details, citation: cited, onOpen: { [weak self] in
                 self?.closeCard()
                 self?.onOpen(url)
             }, onInside: { [weak self] inside in
                 guard let self else { return }
                 self.pointerInsideCard = inside
                 if inside { self.closeTicket += 1 } else { self.scheduleClose() }
-            }))
+            })
             // The page reports CSS pixels from its top-left corner; the web view is flipped the same way.
             let anchor = CGRect(x: rect[0], y: rect[1], width: max(rect[2], 1), height: max(rect[3], 1))
-            card.popover.show(relativeTo: anchor, of: webView, preferredEdge: .maxY)
+            let onScreen = window.convertToScreen(webView.convert(anchor, to: nil))
+            card.show(view, under: onScreen, in: window)
         }
 
         private func scheduleClose() {
@@ -436,18 +440,7 @@ private struct AnswerPage: NSViewRepresentable {
 
         func closeCard() {
             pointerInsideCard = false
-            if let popover = card?.popover, popover.isShown { popover.performClose(nil) }
-        }
-
-        private func makeCard() -> (popover: NSPopover, host: NSHostingController<AnyView>) {
-            let popover = NSPopover()
-            let host = NSHostingController(rootView: AnyView(EmptyView()))
-            popover.behavior = .applicationDefined
-            popover.animates = false
-            host.sizingOptions = .preferredContentSize
-            popover.contentViewController = host
-            card = (popover, host)
-            return (popover, host)
+            card?.hide()
         }
 
         private func citation(for url: URL) -> ChatCitation? {
