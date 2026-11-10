@@ -57,12 +57,17 @@ struct TutorialOverlay: View {
         GeometryReader { proxy in
             let target = anchors[stop].map { proxy[$0].insetBy(dx: -6, dy: -6) }
             ZStack(alignment: .topLeading) {
+                // The cut-out glides to the next button.
                 dim(size: proxy.size, hole: target)
+                    .animation(Motion.layout(reduceMotion), value: stop)
+                // The card does not travel: each step is its own card. The last one fades out, then
+                // the next fades in where it belongs, so the words and their box always arrive together.
                 bubble
                     .frame(width: bubbleWidth, alignment: .leading)
                     .offset(bubbleOffset(target: target, size: proxy.size))
+                    .id(stop)
+                    .transition(cardTransition)
             }
-            .animation(Motion.layout(reduceMotion), value: stop)
         }
         .transition(.opacity)
     }
@@ -116,11 +121,20 @@ struct TutorialOverlay: View {
         .shadow(color: .black.opacity(0.18), radius: 16, y: 6)
     }
 
+    /// Out in 0.12 s, then in over 0.18 s once the old card is gone.
+    private var cardTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity.animation(Motion.fade(true)) }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.98)).animation(.easeOut(duration: 0.18).delay(0.12)),
+            removal: .opacity.animation(.easeOut(duration: 0.12))
+        )
+    }
+
     private var isLast: Bool { stop == TutorialStop.allCases.last }
 
     private func move(by step: Int) {
         guard let next = TutorialStop(rawValue: stop.rawValue + step) else { return }
-        model.tutorialStep = next
+        withAnimation(Motion.layout(reduceMotion)) { model.tutorialStep = next }
     }
 
     private func finish() {
