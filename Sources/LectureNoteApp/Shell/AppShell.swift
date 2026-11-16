@@ -39,7 +39,6 @@ struct AppShell: View {
                 allowsCompactFrame: $model.windowAllowsCompact
             )
         }
-        .background(RecordingWindowLevel(recording: model.engine.session.phase != .idle))
         .overlay(alignment: .bottomTrailing) {
             // Animated on its own, so the window underneath does not move along with it.
             ZStack(alignment: .bottomTrailing) {
