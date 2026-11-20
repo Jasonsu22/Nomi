@@ -221,8 +221,7 @@ struct TranscriptCard: View {
             }
             .defaultScrollAnchor(meeting.isLive ? .bottom : .top, for: .initialOffset)
             .defaultScrollAnchor(followsLatest && meeting.isLive ? .bottom : nil, for: .sizeChanges)
-            .scrollIndicators(userScrolling ? .automatic : .hidden, axes: .vertical)
-            .background(LiveScrollerGate(shown: userScrolling))
+            .fadingScrollBar()
             .onScrollPhaseChange { _, phase in
                 switch phase {
                 case .interacting, .tracking, .decelerating:
@@ -318,27 +317,8 @@ struct TranscriptCard: View {
     }
 }
 
-/// Overlay scrollers, and only while the user is dragging. Content growth must
-/// not flash the bar or change the text width.
-private struct LiveScrollerGate: NSViewRepresentable {
-    var shown: Bool
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        view.isHidden = true
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let scroll = nsView.enclosingScrollView else { return }
-            scroll.scrollerStyle = .overlay
-            scroll.autohidesScrollers = true
-            scroll.hasVerticalScroller = shown
-        }
-    }
-}
-
+/// Whether the transcript is scrolled to its newest line.
 private final class ScrollEdge {
     var atBottom = true
 }
+
