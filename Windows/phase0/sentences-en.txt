@@ -1,0 +1,13 @@
+# English lecture lines, translated into Chinese. Lengths vary like real phrases.
+Okay, let's get started.
+Today we're going to look at how attention works inside a transformer.
+Each token computes a similarity score with every other token in the sequence.
+That's why the cost grows with the square of the sequence length.
+Can everyone see the slide at the back?
+The midterm covers lectures four to seven, and most of the marks are on this part.
+So the key idea is that the query and the key decide where the model looks, and the value decides what it takes.
+Please bring your laptop next week, because we'll do the exercise in class.
+If you remember one thing from today, remember this diagram.
+Any questions so far?
+Now, a common mistake is to confuse the learning rate with the batch size, so let me explain the difference with an example from last year's project.
+Right, five more minutes and then we'll take a break.

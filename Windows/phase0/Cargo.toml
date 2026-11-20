@@ -1,0 +1,18 @@
+# Phase 0 of Nomi for Windows: measure the speech and translation models on real PCs before
+# building anything else. See README.md and docs/windows-plan.md.
+#
+# Two programs, because transcribe.cpp and llama.cpp each build their own copy of ggml and
+# cannot share one binary. That matches the app: speech and translation run as separate workers.
+[workspace]
+resolver = "2"
+members = ["asr-bench", "llm-bench"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

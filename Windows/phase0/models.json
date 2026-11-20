@@ -1,0 +1,22 @@
+{
+  "note": "Models measured in Phase 0. Each file is fetched from the first source that answers; hf-mirror.com is for mainland China, where huggingface.co is blocked.",
+  "sources": ["https://huggingface.co", "https://hf-mirror.com"],
+  "asr": [
+    { "id": "qwen3-asr-0.6b", "file": "Qwen3-ASR-0.6B-Q8_0.gguf", "path": "handy-computer/Qwen3-ASR-0.6B-gguf/resolve/main/Qwen3-ASR-0.6B-Q8_0.gguf", "set": "Lite, Standard" },
+    { "id": "qwen3-asr-1.7b", "file": "Qwen3-ASR-1.7B-Q8_0.gguf", "path": "handy-computer/Qwen3-ASR-1.7B-gguf/resolve/main/Qwen3-ASR-1.7B-Q8_0.gguf", "set": "Full" }
+  ],
+  "llm": [
+    { "id": "qwen3.5-0.8b", "file": "Qwen3.5-0.8B-Q4_K_M.gguf", "path": "unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf", "set": "Lite" },
+    { "id": "qwen3.5-2b", "file": "Qwen3.5-2B-Q4_K_M.gguf", "path": "unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf", "set": "Standard, Full" }
+  ],
+  "sets": [
+    { "name": "Lite", "asr": "qwen3-asr-0.6b", "llm": "qwen3.5-0.8b" },
+    { "name": "Standard", "asr": "qwen3-asr-0.6b", "llm": "qwen3.5-2b" },
+    { "name": "Full", "asr": "qwen3-asr-1.7b", "llm": "qwen3.5-2b" }
+  ],
+  "pass": {
+    "note": "load = model time / audio time. Translation time is per sentence, at the 90th percentile.",
+    "live_with_interim": { "asr_load_max": 0.6, "translation_p90_ms_max": 2000 },
+    "live_without_interim": { "asr_load_without_interim_max": 0.5, "translation_p90_ms_max": 2500 }
+  }
+}

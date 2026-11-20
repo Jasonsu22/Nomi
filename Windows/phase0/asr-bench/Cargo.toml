@@ -1,0 +1,25 @@
+[package]
+name = "asr-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Measures a speech model the way Nomi uses it during a lecture"
+
+[dependencies]
+# Nomi's own phrase cutter, so the load is the same as in the engine.
+voice-core = { path = "../../../Backend/crates/voice-core" }
+hound = "3.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+# GPU backends per platform. Windows and Linux: Vulkan plus runtime-chosen CPU builds
+# (AVX2, AVX-512, ...), so one build suits any x64 PC. macOS: Metal.
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
+transcribe-cpp = { version = "0.4.2", default-features = false, features = ["dynamic-backends", "vulkan", "serde"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+transcribe-cpp = { version = "0.4.2", default-features = false, features = ["dynamic-backends", "vulkan", "serde"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+transcribe-cpp = { version = "0.4.2", default-features = false, features = ["metal", "serde"] }
