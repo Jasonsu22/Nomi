@@ -270,7 +270,7 @@ private struct Scrolling<Content: View>: View {
                 ScrollView(.vertical) {
                     content
                 }
-                .scrollIndicators(.automatic)
+                .fadingScrollBar()
                 .scrollBounceBehavior(.basedOnSize)
             }
             .accessibilityElement(children: .contain)

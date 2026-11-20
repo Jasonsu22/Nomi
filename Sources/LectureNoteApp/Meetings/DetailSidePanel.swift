@@ -188,6 +188,7 @@ struct DetailSidePanel: View {
             }
             .padding(Space.s4)
         }
+        .fadingScrollBar()
     }
 
     private var linkedSources: [KnowledgeSource] {
@@ -199,6 +200,7 @@ struct DetailSidePanel: View {
             materials
                 .padding(Space.s4)
         }
+        .fadingScrollBar()
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             receiveDroppedSources(providers)
             return true
@@ -330,6 +332,7 @@ struct DetailSidePanel: View {
                         }
                     }
                 }
+                .fadingScrollBar()
                 .frame(maxHeight: 280)
             }
         }

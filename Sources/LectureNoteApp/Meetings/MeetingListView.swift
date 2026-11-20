@@ -61,6 +61,7 @@ struct MeetingListView: View {
             .padding(.top, 28)
             .padding(.bottom, Space.s7)
         }
+        .fadingScrollBar()
         .onChange(of: model.searchRequest) { _, _ in
             searchFocused = true
         }

@@ -39,6 +39,7 @@ struct MeetingQAPanel: View {
                     .padding(.horizontal, Space.s4)
                     .padding(.bottom, Space.s4)
                 }
+                .fadingScrollBar()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
