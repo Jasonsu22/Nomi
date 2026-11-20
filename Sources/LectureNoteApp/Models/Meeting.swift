@@ -28,6 +28,8 @@ struct Meeting: Identifiable, Equatable, Codable {
     var audioFiles: [String]? = nil
     /// The side panel's summary and questions, kept so they survive a restart.
     var assistant: MeetingAssistantRecord? = nil
+    /// Which voice is the teacher's, after the voice pass has run on the recording.
+    var voices: MeetingVoices? = nil
 
     var inputTitle: String { inputDeviceName ?? source.title }
 

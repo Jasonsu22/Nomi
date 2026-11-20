@@ -75,6 +75,10 @@ final class AppModel {
     var windowAllowsCompact = false
     var exportError: String?
     var storageError: String?
+    /// Meetings whose voices are being told apart right now (`checkVoices`).
+    var checkingVoices: Set<UUID> = []
+    /// Why the last voice pass failed, shown on its meeting.
+    var voiceError: [UUID: String] = [:]
     var sourceError: String?
     var sources: [KnowledgeSource] = [] {
         didSet { persistSources() }
@@ -960,6 +964,7 @@ final class AppModel {
         resumedMeetingSnapshot = nil
         persistMeetings()
         finishQuestionScan(id)
+        checkVoices(id, automatic: true)
     }
 
     /// The meeting being recorded, if any.

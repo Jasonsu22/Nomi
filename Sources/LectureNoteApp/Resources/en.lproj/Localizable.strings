@@ -641,3 +641,16 @@
 "新回答" = "New answer";
 "跳到最新" = "Jump to latest";
 "跳到新回答" = "Jump to new answer";
+"这场会议没有保存录音，无法识别声音。" = "This meeting has no saved recording, so voices can't be told apart.";
+"录音里没有找到说话声。" = "No speech was found in the recording.";
+"无法识别声音：%@" = "Couldn't tell voices apart: %@";
+"只看老师" = "Teacher only";
+"全部声音" = "All voices";
+"显示同学说的话" = "Show what classmates said";
+"隐藏同学说的话，只看老师" = "Hide what classmates said and show only the teacher";
+"正在识别声音…" = "Telling voices apart…";
+"识别同学的声音" = "Find classmates' voices";
+"从录音里分出老师和同学的声音，同学说的话会变灰" = "Tell the teacher's voice from classmates' in the recording; classmates' words turn grey";
+"这是老师的声音" = "This is the teacher";
+"标出同学的声音（实验）" = "Mark Classmates' Voices (Experimental)";
+"录音结束后，在这台 Mac 上分出老师和同学的声音：同学说的话在转写里变灰，回答问题和摘要时也会注明。第一次使用时会下载约 20 MB 的模型。" = "After a recording, Nomi tells the teacher's voice from classmates' on this Mac: classmates' words turn grey in the transcript, and answers and summaries say who said them. The first time, about 20 MB of models download.";

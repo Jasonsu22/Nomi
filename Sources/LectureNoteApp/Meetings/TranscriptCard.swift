@@ -9,6 +9,11 @@ struct TranscriptCard: View {
     var embedded = false
     /// A moment to scroll to, sent from the Q&A tab.
     var jump: TranscriptJump? = nil
+    /// The voice pass: running now, why it failed, how to start it, and "This is the teacher".
+    var checkingVoices = false
+    var voiceError: String? = nil
+    var onCheckVoices: (() -> Void)? = nil
+    var onMarkTeacher: ((Int) -> Void)? = nil
     var onCopy: (Meeting) -> Void
 
     @AppStorage("lecturenote.transcriptFontSize") private var fontSize = 15.0
@@ -22,6 +27,7 @@ struct TranscriptCard: View {
     /// The paragraph a Q&A timestamp jumped to, lit for a moment.
     @State private var highlighted: Int?
     @State private var highlightFade: Task<Void, Never>?
+    @AppStorage("lecturenote.teacherOnly") private var teacherOnly = false
 
     var body: some View {
         let paragraphs = paragraphs
@@ -59,6 +65,7 @@ struct TranscriptCard: View {
                     .foregroundStyle(AppColor.textPrimary)
             }
             Spacer(minLength: Space.s2)
+            voiceControl
             fontButton("A−") { fontSize = max(13, fontSize - 1) }
             fontButton("A+") { fontSize = min(20, fontSize + 1) }
             if canCompare {
@@ -92,6 +99,41 @@ struct TranscriptCard: View {
         .padding(.bottom, Space.s3)
     }
 
+    /// "Teacher only" once voices are known; before that, a way to find them in a finished recording.
+    @ViewBuilder
+    private var voiceControl: some View {
+        if meeting.voices != nil {
+            Button {
+                teacherOnly.toggle()
+            } label: {
+                Label(teacherOnly ? tr("只看老师") : tr("全部声音"), systemImage: teacherOnly ? "person.fill" : "person.2")
+                    .font(AppFont.caption)
+                    .foregroundStyle(teacherOnly ? AppColor.accent : AppColor.textSecondary)
+                    .padding(.horizontal, 6)
+                    .frame(height: 24)
+            }
+            .buttonStyle(.plain.clicking())
+            .help(teacherOnly ? tr("显示同学说的话") : tr("隐藏同学说的话，只看老师"))
+        } else if checkingVoices {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text(tr("正在识别声音…"))
+            }
+            .font(AppFont.caption)
+            .foregroundStyle(AppColor.textSecondary)
+        } else if let onCheckVoices, !meeting.isLive, !(meeting.audioFiles ?? []).isEmpty {
+            Button(action: onCheckVoices) {
+                Label(tr("识别同学的声音"), systemImage: "person.2.wave.2")
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .padding(.horizontal, 6)
+                    .frame(height: 24)
+            }
+            .buttonStyle(.plain.clicking())
+            .help(voiceError ?? tr("从录音里分出老师和同学的声音，同学说的话会变灰"))
+        }
+    }
+
     private func fontButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -113,16 +155,24 @@ struct TranscriptCard: View {
                             .foregroundStyle(AppColor.textSecondary)
                             .padding(Space.s5)
                     } else {
-                        ForEach(paragraphs) { paragraph in
+                        ForEach(shown(paragraphs)) { paragraph in
                             ParagraphRow(
                                 paragraph: paragraph,
                                 sourceLanguage: meeting.sourceLanguage,
                                 targetLanguage: meeting.targetLanguage,
                                 compare: sideBySide,
                                 fontSize: fontSize,
-                                highlighted: paragraph.id == highlighted
+                                highlighted: paragraph.id == highlighted,
+                                voices: meeting.voices,
+                                teacherOnly: teacherOnly
                             )
                             .equatable()
+                            .contextMenu {
+                                if let voices = meeting.voices, let onMarkTeacher,
+                                   VoiceLabels.voiceToPromote(in: paragraph, voices: voices) != nil {
+                                    Button(tr("这是老师的声音")) { onMarkTeacher(paragraph.id) }
+                                }
+                            }
                         }
                     }
                     Color.clear
@@ -182,6 +232,14 @@ struct TranscriptCard: View {
                     .animation(Motion.tap(reduceMotion), value: followsLatest)
                 }
             }
+        }
+    }
+
+    /// With "Teacher only", paragraphs that are all classmates' are left out.
+    private func shown(_ paragraphs: [Paragraph]) -> [Paragraph] {
+        guard teacherOnly, let voices = meeting.voices else { return paragraphs }
+        return paragraphs.filter { paragraph in
+            paragraph.commits.isEmpty || paragraph.commits.contains { !voices.isClassmate($0) }
         }
     }
 

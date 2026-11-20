@@ -7,6 +7,9 @@ struct Commit: Identifiable, Equatable, Codable {
     var translation: String
     var start: TimeInterval
     var end: TimeInterval
+    /// Whose voice this is, from the after-recording voice pass ("S1", "S2"…); nil when not checked,
+    /// too short, or more than one voice. See `MeetingVoices`.
+    var speaker: String? = nil
 }
 
 struct Paragraph: Identifiable, Equatable, Codable {

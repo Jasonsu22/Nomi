@@ -45,6 +45,10 @@ struct MeetingDetailView: View {
                         reduceMotion: reduceMotion,
                         canCompare: proxy.size.width >= 1100,
                         jump: model.transcriptJump?.meetingID == meeting.id ? model.transcriptJump : nil,
+                        checkingVoices: model.checkingVoices.contains(meeting.id),
+                        voiceError: model.voiceError[meeting.id],
+                        onCheckVoices: { model.checkVoices(meeting.id) },
+                        onMarkTeacher: { model.markTeacher(meetingID: meeting.id, paragraphID: $0) },
                         onCopy: { model.copyTranscript($0) }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
