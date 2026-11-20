@@ -20,7 +20,8 @@ actor VoiceAnalyzer {
     /// The stretches of speech in a meeting's recordings, with times on the transcript's clock. A
     /// meeting recorded in several runs keeps one file per run; they are joined in order first, so
     /// a voice keeps one label across them.
-    func spans(meetingID: UUID, audioFiles: [String]) async throws -> [VoiceSpan] {
+    /// The stretches of speech, and each voice's voiceprint (to find your voice again).
+    func spans(meetingID: UUID, audioFiles: [String]) async throws -> (spans: [VoiceSpan], prints: [String: [Float]]) {
         let folder = MeetingStore.audioDirectory(for: meetingID)
         let urls = audioFiles.map { folder.appendingPathComponent($0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
         guard !urls.isEmpty else { throw Failure.noAudio }
@@ -33,9 +34,10 @@ actor VoiceAnalyzer {
         let started = Date()
         let result = try await manager.process(joined)
         Self.logger.notice("Voices: \(result.segments.count, privacy: .public) stretches in \(Date().timeIntervalSince(started), privacy: .public) s")
-        return result.segments.map {
+        let spans = result.segments.map {
             VoiceSpan(start: TimeInterval($0.startTimeSeconds), end: TimeInterval($0.endTimeSeconds), speaker: $0.speakerId)
         }
+        return (spans, result.speakerDatabase ?? [:])
     }
 
     private func readyManager() async throws -> OfflineDiarizerManager {

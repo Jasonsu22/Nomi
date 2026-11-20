@@ -62,4 +62,38 @@ struct MeetingVoicesTests {
         let again = try JSONDecoder().decode(Meeting.self, from: JSONEncoder().encode(meeting))
         #expect(again.voices?.teacher == "S1")
     }
+
+    @Test func yourLinesAreYoursAndMarkedForTheAI() {
+        guard var result = VoiceLabels.label([paragraph()], spans: spans) else { Issue.record("no labels"); return }
+        #expect(VoiceLabels.mainVoice(in: result.paragraphs[0], excluding: result.voices.teacher) == "S2")
+        result.voices.me = "S2"
+        let commits = result.paragraphs[0].commits
+        #expect(result.voices.side(of: commits[0]) == .teacher)
+        #expect(result.voices.side(of: commits[1]) == .me)
+        #expect(!result.voices.isClassmate(commits[1]), "your lines are not a classmate's")
+        let text = result.paragraphs[0].renderedSourceMarkingStudents(language: "en", voices: result.voices)
+        #expect(text.contains("[Me] I usually get nervous in front of so many people. [/Me]"))
+        #expect(ChatContext.studentRule.contains("[Me]"))
+    }
+
+    @Test func yourSavedVoiceIsFoundOnlyWhenItClearlyMatches() {
+        let me: [Float] = [1, 0, 0, 0]
+        let prints: [String: [Float]] = [
+            "S1": [0, 0, 1, 0],          // the teacher
+            "S2": [0.9, 0.3, 0, 0],      // you, in another room
+            "S3": [0.4, 0, 0, 0.9],      // a classmate (about 0.4 similar, like the class measured)
+        ]
+        #expect(MyVoice.match(me, in: prints, teacher: "S1") == "S2")
+        #expect(MyVoice.match(me, in: ["S1": [1, 0, 0, 0], "S3": [0.4, 0, 0, 0.9]], teacher: "S1") == nil, "the teacher is never you, and nobody else is close enough")
+        #expect(MyVoice.match(me, in: ["S1": [0, 1, 0, 0], "S2": [0.9, 0.3, 0, 0], "S4": [0.88, 0.32, 0.05, 0]], teacher: "S1") == nil, "two voices too alike to choose")
+        // A blend of several voices (overlapping speech) is never taken as you, however close.
+        let withBlend: [String: [Float]] = [
+            "S1": [0, 0, 1, 0], "S2": [0.9, 0.3, 0, 0], "S4": [0.3, 0.9, 0.3, 0],
+            "S7": [0.7, 0.7, 0.3, 0],
+        ]
+        #expect(MyVoice.match([0.75, 0.65, 0.2, 0], in: withBlend, teacher: "S1") != "S7")
+        let blended = MyVoice.blended([1, 0, 0, 0], with: [0, 1, 0, 0])
+        #expect(MyVoice.cosine(blended, [1, 0, 0, 0]) > MyVoice.cosine(blended, [0, 1, 0, 0]), "the saved voice moves only a little")
+    }
 }
+

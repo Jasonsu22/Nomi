@@ -72,39 +72,45 @@ struct ParagraphRow: View, Equatable {
 
     private var translation: String {
         guard let voices, teacherOnly else { return paragraph.renderedTranslation(language: targetLanguage) }
-        return TranscriptText.join(paragraph.commits.filter { !voices.isClassmate($0) }.map(\.translation), language: paragraph.targetLanguage ?? targetLanguage)
+        return TranscriptText.join(paragraph.commits.filter { voices.side(of: $0) == .teacher }.map(\.translation), language: paragraph.targetLanguage ?? targetLanguage)
     }
 
-    /// Whether any line here is a classmate's.
-    private var hasClassmate: Bool {
+    /// Whether any line here is yours or a classmate's.
+    private var hasOthers: Bool {
         guard let voices else { return false }
-        return paragraph.commits.contains(where: voices.isClassmate)
+        return paragraph.commits.contains { voices.side(of: $0) != .teacher }
     }
 
     private var spoken: Text {
-        guard let voices, hasClassmate else { return plainSpoken }
-        // Runs of lines by one side, so a classmate's words read as one greyed stretch with a tag.
+        guard let voices, hasOthers else { return plainSpoken }
+        // Runs of lines by one side: a classmate's words greyed with a group icon, yours in the
+        // accent colour with a person icon, the teacher's as usual.
         var result = Text("")
         var started = false
         var run: [Commit] = []
         func flush() {
             guard let first = run.first else { return }
-            let student = voices.isClassmate(first)
+            let side = voices.side(of: first)
             let text = TranscriptText.join(run.map(\.source), language: paragraph.sourceLanguage ?? sourceLanguage)
             run = []
-            if student && teacherOnly { return }
+            if side != .teacher && teacherOnly { return }
             if started, TranscriptText.usesSpaces(paragraph.sourceLanguage ?? sourceLanguage) { result = result + Text(" ") }
             started = true
-            if student {
+            switch side {
+            case .teacher:
+                result = result + Text(text).foregroundStyle(AppColor.textPrimary)
+            case .classmate:
                 result = result
                     + Text(Image(systemName: "person.2")).font(.system(size: fontSize - 3)).foregroundStyle(AppColor.textSecondary)
                     + Text(" " + text).foregroundStyle(AppColor.textSecondary)
-            } else {
-                result = result + Text(text).foregroundStyle(AppColor.textPrimary)
+            case .me:
+                result = result
+                    + Text(Image(systemName: "person.fill")).font(.system(size: fontSize - 3)).foregroundStyle(AppColor.accent)
+                    + Text(" " + text).foregroundStyle(AppColor.accent)
             }
         }
         for commit in paragraph.commits {
-            if let last = run.last, voices.isClassmate(last) != voices.isClassmate(commit) { flush() }
+            if let last = run.last, voices.side(of: last) != voices.side(of: commit) { flush() }
             run.append(commit)
         }
         flush()

@@ -1,23 +1,34 @@
 import Foundation
 
-/// Who speaks in a recording: the teacher, and everyone else (classmates, guests).
+/// Who speaks in a recording: the teacher, you, and everyone else (classmates, guests).
 ///
 /// After a recording, the voice pass (`VoiceAnalyzer`) groups the speech by voice and labels each
 /// transcript line (commit) with the voice that said it. The voice that speaks most is taken as the
-/// teacher; "This is the teacher" on any line changes that. Lines by any other voice are classmates':
-/// shown greyed, hidden by "Teacher only", and marked for the AI. See docs/teacher-voice-plan.md.
+/// teacher; "This is the teacher" on any line changes that. "This is me" marks your own voice, which
+/// is remembered (`MyVoice`) and found again in other lectures. Lines by any other voice are
+/// classmates': greyed, hidden by "Teacher only", and marked for the AI. See docs/teacher-voice-plan.md.
 struct MeetingVoices: Equatable, Codable, Sendable {
     /// The teacher's voice, one of `seconds`' keys.
     var teacher: String
     /// How long each voice speaks, in seconds.
     var seconds: [String: Double]
     var checkedAt: Date
+    /// Each voice's voiceprint (256 numbers describing how it sounds), to find your voice again.
+    var prints: [String: [Float]]? = nil
+    /// Your own voice, if it is in this recording.
+    var me: String? = nil
+    /// You chose `me` here yourself (or said it isn't you), so matching your saved voice leaves it alone.
+    var meChosen: Bool? = nil
 
-    /// Whether `commit` was said by someone other than the teacher. Unlabelled lines count as the teacher's.
-    func isClassmate(_ commit: Commit) -> Bool {
-        guard let speaker = commit.speaker else { return false }
-        return speaker != teacher
+    enum Side: Equatable { case teacher, me, classmate }
+
+    /// Whose line `commit` is. Unlabelled lines count as the teacher's.
+    func side(of commit: Commit) -> Side {
+        guard let speaker = commit.speaker, speaker != teacher else { return .teacher }
+        return speaker == me ? .me : .classmate
     }
+
+    func isClassmate(_ commit: Commit) -> Bool { side(of: commit) == .classmate }
 
     /// The voice that speaks most.
     static func mostHeard(_ seconds: [String: Double]) -> String? {
@@ -65,34 +76,99 @@ enum VoiceLabels {
         return (labelled, MeetingVoices(teacher: teacher, seconds: seconds, checkedAt: now))
     }
 
-    /// The voice to make the teacher's when the student picks "This is the teacher" on a paragraph:
-    /// the non-teacher voice heard most in it.
-    static func voiceToPromote(in paragraph: Paragraph, voices: MeetingVoices) -> String? {
+    /// The voice most heard in `paragraph` other than `excluding`; what "This is the teacher" or
+    /// "This is me" on that paragraph refers to.
+    static func mainVoice(in paragraph: Paragraph, excluding: String?) -> String? {
         var heard: [String: Double] = [:]
         for commit in paragraph.commits {
-            guard let speaker = commit.speaker, speaker != voices.teacher else { continue }
+            guard let speaker = commit.speaker, speaker != excluding else { continue }
             heard[speaker, default: 0] += commit.end - commit.start
         }
         return MeetingVoices.mostHeard(heard)
     }
+
+    /// The voice to make the teacher's when the student picks "This is the teacher" on a paragraph.
+    static func voiceToPromote(in paragraph: Paragraph, voices: MeetingVoices) -> String? {
+        mainVoice(in: paragraph, excluding: voices.teacher)
+    }
+}
+
+/// Your own voice, remembered across lectures as a voiceprint once you pick "This is me". Kept on this
+/// Mac only, in the app's settings; no audio is kept.
+enum MyVoice {
+    static let key = "lecturenote.myVoice"
+
+    /// A voice matches yours when its voiceprint is at least this similar (cosine). In the English class
+    /// of Nov 8, different people came out 0.13–0.56; a wrong match is fixed with "This isn't me".
+    static let threshold: Float = 0.65
+    /// And clearly closer than the next voice.
+    static let lead: Float = 0.1
+
+    static var print: [Float]? {
+        get { (UserDefaults.standard.array(forKey: key) as? [NSNumber])?.map(\.floatValue) }
+        set {
+            if let newValue { UserDefaults.standard.set(newValue.map { NSNumber(value: $0) }, forKey: key) }
+            else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+    }
+
+    static func cosine(_ a: [Float], _ b: [Float]) -> Float {
+        guard a.count == b.count, !a.isEmpty else { return 0 }
+        var dot: Float = 0, na: Float = 0, nb: Float = 0
+        for i in a.indices { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
+        return na > 0 && nb > 0 ? dot / (na.squareRoot() * nb.squareRoot()) : 0
+    }
+
+    /// Your saved voice blended with a new sample of it, so it holds up across rooms and days.
+    static func blended(_ old: [Float]?, with new: [Float]) -> [Float] {
+        guard let old, old.count == new.count else { return unit(new) }
+        let a = unit(old), b = unit(new)
+        return unit(zip(a, b).map { 0.7 * $0 + 0.3 * $1 })
+    }
+
+    private static func unit(_ v: [Float]) -> [Float] {
+        let n = v.reduce(0) { $0 + $1 * $1 }.squareRoot()
+        return n > 0 ? v.map { $0 / n } : v
+    }
+
+    /// A group whose voiceprint is this close to two or more other voices is a blend (people talking
+    /// over each other, noise), not one person; in that class one such group was 0.69–0.78 from three others.
+    static let blendBar: Float = 0.6
+
+    /// Which of a recording's voices is yours, if any clearly is. The teacher's voice is never you,
+    /// and neither is a blended group.
+    static func match(_ mine: [Float], in prints: [String: [Float]], teacher: String) -> String? {
+        let blends = Set(prints.keys.filter { key in
+            prints.filter { $0.key != key && cosine($0.value, prints[key]!) >= blendBar }.count >= 2
+        })
+        let scored = prints.filter { $0.key != teacher && !blends.contains($0.key) }
+            .map { ($0.key, cosine(mine, $0.value)) }.sorted { $0.1 > $1.1 }
+        guard let best = scored.first, best.1 >= threshold else { return nil }
+        if scored.count > 1, best.1 - scored[1].1 < lead { return nil }
+        return best.0
+    }
 }
 
 extension Paragraph {
-    /// The original text with a classmate's lines marked "[Student]", for the AI.
+    /// The original text with a classmate's lines marked "[Student]" and yours "[Me]", for the AI.
     func renderedSourceMarkingStudents(language: String, voices: MeetingVoices?) -> String {
-        guard let voices, commits.contains(where: voices.isClassmate) else { return renderedSource(language: language) }
+        guard let voices, commits.contains(where: { voices.side(of: $0) != .teacher }) else { return renderedSource(language: language) }
         var parts: [String] = []
         var run: [String] = []
-        var runIsStudent = false
+        var side = MeetingVoices.Side.teacher
         func flush() {
             guard !run.isEmpty else { return }
             let text = TranscriptText.join(run, language: sourceLanguage ?? language)
-            parts.append(runIsStudent ? "[Student] \(text) [/Student]" : text)
+            switch side {
+            case .teacher: parts.append(text)
+            case .classmate: parts.append("[Student] \(text) [/Student]")
+            case .me: parts.append("[Me] \(text) [/Me]")
+            }
             run = []
         }
         for commit in commits {
-            let student = voices.isClassmate(commit)
-            if student != runIsStudent { flush(); runIsStudent = student }
+            let next = voices.side(of: commit)
+            if next != side { flush(); side = next }
             run.append(commit.source)
         }
         flush()

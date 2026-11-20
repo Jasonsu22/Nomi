@@ -14,6 +14,8 @@ struct TranscriptCard: View {
     var voiceError: String? = nil
     var onCheckVoices: (() -> Void)? = nil
     var onMarkTeacher: ((Int) -> Void)? = nil
+    var onMarkMe: ((Int) -> Void)? = nil
+    var onClearMe: (() -> Void)? = nil
     var onCopy: (Meeting) -> Void
 
     @AppStorage("lecturenote.transcriptFontSize") private var fontSize = 15.0
@@ -102,7 +104,8 @@ struct TranscriptCard: View {
     /// "Teacher only" once voices are known; before that, a way to find them in a finished recording.
     @ViewBuilder
     private var voiceControl: some View {
-        if meeting.voices != nil {
+        // A pass from before voiceprints were kept is run again, so "This is me" can be remembered.
+        if meeting.voices?.prints != nil, !checkingVoices {
             Button {
                 teacherOnly.toggle()
             } label: {
@@ -113,7 +116,7 @@ struct TranscriptCard: View {
                     .frame(height: 24)
             }
             .buttonStyle(.plain.clicking())
-            .help(teacherOnly ? tr("显示同学说的话") : tr("隐藏同学说的话，只看老师"))
+            .help(teacherOnly ? tr("显示同学和你说的话") : tr("隐藏同学和你说的话，只看老师。右键一段可以标出你自己的声音"))
         } else if checkingVoices {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
@@ -168,9 +171,17 @@ struct TranscriptCard: View {
                             )
                             .equatable()
                             .contextMenu {
-                                if let voices = meeting.voices, let onMarkTeacher,
-                                   VoiceLabels.voiceToPromote(in: paragraph, voices: voices) != nil {
-                                    Button(tr("这是老师的声音")) { onMarkTeacher(paragraph.id) }
+                                if let voices = meeting.voices {
+                                    let other = VoiceLabels.voiceToPromote(in: paragraph, voices: voices)
+                                    if let onMarkMe, let other, other != voices.me {
+                                        Button(tr("这是我的声音")) { onMarkMe(paragraph.id) }
+                                    }
+                                    if let onClearMe, voices.me != nil, paragraph.commits.contains(where: { voices.side(of: $0) == .me }) {
+                                        Button(tr("这不是我的声音")) { onClearMe() }
+                                    }
+                                    if let onMarkTeacher, other != nil {
+                                        Button(tr("这是老师的声音")) { onMarkTeacher(paragraph.id) }
+                                    }
                                 }
                             }
                         }
@@ -239,7 +250,7 @@ struct TranscriptCard: View {
     private func shown(_ paragraphs: [Paragraph]) -> [Paragraph] {
         guard teacherOnly, let voices = meeting.voices else { return paragraphs }
         return paragraphs.filter { paragraph in
-            paragraph.commits.isEmpty || paragraph.commits.contains { !voices.isClassmate($0) }
+            paragraph.commits.isEmpty || paragraph.commits.contains { voices.side(of: $0) == .teacher }
         }
     }
 

@@ -87,6 +87,8 @@ struct DetailSidePanel: View {
                         voiceError: model.voiceError[meeting.id],
                         onCheckVoices: { model.checkVoices(meeting.id) },
                         onMarkTeacher: { model.markTeacher(meetingID: meeting.id, paragraphID: $0) },
+                        onMarkMe: { model.markMe(meetingID: meeting.id, paragraphID: $0) },
+                        onClearMe: { model.clearMe(meetingID: meeting.id) },
                         onCopy: { model.copyTranscript($0) }
                     )
                 case .info:
