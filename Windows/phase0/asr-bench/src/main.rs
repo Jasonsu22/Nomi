@@ -159,6 +159,9 @@ fn run(args: &[String]) -> Result<()> {
     let mut clips = Vec::new();
     for path in &audio {
         let pcm = read_wav(path)?;
+        if pcm.len() < RATE as usize {
+            bail!("{} holds less than a second of audio; is the WAV complete?", path.display());
+        }
         let audio_seconds = pcm.len() as f64 / RATE as f64;
         eprintln!("{}: {:.0} s of audio", path.display(), audio_seconds);
         let mut vad = Vad::new(VadConfig::default());
