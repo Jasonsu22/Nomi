@@ -16,6 +16,7 @@ struct TranscriptCard: View {
     var onMarkTeacher: ((Int) -> Void)? = nil
     var onMarkMe: ((Int) -> Void)? = nil
     var onClearMe: (() -> Void)? = nil
+    var onRenameSpeaker: ((String, String) -> Void)? = nil
     var onCopy: (Meeting) -> Void
 
     @AppStorage("lecturenote.transcriptFontSize") private var fontSize = 15.0
@@ -29,7 +30,10 @@ struct TranscriptCard: View {
     /// The paragraph a Q&A timestamp jumped to, lit for a moment.
     @State private var highlighted: Int?
     @State private var highlightFade: Task<Void, Never>?
-    @AppStorage("lecturenote.teacherOnly") private var teacherOnly = false
+    @AppStorage("lecturenote.showSpeakers") private var showSpeakers = true
+    /// The voice being renamed, and the name typed so far.
+    @State private var renaming: String?
+    @State private var newName = ""
 
     var body: some View {
         let paragraphs = paragraphs
@@ -43,6 +47,16 @@ struct TranscriptCard: View {
         let content = VStack(alignment: .leading, spacing: 0) {
             toolbar
             transcript(paragraphs)
+        }
+        .alert(tr("给说话人起个名字"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField(tr("名字，例如 Jenny"), text: $newName)
+            Button(tr("保存")) {
+                if let renaming { onRenameSpeaker?(renaming, newName) }
+                renaming = nil
+            }
+            Button(tr("取消"), role: .cancel) { renaming = nil }
+        } message: {
+            Text(tr("这场录音里这个声音说的话都会用这个名字。留空就恢复原来的名字。"))
         }
         return Group {
             if embedded {
@@ -107,16 +121,16 @@ struct TranscriptCard: View {
         // A pass from before voiceprints were kept is run again, so "This is me" can be remembered.
         if meeting.voices?.prints != nil, !checkingVoices {
             Button {
-                teacherOnly.toggle()
+                showSpeakers.toggle()
             } label: {
-                Label(teacherOnly ? tr("只看老师") : tr("全部声音"), systemImage: teacherOnly ? "person.fill" : "person.2")
+                Label(tr("说话人"), systemImage: showSpeakers ? "person.2.fill" : "person.2")
                     .font(AppFont.caption)
-                    .foregroundStyle(teacherOnly ? AppColor.accent : AppColor.textSecondary)
+                    .foregroundStyle(showSpeakers ? AppColor.accent : AppColor.textSecondary)
                     .padding(.horizontal, 6)
                     .frame(height: 24)
             }
             .buttonStyle(.plain.clicking())
-            .help(teacherOnly ? tr("显示同学和你说的话") : tr("隐藏同学和你说的话，只看老师。右键一段可以标出你自己的声音"))
+            .help(showSpeakers ? tr("隐藏说话人。右键一段可以改名，或标出老师和你自己") : tr("在每段话前标出是谁说的"))
         } else if checkingVoices {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
@@ -158,7 +172,7 @@ struct TranscriptCard: View {
                             .foregroundStyle(AppColor.textSecondary)
                             .padding(Space.s5)
                     } else {
-                        ForEach(shown(paragraphs)) { paragraph in
+                        ForEach(paragraphs) { paragraph in
                             ParagraphRow(
                                 paragraph: paragraph,
                                 sourceLanguage: meeting.sourceLanguage,
@@ -167,7 +181,7 @@ struct TranscriptCard: View {
                                 fontSize: fontSize,
                                 highlighted: paragraph.id == highlighted,
                                 voices: meeting.voices,
-                                teacherOnly: teacherOnly
+                                showSpeakers: showSpeakers
                             )
                             .equatable()
                             .contextMenu {
@@ -181,6 +195,16 @@ struct TranscriptCard: View {
                                     }
                                     if let onMarkTeacher, other != nil {
                                         Button(tr("这是老师的声音")) { onMarkTeacher(paragraph.id) }
+                                    }
+                                    if onRenameSpeaker != nil {
+                                        let present = Array(NSOrderedSet(array: paragraph.commits.compactMap(\.speaker))) as? [String] ?? []
+                                        if !present.isEmpty { Divider() }
+                                        ForEach(present, id: \.self) { speaker in
+                                            Button(trf("重命名“%@”…", voices.name(of: speaker))) {
+                                                newName = voices.names?[speaker] ?? ""
+                                                renaming = speaker
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -243,14 +267,6 @@ struct TranscriptCard: View {
                     .animation(Motion.tap(reduceMotion), value: followsLatest)
                 }
             }
-        }
-    }
-
-    /// With "Teacher only", paragraphs that are all classmates' are left out.
-    private func shown(_ paragraphs: [Paragraph]) -> [Paragraph] {
-        guard teacherOnly, let voices = meeting.voices else { return paragraphs }
-        return paragraphs.filter { paragraph in
-            paragraph.commits.isEmpty || paragraph.commits.contains { voices.side(of: $0) == .teacher }
         }
     }
 

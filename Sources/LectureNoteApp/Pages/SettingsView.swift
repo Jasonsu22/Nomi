@@ -43,8 +43,8 @@ struct SettingsView: View {
                         SettingsRow(tr("课堂麦克风（实验）"), detail: tr("用 Mac 自带麦克风录音时，降低教室噪音并自动调整音量。如果老师离得远、声音反而变小，就关掉。下一次开始录音时生效。")) {
                             SettingsSwitch(label: tr("课堂麦克风（实验）"), isOn: $classroomMic)
                         }
-                        SettingsRow(tr("标出同学的声音（实验）"), detail: tr("录音结束后，在这台 Mac 上分出老师和同学的声音：同学说的话在转写里变灰，回答问题和摘要时也会注明。第一次使用时会下载约 20 MB 的模型。")) {
-                            SettingsSwitch(label: tr("标出同学的声音（实验）"), isOn: $classmateVoices)
+                        SettingsRow(tr("区分说话人（实验）"), detail: tr("录音结束后，在这台 Mac 上分出每个人的声音：转写里每段话前会标出老师、你或说话人 2、3…，回答问题和摘要时也会注明是谁说的。第一次使用时会下载约 20 MB 的模型。")) {
+                            SettingsSwitch(label: tr("区分说话人（实验）"), isOn: $classmateVoices)
                         }
                     }
                     LLMSettingsSection(model: model)

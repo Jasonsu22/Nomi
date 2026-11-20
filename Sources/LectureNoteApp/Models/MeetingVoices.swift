@@ -19,6 +19,31 @@ struct MeetingVoices: Equatable, Codable, Sendable {
     var me: String? = nil
     /// You chose `me` here yourself (or said it isn't you), so matching your saved voice leaves it alone.
     var meChosen: Bool? = nil
+    /// Names given to voices ("Jenny"), replacing "Speaker 3".
+    var names: [String: String]? = nil
+
+    /// The voices other than the teacher, most heard first: Speaker 2, Speaker 3, ….
+    var others: [String] {
+        seconds.keys.filter { $0 != teacher }.sorted {
+            let a = seconds[$0] ?? 0, b = seconds[$1] ?? 0
+            return a == b ? $0 < $1 : a > b
+        }
+    }
+
+    /// The speaker number shown for a voice; the teacher is 1.
+    func number(of speaker: String) -> Int {
+        speaker == teacher ? 1 : (others.firstIndex(of: speaker) ?? others.count) + 2
+    }
+
+    /// What a voice is called in the transcript: its given name, Teacher, Me, Several people for a
+    /// blended group, or Speaker N.
+    func name(of speaker: String) -> String {
+        if let given = names?[speaker]?.trimmingCharacters(in: .whitespacesAndNewlines), !given.isEmpty { return given }
+        if speaker == teacher { return tr("老师") }
+        if speaker == me { return tr("我") }
+        if MyVoice.blends(in: prints ?? [:]).contains(speaker) { return tr("多人") }
+        return trf("说话人 %d", number(of: speaker))
+    }
 
     enum Side: Equatable { case teacher, me, classmate }
 
@@ -137,10 +162,15 @@ enum MyVoice {
 
     /// Which of a recording's voices is yours, if any clearly is. The teacher's voice is never you,
     /// and neither is a blended group.
-    static func match(_ mine: [Float], in prints: [String: [Float]], teacher: String) -> String? {
-        let blends = Set(prints.keys.filter { key in
+    /// The groups that are blends of several voices.
+    static func blends(in prints: [String: [Float]]) -> Set<String> {
+        Set(prints.keys.filter { key in
             prints.filter { $0.key != key && cosine($0.value, prints[key]!) >= blendBar }.count >= 2
         })
+    }
+
+    static func match(_ mine: [Float], in prints: [String: [Float]], teacher: String) -> String? {
+        let blends = blends(in: prints)
         let scored = prints.filter { $0.key != teacher && !blends.contains($0.key) }
             .map { ($0.key, cosine(mine, $0.value)) }.sorted { $0.1 > $1.1 }
         guard let best = scored.first, best.1 >= threshold else { return nil }
@@ -156,19 +186,22 @@ extension Paragraph {
         var parts: [String] = []
         var run: [String] = []
         var side = MeetingVoices.Side.teacher
+        var name = ""
         func flush() {
             guard !run.isEmpty else { return }
             let text = TranscriptText.join(run, language: sourceLanguage ?? language)
             switch side {
             case .teacher: parts.append(text)
-            case .classmate: parts.append("[Student] \(text) [/Student]")
+            case .classmate: parts.append("[Student: \(name)] \(text) [/Student]")
             case .me: parts.append("[Me] \(text) [/Me]")
             }
             run = []
         }
         for commit in commits {
             let next = voices.side(of: commit)
-            if next != side { flush(); side = next }
+            let nextName = commit.speaker.map(voices.name(of:)) ?? name
+            if next != side || (next == .classmate && nextName != name) { flush(); side = next }
+            name = nextName
             run.append(commit.source)
         }
         flush()

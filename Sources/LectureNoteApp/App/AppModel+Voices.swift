@@ -59,6 +59,16 @@ extension AppModel {
         findMe(using: mine, skipping: meetingID)
     }
 
+    /// Gives a voice a name in this recording; an empty name brings back Speaker N.
+    func renameSpeaker(meetingID: UUID, speaker: String, name: String) {
+        guard let index = meetings.firstIndex(where: { $0.id == meetingID }), var voices = meetings[index].voices else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var names = voices.names ?? [:]
+        names[speaker] = trimmed.isEmpty ? nil : String(trimmed.prefix(40))
+        voices.names = names.isEmpty ? nil : names
+        meetings[index].voices = voices
+    }
+
     /// "This isn't me": this recording has none of your voice.
     func clearMe(meetingID: UUID) {
         guard let index = meetings.firstIndex(where: { $0.id == meetingID }), var voices = meetings[index].voices else { return }

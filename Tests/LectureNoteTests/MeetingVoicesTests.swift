@@ -49,9 +49,9 @@ struct MeetingVoicesTests {
     @Test func theAIIsToldWhichWordsAreAStudents() {
         guard let result = VoiceLabels.label([paragraph()], spans: spans) else { Issue.record("no labels"); return }
         let text = result.paragraphs[0].renderedSourceMarkingStudents(language: "en", voices: result.voices)
-        #expect(text.hasPrefix("Today we talk about nerves. [Student] I usually get nervous in front of so many people. [/Student] Okay."))
+        #expect(text.hasPrefix("Today we talk about nerves. [Student: \(tr("说话人 %d").replacingOccurrences(of: "%d", with: "2"))] I usually get nervous in front of so many people. [/Student] Okay."))
         #expect(paragraph().renderedSourceMarkingStudents(language: "en", voices: nil) == paragraph().renderedSource(language: "en"))
-        #expect(ChatContext.systemPrompt(language: "Chinese", allowsWeb: false).contains("[Student]"))
+        #expect(ChatContext.systemPrompt(language: "Chinese", allowsWeb: false).contains("[Student: name]"))
     }
 
     @Test func oldMeetingsAndLinesStillLoad() throws {
@@ -94,6 +94,31 @@ struct MeetingVoicesTests {
         #expect(MyVoice.match([0.75, 0.65, 0.2, 0], in: withBlend, teacher: "S1") != "S7")
         let blended = MyVoice.blended([1, 0, 0, 0], with: [0, 1, 0, 0])
         #expect(MyVoice.cosine(blended, [1, 0, 0, 0]) > MyVoice.cosine(blended, [0, 1, 0, 0]), "the saved voice moves only a little")
+    }
+
+    @Test func speakersAreNumberedByHowMuchTheySpeakAndCanBeNamed() {
+        var voices = MeetingVoices(teacher: "S1", seconds: ["S1": 6956, "S2": 524, "S3": 167, "S7": 892], checkedAt: .now)
+        #expect(voices.others == ["S7", "S2", "S3"])
+        #expect(voices.number(of: "S1") == 1 && voices.number(of: "S7") == 2 && voices.number(of: "S3") == 4)
+        #expect(voices.name(of: "S1") == tr("老师"))
+        #expect(voices.name(of: "S2") == trf("说话人 %d", 3))
+        voices.me = "S2"
+        #expect(voices.name(of: "S2") == tr("我"))
+        voices.names = ["S3": "Jenny"]
+        #expect(voices.name(of: "S3") == "Jenny")
+        // A group close to two other voices is a blend, shown as several people.
+        voices.prints = ["S1": [0, 0, 1, 0], "S2": [1, 0, 0, 0], "S3": [0, 1, 0, 0], "S7": [0.7, 0.7, 0.2, 0]]
+        #expect(voices.name(of: "S7") == tr("多人"))
+    }
+
+    @Test func eachClassmateKeepsTheirOwnNameForTheAI() {
+        var p = paragraph()
+        p.commits[0].speaker = "S2"
+        p.commits[1].speaker = "S3"
+        let voices = MeetingVoices(teacher: "S1", seconds: ["S1": 100, "S2": 20, "S3": 10], checkedAt: .now, names: ["S3": "Jenny"])
+        let text = p.renderedSourceMarkingStudents(language: "en", voices: voices)
+        #expect(text.contains("[Student: Jenny] I usually get nervous"))
+        #expect(text.hasPrefix("[Student: \(trf("说话人 %d", 2))] Today we talk about nerves. [/Student] [Student: Jenny]"))
     }
 }
 

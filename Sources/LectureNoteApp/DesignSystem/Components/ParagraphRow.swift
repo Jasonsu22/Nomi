@@ -8,10 +8,10 @@ struct ParagraphRow: View, Equatable {
     var fontSize: Double
     /// The paragraph a Q&A timestamp jumped to: filled for a moment, then it fades.
     var highlighted = false
-    /// Who the teacher is, once the voice pass has run: classmates' lines are greyed.
+    /// Who speaks, once the voice pass has run.
     var voices: MeetingVoices? = nil
-    /// Leave classmates' lines out.
-    var teacherOnly = false
+    /// Start each speaker's words with their name, in their colour.
+    var showSpeakers = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
@@ -28,7 +28,7 @@ struct ParagraphRow: View, Equatable {
                     .lineSpacing(5)
                     .contentTransition(.interpolate)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text(translation.isEmpty ? " " : translation)
+                (labelled ? speakerText(\.translation, size: fontSize - 1, base: AppColor.textSecondary) : Text(translation.isEmpty ? " " : translation))
                     .font(.system(size: fontSize - 1))
                     .foregroundStyle(AppColor.textSecondary)
                     .lineSpacing(4)
@@ -42,7 +42,7 @@ struct ParagraphRow: View, Equatable {
                         .contentTransition(.interpolate)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if !translation.isEmpty {
-                        Text(translation)
+                        (labelled ? speakerText(\.translation, size: fontSize - 1, base: AppColor.textSecondary) : Text(translation))
                             .font(.system(size: fontSize - 1))
                             .foregroundStyle(AppColor.textSecondary)
                             .lineSpacing(4)
@@ -71,50 +71,56 @@ struct ParagraphRow: View, Equatable {
     }
 
     private var translation: String {
-        guard let voices, teacherOnly else { return paragraph.renderedTranslation(language: targetLanguage) }
-        return TranscriptText.join(paragraph.commits.filter { voices.side(of: $0) == .teacher }.map(\.translation), language: paragraph.targetLanguage ?? targetLanguage)
+        paragraph.renderedTranslation(language: targetLanguage)
     }
 
-    /// Whether any line here is yours or a classmate's.
-    private var hasOthers: Bool {
-        guard let voices else { return false }
-        return paragraph.commits.contains { voices.side(of: $0) != .teacher }
+    /// Speaker labels are shown, and something here has a voice.
+    private var labelled: Bool {
+        showSpeakers && voices != nil && paragraph.commits.contains { $0.speaker != nil }
     }
 
     private var spoken: Text {
-        guard let voices, hasOthers else { return plainSpoken }
-        // Runs of lines by one side: a classmate's words greyed with a group icon, yours in the
-        // accent colour with a person icon, the teacher's as usual.
-        var result = Text("")
-        var started = false
-        var run: [Commit] = []
-        func flush() {
-            guard let first = run.first else { return }
-            let side = voices.side(of: first)
-            let text = TranscriptText.join(run.map(\.source), language: paragraph.sourceLanguage ?? sourceLanguage)
-            run = []
-            if side != .teacher && teacherOnly { return }
-            if started, TranscriptText.usesSpaces(paragraph.sourceLanguage ?? sourceLanguage) { result = result + Text(" ") }
-            started = true
-            switch side {
-            case .teacher:
-                result = result + Text(text).foregroundStyle(AppColor.textPrimary)
-            case .classmate:
-                result = result
-                    + Text(Image(systemName: "person.2")).font(.system(size: fontSize - 3)).foregroundStyle(AppColor.textSecondary)
-                    + Text(" " + text).foregroundStyle(AppColor.textSecondary)
-            case .me:
-                result = result
-                    + Text(Image(systemName: "person.fill")).font(.system(size: fontSize - 3)).foregroundStyle(AppColor.accent)
-                    + Text(" " + text).foregroundStyle(AppColor.accent)
+        labelled ? speakerText(\.source, size: fontSize, base: AppColor.textPrimary) : plainSpoken
+    }
+
+    /// The words split into one run per speaker, each starting with the speaker's name in their
+    /// colour. Lines too short or too mixed to have a voice join the run before them.
+    private func speakerText(_ words: KeyPath<Commit, String>, size: Double, base: Color) -> Text {
+        guard let voices else { return Text("") }
+        let language = words == \Commit.source ? (paragraph.sourceLanguage ?? sourceLanguage) : (paragraph.targetLanguage ?? targetLanguage)
+        var runs: [(speaker: String?, parts: [String])] = []
+        for commit in paragraph.commits {
+            let text = commit[keyPath: words]
+            if let speaker = commit.speaker, speaker != runs.last?.speaker ?? nil {
+                runs.append((speaker, [text]))
+            } else if runs.isEmpty {
+                runs.append((nil, [text]))
+            } else {
+                runs[runs.count - 1].parts.append(text)
             }
         }
-        for commit in paragraph.commits {
-            if let last = run.last, voices.side(of: last) != voices.side(of: commit) { flush() }
-            run.append(commit)
+        var result = Text("")
+        for (index, run) in runs.enumerated() {
+            let body = TranscriptText.join(run.parts, language: language)
+            guard !body.isEmpty else { continue }
+            if index > 0 { result = result + Text(TranscriptText.usesSpaces(language) ? " " : "") }
+            // The translation repeats a name only when the paragraph has more than one speaker.
+            if let speaker = run.speaker, words == \Commit.source || Set(runs.compactMap(\.speaker)).count > 1 {
+                result = result + Text(voices.name(of: speaker) + "  ")
+                    .font(.system(size: size - 3, weight: .semibold))
+                    .foregroundStyle(Self.color(of: speaker, in: voices))
+            }
+            result = result + Text(body).foregroundStyle(base)
         }
-        flush()
         return result
+    }
+
+    /// The teacher in grey, you in the accent colour, everyone else in a colour of their own.
+    static func color(of speaker: String, in voices: MeetingVoices) -> Color {
+        if speaker == voices.teacher { return AppColor.textSecondary }
+        if speaker == voices.me { return AppColor.accent }
+        let palette: [Color] = [.orange, .pink, .purple, .green, .brown, .indigo, .mint, .red, .teal, .yellow]
+        return palette[(voices.number(of: speaker) - 2) % palette.count]
     }
 
     private var plainSpoken: Text {

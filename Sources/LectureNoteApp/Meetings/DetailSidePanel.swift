@@ -89,6 +89,7 @@ struct DetailSidePanel: View {
                         onMarkTeacher: { model.markTeacher(meetingID: meeting.id, paragraphID: $0) },
                         onMarkMe: { model.markMe(meetingID: meeting.id, paragraphID: $0) },
                         onClearMe: { model.clearMe(meetingID: meeting.id) },
+                        onRenameSpeaker: { model.renameSpeaker(meetingID: meeting.id, speaker: $0, name: $1) },
                         onCopy: { model.copyTranscript($0) }
                     )
                 case .info:
