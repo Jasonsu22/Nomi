@@ -40,6 +40,7 @@ struct ChatQueueList: View {
                     }
                 }
             }
+            .fadingScrollBar()
             .frame(maxHeight: min(CGFloat(items.count), 3) * 30)
         }
     }

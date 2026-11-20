@@ -36,8 +36,11 @@ struct FadingScrollBar: ViewModifier {
         }
     }
 
+    /// A scroll position the view already drives (the chat's "jump to latest"); otherwise its own.
+    var external: Binding<ScrollPosition>? = nil
+
     @State private var metrics = Metrics()
-    @State private var position = ScrollPosition()
+    @State private var ownPosition = ScrollPosition()
     @State private var shown = false
     @State private var nearEdge = false
     @State private var dragging = false
@@ -50,7 +53,7 @@ struct FadingScrollBar: ViewModifier {
     func body(content: Content) -> some View {
         content
             .scrollIndicators(.hidden, axes: .vertical)
-            .scrollPosition($position)
+            .scrollPosition(external ?? $ownPosition)
             .onScrollGeometryChange(for: Metrics.self) { geometry in
                 Metrics(
                     offset: geometry.contentOffset.y + geometry.contentInsets.top,
@@ -125,7 +128,7 @@ struct FadingScrollBar: ViewModifier {
     }
 
     private func jump(toKnobTop top: CGFloat, track: CGFloat) {
-        position.scrollTo(y: metrics.offset(forKnobTop: top, track: track))
+        (external ?? $ownPosition).wrappedValue.scrollTo(y: metrics.offset(forKnobTop: top, track: track))
     }
 
     private func show() {
@@ -149,4 +152,7 @@ struct FadingScrollBar: ViewModifier {
 extension View {
     /// Nomi's own fading scroll bar; see `FadingScrollBar`.
     func fadingScrollBar() -> some View { modifier(FadingScrollBar()) }
+
+    /// The same, sharing a scroll position the view already uses.
+    func fadingScrollBar(position: Binding<ScrollPosition>) -> some View { modifier(FadingScrollBar(external: position)) }
 }

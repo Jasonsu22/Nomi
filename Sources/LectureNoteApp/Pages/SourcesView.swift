@@ -62,6 +62,7 @@ struct SourcesView: View {
             .padding(.top, 28)
             .padding(.bottom, Space.s7)
         }
+        .fadingScrollBar()
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             receiveDrop(providers)
             return true

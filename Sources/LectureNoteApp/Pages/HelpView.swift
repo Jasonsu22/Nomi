@@ -20,6 +20,7 @@ struct HelpView: View {
                 .pageColumn(maxWidth: PageColumnLayout.narrowWidth)
                 .padding(.bottom, Space.s7)
             }
+            .fadingScrollBar()
         }
     }
 

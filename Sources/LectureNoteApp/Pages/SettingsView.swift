@@ -53,6 +53,7 @@ struct SettingsView: View {
                 .pageColumn(maxWidth: PageColumnLayout.narrowWidth)
                 .padding(.bottom, Space.s7)
             }
+            .fadingScrollBar()
             .onAppear {
                 revealSearch(proxy)
                 revealMemory(proxy)
