@@ -104,3 +104,6 @@ export const app = {
   setCompact: (compact: boolean) => invoke<void>("window_set_compact", { compact }),
   diagnostics: () => invoke<string>("diagnostics"),
 };
+
+/** A URL the web view can load for a file on disk (Tauri's asset protocol). */
+export { convertFileSrc as fileSrc } from "@tauri-apps/api/core";

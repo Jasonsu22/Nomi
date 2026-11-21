@@ -196,12 +196,14 @@ export class LocalEngine {
       const response = await fetch(this.url("status"), { headers: this.headers() });
       if (this.port !== port || this.shuttingDown) return;
       if (response.status !== 200) {
+        console.error("engine status", response.status);
         this.readiness = "unavailable";
         this.changed();
         return;
       }
       this.apply(await response.json());
-    } catch {
+    } catch (error) {
+      console.error("engine status", error);
       if (this.port !== port || this.shuttingDown) return;
       this.readiness = "unavailable";
       this.changed();

@@ -12,7 +12,6 @@ import { renderedSource } from "../models/transcript";
 import { LLMKeys, Profiles, type LLMAPIProfile, type LLMMode } from "../models/llmConfiguration";
 import { RemoteLLM } from "../engine/remoteLLM";
 import { AppModel } from "./model";
-type QuestionPopup = import("./model").QuestionPopup;
 
 export const QuestionPopupPreference = {
   key: "lecturenote.questionPopups",

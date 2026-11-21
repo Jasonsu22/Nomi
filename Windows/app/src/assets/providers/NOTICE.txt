@@ -1,0 +1,9 @@
+Vendor marks are used only so a configuration can be recognized. The trademarks stay with each vendor. Files are copied unchanged from the source below.
+
+OpenAI, Claude, Gemini, DeepSeek, Qwen, Zhipu, and Kimi are the vendors' app icons.
+Groq is the icon published on groq.com.
+NVIDIA is the favicon published on nvidia.com.
+Ollama is the icon published on ollama.com.
+Tavily is tavily.com/logos/tavily-mark-black.svg.
+Exa is the favicon published on exa.ai.
+SearXNG is the project favicon.

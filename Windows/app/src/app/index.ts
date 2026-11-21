@@ -9,6 +9,7 @@ import "./voices";
 import "./qa";
 import "./citations";
 import "./onboarding";
+import "./files";
 
 export { AppModel };
 export const model = new AppModel();

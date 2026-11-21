@@ -1,9 +1,38 @@
 // tr / trf, as on the Mac: Chinese strings are the keys; English comes from en.json, which is
 // generated from the Mac's Resources/en.lproj/Localizable.strings.
 import en from "./en.json";
+import windowsEn from "./windows-en.json";
 import { prefs } from "../support/prefs";
 
-const english = en as Record<string, string>;
+const english = { ...(en as Record<string, string>), ...(windowsEn as Record<string, string>) };
+
+/** The Mac's words for the PC: the strings are shared with the Mac app, so they are adjusted here. */
+const pcWords: [RegExp, string][] = [
+  [/这台 ?Mac/g, "这台电脑"],
+  [/Mac 自带/g, "电脑自带"],
+  [/~\/\.OminiX\/models/g, "%LOCALAPPDATA%\\Nomi\\models"],
+  [/macOS/g, "Windows"],
+  [/废纸篓/g, "回收站"],
+  [/访达/g, "资源管理器"],
+  [/⌘/g, "Ctrl+"],
+  [/\bthe Mac's own\b/g, "the computer's own"],
+  [/\bthe Mac's built-in\b/g, "the computer's built-in"],
+  [/\bthis Mac\b/g, "this PC"],
+  [/\bon your Mac\b/g, "on your PC"],
+  [/\bthe Mac\b/g, "the PC"],
+  [/\bFinder\b/g, "File Explorer"],
+  [/\bthe Trash\b/g, "the Recycle Bin"],
+  [/\bTrash\b/g, "Recycle Bin"],
+];
+const pcCache = new Map<string, string>();
+function forPC(text: string): string {
+  let hit = pcCache.get(text);
+  if (hit === undefined) {
+    hit = pcWords.reduce((t, [pattern, word]) => t.replace(pattern, word), text);
+    pcCache.set(text, hit);
+  }
+  return hit;
+}
 
 export type InterfaceLanguage = "system" | "zh-Hans" | "en";
 export const interfaceLanguageKey = "nomi.interfaceLanguage";
@@ -19,8 +48,7 @@ export function isEnglish(): boolean {
 }
 
 export function tr(key: string): string {
-  if (!isEnglish()) return key;
-  return english[key] ?? key;
+  return forPC(isEnglish() ? (english[key] ?? key) : key);
 }
 
 /** printf-style formatting with %@, %d, %ld, %.1f, %%, and positional %1$@. */

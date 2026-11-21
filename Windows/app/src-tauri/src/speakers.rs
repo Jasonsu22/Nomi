@@ -5,7 +5,7 @@
 //! Each 5 s chunk is split into voices by the segmentation model; each voice in the chunk gets a
 //! voiceprint, which is matched to the voices heard so far or starts a new one.
 
-use crate::voices::{my_voice::cosine, VoiceSpan};
+use serde::Serialize;
 use anyhow::{anyhow, Result};
 use sherpa_rs::diarize::{Diarize, DiarizeConfig};
 use sherpa_rs::speaker_id::{EmbeddingExtractor, ExtractorConfig};
@@ -18,20 +18,26 @@ pub const MATCH: f32 = 0.5;
 /// Less of one voice than this in a chunk is too little for a voiceprint.
 const MINIMUM_PRINT_SECONDS: f64 = 0.5;
 
+#[derive(Serialize, Clone, Debug)]
+pub struct VoiceSpan {
+    pub start: f64,
+    pub end: f64,
+    pub speaker: String,
+}
+
+pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    let (mut dot, mut na, mut nb) = (0.0f32, 0.0f32, 0.0f32);
+    for (x, y) in a.iter().zip(b) {
+        dot += x * y;
+        na += x * x;
+        nb += y * y;
+    }
+    if na == 0.0 || nb == 0.0 { 0.0 } else { dot / (na.sqrt() * nb.sqrt()) }
+}
+
 pub struct ModelFiles {
     pub segmentation: PathBuf,
     pub embedding: PathBuf,
-}
-
-pub fn files_for(kind: &str) -> Option<ModelFiles> {
-    let model = crate::models::find(kind)?;
-    if !crate::models::is_ready(&model) {
-        return None;
-    }
-    Some(ModelFiles {
-        segmentation: crate::models::file_path(&model.files[0]),
-        embedding: crate::models::file_path(&model.files[1]),
-    })
 }
 
 struct Voice {
@@ -48,12 +54,13 @@ pub struct Tracker {
     /// Where this run starts on the meeting's clock.
     offset: f64,
     tag: String,
+    chunk_seconds: f64,
     voices: Vec<Voice>,
     spans: Vec<VoiceSpan>,
 }
 
 impl Tracker {
-    pub fn new(files: &ModelFiles, offset: f64, tag: &str) -> Result<Self> {
+    pub fn new(files: &ModelFiles, offset: f64, tag: &str, chunk_seconds: f64) -> Result<Self> {
         let threads = std::thread::available_parallelism().map(|n| n.get().min(2)).unwrap_or(1);
         let diarize = Diarize::new(
             &files.segmentation,
@@ -68,18 +75,18 @@ impl Tracker {
             debug: false,
         })
         .map_err(|error| anyhow!("voiceprint model: {error}"))?;
-        Ok(Self { diarize, extractor, buffer: Vec::new(), consumed: 0.0, offset, tag: tag.to_string(), voices: Vec::new(), spans: Vec::new() })
+        Ok(Self { diarize, extractor, buffer: Vec::new(), consumed: 0.0, offset, tag: tag.to_string(), chunk_seconds, voices: Vec::new(), spans: Vec::new() })
     }
 
     /// Takes 16 kHz audio; returns every span so far when a chunk was processed.
     pub fn feed(&mut self, samples: &[f32]) -> Option<Vec<VoiceSpan>> {
         self.buffer.extend_from_slice(samples);
-        let size = (CHUNK_SECONDS * 16_000.0) as usize;
+        let size = (self.chunk_seconds * 16_000.0) as usize;
         let mut changed = false;
         while self.buffer.len() >= size {
             let chunk: Vec<f32> = self.buffer.drain(..size).collect();
             self.process(chunk);
-            self.consumed += CHUNK_SECONDS;
+            self.consumed += self.chunk_seconds;
             changed = true;
         }
         changed.then(|| self.spans.clone())

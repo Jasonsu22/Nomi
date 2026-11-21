@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Nomi's colors (DesignSystem/Colors.swift), light and dark. */
+/* Nomi's design tokens, from the Mac's DesignSystem (Colors.swift, Spacing.swift, Typography.swift). */
 :root {
   --canvas: #e9edf6;
   --surface: #ffffff;
@@ -10,197 +10,183 @@
   --accent: #004a77;
   --on-accent: #ffffff;
   --accent-soft: #e3f3ff;
-  --leaf: #20b68a;
+  --accent-green: #20b68a;
   --text: #111418;
   --text-2: #5e6670;
   --outline: #b0b4bd;
   --separator: #d5dce6;
-  --danger: #c4314b;
+  --danger: #d92d20;
 
-  /* Glass: a tinted, blurred layer with a light edge on top and a soft shadow below. */
-  --glass: rgba(255, 255, 255, 0.62);
-  --glass-strong: rgba(255, 255, 255, 0.8);
-  --glass-edge: rgba(255, 255, 255, 0.85);
-  --glass-line: rgba(17, 20, 24, 0.07);
-  --glass-shadow: 0 1px 1px rgba(17, 20, 24, 0.04), 0 8px 28px rgba(17, 20, 24, 0.08);
-  --page: rgba(233, 237, 246, 0.72);
+  /* Category swatches (Categories/Category.swift): ink, and a tinted fill. */
+  --swatch-0: #2f6fde; --swatch-0-fill: rgba(47, 111, 222, 0.14);
+  --swatch-1: #2e9d5b; --swatch-1-fill: rgba(46, 157, 91, 0.14);
+  --swatch-2: #e07b24; --swatch-2-fill: rgba(224, 123, 36, 0.14);
+  --swatch-3: #7b5cd6; --swatch-3-fill: rgba(123, 92, 214, 0.14);
+  --swatch-4: #d6497c; --swatch-4-fill: rgba(214, 73, 124, 0.14);
+  --swatch-5: #1f9aa6; --swatch-5-fill: rgba(31, 154, 166, 0.14);
+  --swatch-6: #c99a06; --swatch-6-fill: rgba(201, 154, 6, 0.14);
+  --swatch-7: #6b717b; --swatch-7-fill: rgba(107, 113, 123, 0.14);
 
-  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --ease-spring: cubic-bezier(0.34, 1.32, 0.5, 1);
+  /* Liquid Glass, where the Mac uses it: the recording capsule, the jump pill, menus. */
+  --glass: rgba(255, 255, 255, 0.55);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --glass-line: rgba(17, 20, 24, 0.08);
+  --glass-shadow: 0 1px 1px rgba(17, 20, 24, 0.05), 0 10px 30px rgba(17, 20, 24, 0.12);
+  --menu-shadow: 0 0 0 0.5px rgba(17, 20, 24, 0.12), 0 12px 32px rgba(17, 20, 24, 0.18);
+
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
+  --r-card: 16px; --r-field: 12px; --r-tag: 8px;
+
+  --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-snappy: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --ease-bouncy: cubic-bezier(0.34, 1.3, 0.5, 1);
   --t-tap: 180ms;
   --t-page: 220ms;
   --t-layout: 320ms;
+  --t-morph: 420ms;
+  --t-fade: 160ms;
 
-  color-scheme: light dark;
-  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  color-scheme: light;
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  font-size: 14px;
   color: var(--text);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --canvas: #0f1216;
-    --surface: #181c21;
-    --surface-inset: #1f242b;
-    --selection: #1d3a50;
-    --on-selection: #cdebff;
-    --accent: #7cc4f2;
-    --on-accent: #0f1216;
-    --accent-soft: #1a2c3a;
-    --leaf: #34c99b;
-    --text: #e6e8eb;
-    --text-2: #9aa3ad;
-    --outline: #3a414a;
-    --separator: #2a3038;
-    --danger: #ff6b81;
-
-    --glass: rgba(30, 35, 42, 0.58);
-    --glass-strong: rgba(30, 35, 42, 0.78);
-    --glass-edge: rgba(255, 255, 255, 0.09);
-    --glass-line: rgba(255, 255, 255, 0.06);
-    --glass-shadow: 0 1px 1px rgba(0, 0, 0, 0.2), 0 10px 30px rgba(0, 0, 0, 0.35);
-    --page: rgba(15, 18, 22, 0.66);
-  }
+:root[data-scheme="dark"] {
+  --canvas: #0f1216;
+  --surface: #181c21;
+  --surface-inset: #1f242b;
+  --selection: #1d3a50;
+  --on-selection: #cdebff;
+  --accent: #7cc4f2;
+  --on-accent: #0f1216;
+  --accent-soft: #1a2c3a;
+  --accent-green: #34c99b;
+  --text: #e6e8eb;
+  --text-2: #9aa3ad;
+  --outline: #3a414a;
+  --separator: #2a3038;
+  --danger: #ff6b5b;
+  --swatch-0: #7fa8f5; --swatch-0-fill: rgba(127, 168, 245, 0.22);
+  --swatch-1: #6ccb92; --swatch-1-fill: rgba(108, 203, 146, 0.22);
+  --swatch-2: #f2a65e; --swatch-2-fill: rgba(242, 166, 94, 0.22);
+  --swatch-3: #a99af0; --swatch-3-fill: rgba(169, 154, 240, 0.22);
+  --swatch-4: #f08cb0; --swatch-4-fill: rgba(240, 140, 176, 0.22);
+  --swatch-5: #6ccbd3; --swatch-5-fill: rgba(108, 203, 211, 0.22);
+  --swatch-6: #e8c34a; --swatch-6-fill: rgba(232, 195, 74, 0.22);
+  --swatch-7: #9aa3ad; --swatch-7-fill: rgba(154, 163, 173, 0.22);
+  --glass: rgba(40, 46, 54, 0.55);
+  --glass-edge: rgba(255, 255, 255, 0.1);
+  --glass-line: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 1px 1px rgba(0, 0, 0, 0.25), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --menu-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 12px 32px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
 }
 
+/* Windows "High contrast" or "More contrast": the increased-contrast secondary text, as on the Mac. */
 @media (prefers-contrast: more) {
-  :root {
-    --text-2: #3e4650;
-    --glass: var(--surface);
-    --glass-strong: var(--surface);
-  }
+  :root { --text-2: #3e4650; }
+  :root[data-scheme="dark"] { --text-2: #c5ced6; }
 }
 
 @layer base {
-  html,
-  body,
-  #root {
-    height: 100%;
-    margin: 0;
-  }
-
-  /* With Mica (Windows 11) or vibrancy, the page is a tint over the system material; without, it is solid. */
-  body {
-    background: var(--page);
-    overflow: hidden;
-    -webkit-font-smoothing: antialiased;
-    user-select: none;
-  }
-  body.solid {
-    background: var(--canvas);
-  }
-
-  ::selection {
-    background: var(--selection);
-    color: var(--on-selection);
-  }
-
-  .selectable {
-    user-select: text;
-  }
-
-  input,
-  select,
-  textarea,
-  button {
-    font: inherit;
-    color: inherit;
-  }
-
-  :focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-
+  html, body, #root { height: 100%; margin: 0; }
+  body { background: var(--canvas); overflow: hidden; -webkit-font-smoothing: antialiased; user-select: none; cursor: default; }
+  ::selection { background: var(--selection); color: var(--on-selection); }
+  input, select, textarea, button { font: inherit; color: inherit; }
+  button { cursor: default; background: none; border: 0; padding: 0; }
+  input::placeholder, textarea::placeholder { color: var(--text-2); opacity: 0.8; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  a { color: inherit; text-decoration: none; }
+  .selectable, .selectable * { user-select: text; cursor: text; }
 }
 
-/* Pages and lines come in by fading and rising a little; only opacity and transform move. */
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
 @layer components {
-  /* A glass panel. backdrop-filter runs on the GPU in WebView2, so it stays smooth while scrolling. */
+  /* Type scale (AppFont). */
+  .font-page-title { font-size: 28px; font-weight: 500; line-height: 1.2; }
+  .font-detail-title { font-size: 20px; font-weight: 600; line-height: 1.25; }
+  .font-section-title { font-size: 16px; font-weight: 600; line-height: 1.3; }
+  .font-body { font-size: 14px; line-height: 1.45; }
+  .font-secondary { font-size: 13px; line-height: 1.4; }
+  .font-caption { font-size: 12px; font-weight: 500; line-height: 1.35; }
+
+  .surface { background: var(--surface); border-radius: var(--r-card); }
+  .inset { background: var(--surface-inset); }
+
   .glass {
     background: var(--glass);
-    -webkit-backdrop-filter: blur(24px) saturate(1.6);
-    backdrop-filter: blur(24px) saturate(1.6);
-    border: 1px solid var(--glass-line);
-    box-shadow: inset 0 1px 0 var(--glass-edge), var(--glass-shadow);
+    -webkit-backdrop-filter: blur(22px) saturate(1.8);
+    backdrop-filter: blur(22px) saturate(1.8);
+    box-shadow: inset 0 1px 0 var(--glass-edge), inset 0 0 0 0.5px var(--glass-line), var(--glass-shadow);
   }
-  .glass-strong {
-    background: var(--glass-strong);
-    -webkit-backdrop-filter: blur(30px) saturate(1.8);
-    backdrop-filter: blur(30px) saturate(1.8);
-    border: 1px solid var(--glass-line);
-    box-shadow: inset 0 1px 0 var(--glass-edge), var(--glass-shadow);
-  }
-  /* The light that sits on top of a glass button and follows the pointer. */
-  .sheen {
-    position: relative;
-    overflow: hidden;
-    isolation: isolate;
-  }
-  .sheen::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    background: radial-gradient(120px circle at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, 0.35), transparent 60%);
-    opacity: 0;
-    transition: opacity var(--t-tap) var(--ease);
-  }
-  .sheen:hover::after {
-    opacity: 1;
+  .menu {
+    background: color-mix(in srgb, var(--surface) 86%, transparent);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    backdrop-filter: blur(24px) saturate(1.8);
+    box-shadow: var(--menu-shadow);
+    border-radius: 10px;
   }
 
-  .press {
-    transition: transform var(--t-tap) var(--ease-spring), background-color var(--t-tap) var(--ease), opacity var(--t-tap) var(--ease);
-  }
-  .press:active {
-    transform: scale(0.97);
-  }
+  .press { transition: transform var(--t-tap) var(--ease-snappy), background-color var(--t-fade) ease-out, opacity var(--t-fade) ease-out, color var(--t-fade) ease-out; }
+  .press:active { transform: scale(0.97); }
 
-  .enter {
-    animation: rise var(--t-page) var(--ease) backwards;
-  }
-  .fade-in {
-    animation: fade var(--t-page) var(--ease) backwards;
-  }
+  /* Page enter and leave (Motion.pageEnter / keptPage). */
+  .page { transition: opacity var(--t-page) var(--ease-smooth), transform var(--t-page) var(--ease-smooth); }
+  .page[data-active="false"] { opacity: 0; transform: translateY(8px); pointer-events: none; transition-duration: 100ms; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes pop { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+  .enter { animation: rise var(--t-page) var(--ease-smooth) backwards; }
+  .fade-in { animation: fade var(--t-fade) ease-out backwards; }
+  .pop-in { animation: pop var(--t-page) var(--ease-snappy) backwards; }
 
-  /* The scroll bar shows while scrolling or hovering and fades otherwise, as on the Mac (0.10). */
-  .scroll {
-    overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
-    transition: scrollbar-color 400ms var(--ease);
-  }
-  .scroll:hover,
-  .scroll.scrolling {
-    scrollbar-color: color-mix(in srgb, var(--text-2) 45%, transparent) transparent;
-  }
+  /* The fading scroll bar (FadingScrollBar.swift): shows while scrolling or near the edge. */
+  .scroll { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color 500ms ease-in-out; }
+  .scroll:hover, .scroll.scrolling { scrollbar-color: color-mix(in srgb, var(--text) 32%, transparent) transparent; }
+  .scroll::-webkit-scrollbar { width: 11px; }
+  .scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; border: 3px solid transparent; background-clip: padding-box; }
+  .scroll.scrolling::-webkit-scrollbar-thumb, .scroll:hover::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--text) 32%, transparent); }
 
+  .shimmer {
+    background: linear-gradient(90deg, var(--text-2) 0%, var(--text-2) 35%, var(--text) 50%, var(--text-2) 65%, var(--text-2) 100%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer 1.8s linear infinite;
+  }
+  @keyframes shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
+  .live-dot { animation: breathe 2.2s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 1ms !important;
-    transition-duration: 1ms !important;
-  }
+  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}
+
+@layer components {
+  @keyframes slide-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+  @keyframes rise-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+  .card-in { animation: rise-in var(--t-layout) var(--ease-smooth) backwards; }
+  .chip-strip { overflow-x: auto; scrollbar-width: none; }
+  .chip-strip::-webkit-scrollbar { display: none; }
+}
+
+@layer components {
+  .spinner { width: 11px; height: 11px; border-radius: 50%; border: 1.6px solid color-mix(in srgb, var(--text-2) 35%, transparent); border-top-color: var(--text-2); animation: spin 0.8s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+}
+
+@layer components {
+  @keyframes card-rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+}
+
+@layer components {
+  @keyframes from-right { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+  @keyframes from-top { from { opacity: 0; transform: translateY(-16px); } to { opacity: 1; transform: none; } }
+  @keyframes from-bottom { from { opacity: 0; transform: translateY(24px) scale(0.97); } to { opacity: 1; transform: none; } }
+  .slide-from-right { animation: from-right var(--t-layout) var(--ease-smooth) backwards; }
+  .drop-in { animation: from-top 400ms var(--ease-snappy) backwards; }
+  .rise-in { animation: from-bottom 450ms var(--ease-bouncy) backwards; transform-origin: bottom right; }
 }

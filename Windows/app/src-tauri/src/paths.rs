@@ -18,18 +18,6 @@ pub fn models() -> PathBuf {
     std::env::var("NOMI_MODELS_DIR").map(PathBuf::from).unwrap_or_else(|_| root().join("models"))
 }
 
-pub fn meetings_file() -> PathBuf {
-    root().join("meetings.json")
-}
-
-pub fn meeting_dir(id: &str) -> PathBuf {
-    root().join("meetings").join(id)
-}
-
-pub fn settings_file() -> PathBuf {
-    root().join("settings.json")
-}
-
 pub fn engine_log() -> PathBuf {
     root().join("engine.log")
 }

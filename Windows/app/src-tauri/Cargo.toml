@@ -1,6 +1,6 @@
 [package]
 name = "nomi"
-version = "0.1.0"
+version = "0.10.0"
 description = "Nomi for Windows: live lecture transcription and translation on your PC"
 edition = "2021"
 license = "MIT"
@@ -13,8 +13,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "macos-private-api"] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-http = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
@@ -28,9 +29,22 @@ symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm
 sysinfo = "0.33"
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "tiff", "bmp"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+quick-xml = "0.37"
+pdf-extract = "0.9"
+lopdf = "0.36"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+trash = "5"
+arboard = { version = "3", default-features = false, features = ["image-data"] }
+open = "5"
 # Live speakers: pyannote segmentation + voiceprints through sherpa-onnx (ONNX Runtime), the
 # Windows counterpart of the Mac's FluidAudio "Standard" model. Static, so no extra DLLs ship.
 sherpa-rs = { version = "0.6.8", default-features = false, features = ["download-binaries", "static"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = ["Media_Ocr", "Graphics_Imaging", "Storage", "Storage_Streams", "Globalization", "Foundation", "Foundation_Collections", "Win32_System_Registry"] }
 
 [profile.release]
 strip = true

@@ -31,6 +31,8 @@ pub struct DeviceReport {
 }
 
 pub fn read(engine_dir: Option<&std::path::Path>) -> DeviceReport {
+    let engine_dir = engine_dir.map(|d| d.to_path_buf());
+    let engine_dir = engine_dir.as_deref();
     let mut system = sysinfo::System::new();
     system.refresh_memory();
     system.refresh_cpu_all();
@@ -62,7 +64,7 @@ pub fn suggest(cores: usize, memory_gb: f64, gpus: &[Gpu]) -> (String, String) {
 
 /// The speech worker lists what transcribe.cpp can run on (CPU, Vulkan or Metal devices).
 fn list_gpus(engine_dir: &std::path::Path) -> Vec<Gpu> {
-    let worker = engine_dir.join("asr").join(if cfg!(windows) { "asr-worker.exe" } else { "asr-worker" });
+    let worker = crate::engine::exe(engine_dir, "asr", "asr-worker");
     let mut command = std::process::Command::new(worker);
     command.arg("devices");
     #[cfg(windows)]
@@ -96,4 +98,10 @@ mod tests {
         assert_eq!(suggest(4, 8.0, &[]).0, "Lite");
         assert_eq!(suggest(8, 8.0, &[gpu("gpu", 8_000)]).0, "Lite");
     }
+}
+
+#[tauri::command]
+pub async fn device_report(state: tauri::State<'_, crate::AppState>) -> Result<DeviceReport, String> {
+    let dir = state.engine_dir.lock().unwrap().clone();
+    tokio::task::spawn_blocking(move || read(dir.as_deref())).await.map_err(|e| e.to_string())
 }
