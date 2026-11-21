@@ -1,0 +1,200 @@
+@import "tailwindcss";
+
+/* Nomi's colors (DesignSystem/Colors.swift), light and dark. */
+:root {
+  --canvas: #e9edf6;
+  --surface: #ffffff;
+  --surface-inset: #ebf0f6;
+  --selection: #c2e8ff;
+  --on-selection: #17587e;
+  --accent: #004a77;
+  --on-accent: #ffffff;
+  --accent-soft: #e3f3ff;
+  --leaf: #20b68a;
+  --text: #111418;
+  --text-2: #5e6670;
+  --outline: #b0b4bd;
+  --separator: #d5dce6;
+  --danger: #c4314b;
+
+  /* Glass: a tinted, blurred layer with a light edge on top and a soft shadow below. */
+  --glass: rgba(255, 255, 255, 0.62);
+  --glass-strong: rgba(255, 255, 255, 0.8);
+  --glass-edge: rgba(255, 255, 255, 0.85);
+  --glass-line: rgba(17, 20, 24, 0.07);
+  --glass-shadow: 0 1px 1px rgba(17, 20, 24, 0.04), 0 8px 28px rgba(17, 20, 24, 0.08);
+  --page: rgba(233, 237, 246, 0.72);
+
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.32, 0.5, 1);
+  --t-tap: 180ms;
+  --t-page: 220ms;
+  --t-layout: 320ms;
+
+  color-scheme: light dark;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  color: var(--text);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #0f1216;
+    --surface: #181c21;
+    --surface-inset: #1f242b;
+    --selection: #1d3a50;
+    --on-selection: #cdebff;
+    --accent: #7cc4f2;
+    --on-accent: #0f1216;
+    --accent-soft: #1a2c3a;
+    --leaf: #34c99b;
+    --text: #e6e8eb;
+    --text-2: #9aa3ad;
+    --outline: #3a414a;
+    --separator: #2a3038;
+    --danger: #ff6b81;
+
+    --glass: rgba(30, 35, 42, 0.58);
+    --glass-strong: rgba(30, 35, 42, 0.78);
+    --glass-edge: rgba(255, 255, 255, 0.09);
+    --glass-line: rgba(255, 255, 255, 0.06);
+    --glass-shadow: 0 1px 1px rgba(0, 0, 0, 0.2), 0 10px 30px rgba(0, 0, 0, 0.35);
+    --page: rgba(15, 18, 22, 0.66);
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --text-2: #3e4650;
+    --glass: var(--surface);
+    --glass-strong: var(--surface);
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+/* With Mica (Windows 11) or vibrancy, the page is a tint over the system material; without, it is solid. */
+body {
+  background: var(--page);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+body.solid {
+  background: var(--canvas);
+}
+
+::selection {
+  background: var(--selection);
+  color: var(--on-selection);
+}
+
+.selectable {
+  user-select: text;
+}
+
+/* A glass panel. backdrop-filter runs on the GPU in WebView2, so it stays smooth while scrolling. */
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  border: 1px solid var(--glass-line);
+  box-shadow: inset 0 1px 0 var(--glass-edge), var(--glass-shadow);
+}
+.glass-strong {
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(30px) saturate(1.8);
+  backdrop-filter: blur(30px) saturate(1.8);
+  border: 1px solid var(--glass-line);
+  box-shadow: inset 0 1px 0 var(--glass-edge), var(--glass-shadow);
+}
+/* The light that sits on top of a glass button and follows the pointer. */
+.sheen {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(120px circle at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, 0.35), transparent 60%);
+  opacity: 0;
+  transition: opacity var(--t-tap) var(--ease);
+}
+.sheen:hover::after {
+  opacity: 1;
+}
+
+.press {
+  transition: transform var(--t-tap) var(--ease-spring), background-color var(--t-tap) var(--ease), opacity var(--t-tap) var(--ease);
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+/* Pages and lines come in by fading and rising a little; only opacity and transform move. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.enter {
+  animation: rise var(--t-page) var(--ease) both;
+}
+.fade-in {
+  animation: fade var(--t-page) var(--ease) both;
+}
+
+/* The scroll bar shows while scrolling or hovering and fades otherwise, as on the Mac (0.10). */
+.scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 400ms var(--ease);
+}
+.scroll:hover,
+.scroll.scrolling {
+  scrollbar-color: color-mix(in srgb, var(--text-2) 45%, transparent) transparent;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

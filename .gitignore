@@ -6,3 +6,5 @@ build/
 xcuserdata/
 DerivedData/
 Backend/target/
+Backend/target-windows/
+Backend/target-windows-dev/

@@ -1,0 +1,136 @@
+// Chinese and English wording. Chinese is the key language, as in the Mac app.
+import { useApp } from "../store";
+
+const en: Record<string, string> = {
+  会议: "Meetings",
+  录音: "Record",
+  设置: "Settings",
+  开始录音: "Start recording",
+  停止: "Stop",
+  正在停止: "Finishing…",
+  正在保存: "Saving…",
+  标题: "Title",
+  "例如：自然语言处理 第 8 讲": "e.g. NLP, lecture 8",
+  说话语言: "Spoken language",
+  翻译成: "Translate into",
+  自动: "Auto",
+  不翻译: "No translation",
+  输入: "Input",
+  麦克风: "Microphone",
+  音频文件: "Audio file",
+  "选择文件…": "Choose a file…",
+  系统默认: "System default",
+  "像现场一样播放文件，用来测试": "Plays the file at live speed, for testing",
+  模型正在加载: "Loading models",
+  "第一次在显卡上运行会慢一些": "The first run on a GPU takes a little longer",
+  模型加载失败: "The models didn't load",
+  重试: "Try again",
+  还没有会议: "No meetings yet",
+  "录一节课，它会出现在这里。": "Record a class and it appears here.",
+  搜索会议: "Search meetings",
+  删除: "Delete",
+  重命名: "Rename",
+  "删除这个会议？录音和文字都会删掉。": "Delete this meeting? Its recording and text are deleted too.",
+  取消: "Cancel",
+  说话人: "Speakers",
+  "说话人 %d": "Speaker %d",
+  我: "Me",
+  多人: "Several people",
+  这是我: "This is me",
+  这不是我: "This isn't me",
+  设为说话人1: "Make Speaker 1",
+  隐藏: "Hide",
+  显示: "Show",
+  "给说话人起名": "Name this speaker",
+  正在聆听: "Listening",
+  句: "lines",
+  对照: "Side by side",
+  原文: "Original",
+  译文: "Translation",
+  "欢迎使用 Nomi": "Welcome to Nomi",
+  "Nomi 在这台电脑上把课堂实时转成文字并翻译，录音不会离开电脑。":
+    "Nomi turns a class into text and translates it live, on this PC. Recordings never leave it.",
+  这台电脑: "This PC",
+  处理器: "Processor",
+  内存: "Memory",
+  显卡: "Graphics",
+  没有可用的显卡: "No usable GPU",
+  "推荐：%@": "Suggested: %@",
+  轻量: "Lite",
+  标准: "Standard",
+  完整: "Full",
+  "适合 8 GB 内存、没有显卡的电脑": "For 8 GB PCs without a graphics card",
+  "适合 16 GB 内存的电脑，只用处理器也够快": "For 16 GB PCs; fast enough on the processor alone",
+  "适合有独立显卡的电脑，识别最准": "For PCs with a graphics card; most accurate",
+  识别模型: "Speech model",
+  翻译模型: "Translation model",
+  说话人模型: "Speaker model",
+  下载: "Download",
+  已下载: "Downloaded",
+  下载中: "Downloading",
+  "下载失败：%@": "Download failed: %@",
+  继续: "Continue",
+  开始使用: "Start using Nomi",
+  "全部下载": "Download all",
+  "模型文件夹": "Models folder",
+  "数据文件夹": "Data folder",
+  打开: "Open",
+  运行位置: "Runs on",
+  "自动（有显卡用显卡）": "Auto (GPU when there is one)",
+  处理器上: "Processor",
+  显卡上: "Graphics card",
+  "实时字幕": "Live text",
+  "每次都更新": "Update every time",
+  "忙时跳过（推荐）": "Skip when busy (recommended)",
+  "只显示整句": "Whole lines only",
+  "灰色的正在说的那句多久更新一次。电脑慢时选“忙时跳过”或“只显示整句”。":
+    "How often the grey line being spoken updates. On a slow PC choose Skip when busy or Whole lines only.",
+  线程: "Threads",
+  "0 表示自动": "0 means automatic",
+  "实时标出说话人": "Label speakers live",
+  "录音时分出不同的人，大约晚 5 秒标出。": "Tells voices apart while recording, about 5 s behind.",
+  "标准（最快）": "Standard (fastest)",
+  "中英文（CAM++）": "Chinese + English (CAM++)",
+  界面语言: "Display language",
+  跟随系统: "Follow the system",
+  "更改模型后会重新加载": "The models reload after a change",
+  应用: "Apply",
+  模型: "Models",
+  语言: "Language",
+  关于: "About",
+  "Nomi Windows 版 0.1 测试版": "Nomi for Windows 0.1 beta",
+  "找不到引擎文件。开发时请先运行 Windows/scripts/build-engine。": "The engine files are missing. In development, run Windows/scripts/build-engine first.",
+  "说话人正在识别": "Telling speakers apart",
+  "电平": "Level",
+  "今天": "Today",
+  "昨天": "Yesterday",
+  "只看说话人1": "Speaker 1 only",
+  "全部说话人": "All speakers",
+  "刚录完": "Just recorded",
+  "录音中": "Recording",
+  "跳到最新": "Jump to latest",
+  "没有声音？检查麦克风权限。": "No sound? Check the microphone permission.",
+  "处理器线程": "Processor threads",
+  "%d 核 · %d 线程": "%d cores · %d threads",
+  "集成": "integrated",
+  "独立": "discrete",
+};
+
+export type Lang = "zh" | "en";
+
+export function systemLang(): Lang {
+  return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+export function translate(lang: Lang, key: string, ...args: (string | number)[]): string {
+  let text = lang === "en" ? en[key] ?? key : key;
+  for (const arg of args) {
+    text = text.replace(/%[@d]/, String(arg));
+  }
+  return text;
+}
+
+export function useT() {
+  const lang = useApp((s) => s.lang);
+  return (key: string, ...args: (string | number)[]) => translate(lang, key, ...args);
+}
