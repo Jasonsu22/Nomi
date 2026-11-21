@@ -678,3 +678,6 @@
 "来源：Hugging Face。下载完成后点击「使用」切换，下一次开始录音时生效。" = "Source: Hugging Face. Select Use after downloading to switch; it takes effect the next time you start recording.";
 "删除说话人模型？" = "Delete Speaker Model?";
 "将删除 %@。之后录音时用它区分说话人需要重新下载。" = "%@ will be deleted. To label speakers with it again, download it again.";
+"区分说话人（可选）" = "Tell Speakers Apart (Optional)";
+"录音时，Nomi 可以在这台 Mac 上分出不同的人，转写里每段话前标出说话人 1、2、3…，还能只看某些人说的话。选一个说话人模型下载，之后可以在设置里更换。" = "While you record, Nomi can tell people apart on this Mac: each part of the transcript starts with Speaker 1, 2, 3…, and you can show only some people's words. Choose a speaker model to download; you can change it later in Settings.";
+"下载 %@ · %@" = "Download %@ · %@";

@@ -103,6 +103,49 @@ enum SpeakerModelKind: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Speaker model downloads, shared by Settings and the first-start guide so both show the same
+/// progress, and a download keeps going when either closes.
+@MainActor
+@Observable
+final class SpeakerModelDownloads {
+    static let shared = SpeakerModelDownloads()
+
+    private(set) var active: Set<SpeakerModelKind> = []
+    private(set) var errors: [SpeakerModelKind: String] = [:]
+    /// Bumped when a model arrives or is deleted, so views read the disk again.
+    private(set) var version = 0
+
+    func isDownloaded(_ kind: SpeakerModelKind) -> Bool {
+        _ = version
+        return kind.isDownloaded
+    }
+
+    /// Downloads the model and makes it the one in use.
+    func download(_ kind: SpeakerModelKind) {
+        guard !active.contains(kind) else { return }
+        active.insert(kind)
+        errors[kind] = nil
+        Task {
+            do {
+                _ = try await kind.load()
+                UserDefaults.standard.set(kind.rawValue, forKey: SpeakerModelKind.choiceKey)
+            } catch {
+                errors[kind] = trf("下载失败：%@", error.localizedDescription)
+            }
+            active.remove(kind)
+            version += 1
+        }
+    }
+
+    func delete(_ kind: SpeakerModelKind) {
+        kind.remove()
+        if SpeakerModelKind.chosen == kind {
+            UserDefaults.standard.set(SpeakerModelKind.standard.rawValue, forKey: SpeakerModelKind.choiceKey)
+        }
+        version += 1
+    }
+}
+
 /// One live model behind a common shape: feed audio, get who spoke when (seconds from the start of
 /// this run). Called only on `LiveSpeakerTracker`'s queue.
 protocol LiveSpeakerModel: AnyObject {

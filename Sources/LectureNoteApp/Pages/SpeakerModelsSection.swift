@@ -22,18 +22,14 @@ struct SpeakerModelsSection: View {
 struct SpeakerModelPicker: View {
     @AppStorage(SpeakerModelKind.choiceKey) private var chosen = SpeakerModelKind.standard.rawValue
     @State private var showingModels = false
-    @State private var downloading: Set<SpeakerModelKind> = []
-    @State private var failed: [SpeakerModelKind: String] = [:]
     @State private var deleting: SpeakerModelKind?
-    /// Bumped after a download or removal, so the rows read the disk again.
-    @State private var refresh = 0
+    private var downloads: SpeakerModelDownloads { .shared }
 
     private var current: SpeakerModelKind { SpeakerModelKind(rawValue: chosen) ?? .standard }
 
     private var status: String {
-        _ = refresh
-        if downloading.contains(current) { return tr("正在下载…") }
-        return current.isDownloaded ? tr("使用中") : tr("未下载")
+        if downloads.active.contains(current) { return tr("正在下载…") }
+        return downloads.isDownloaded(current) ? tr("使用中") : tr("未下载")
     }
 
     var body: some View {
@@ -57,7 +53,6 @@ struct SpeakerModelPicker: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(SpeakerModelKind.allCases) { option($0) }
                     }
-                    .id(refresh)
                     Text(tr("来源：Hugging Face。下载完成后点击「使用」切换，下一次开始录音时生效。"))
                         .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)
                         .padding(Space.s4)
@@ -66,11 +61,7 @@ struct SpeakerModelPicker: View {
             }
         }
         .alert(tr("删除说话人模型？"), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting) { kind in
-            Button(tr("删除"), role: .destructive) {
-                kind.remove()
-                if chosen == kind.rawValue { chosen = SpeakerModelKind.standard.rawValue }
-                refresh += 1
-            }
+            Button(tr("删除"), role: .destructive) { downloads.delete(kind) }
             Button(tr("取消"), role: .cancel) {}
         } message: { kind in
             Text(trf("将删除 %@。之后录音时用它区分说话人需要重新下载。", kind.title))
@@ -78,7 +69,7 @@ struct SpeakerModelPicker: View {
     }
 
     private func option(_ kind: SpeakerModelKind) -> some View {
-        let installed = kind.isDownloaded
+        let installed = downloads.isDownloaded(kind)
         let active = chosen == kind.rawValue && installed
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .center, spacing: Space.s3) {
@@ -93,7 +84,7 @@ struct SpeakerModelPicker: View {
                 }
                 Spacer()
                 VStack(alignment: .center, spacing: Space.s2) {
-                    if downloading.contains(kind) {
+                    if downloads.active.contains(kind) {
                         ProgressView()
                             .controlSize(.small)
                             .accessibilityLabel(tr("正在下载…"))
@@ -109,13 +100,13 @@ struct SpeakerModelPicker: View {
                         }
                     } else {
                         Button {
-                            download(kind)
+                            downloads.download(kind)
                         } label: {
-                            Label(failed[kind] == nil ? tr("下载") : tr("重试"), systemImage: "arrow.down.circle")
+                            Label(downloads.errors[kind] == nil ? tr("下载") : tr("重试"), systemImage: "arrow.down.circle")
                                 .frame(minWidth: 60, alignment: .center)
                         }
                     }
-                    if installed && !downloading.contains(kind) {
+                    if installed && !downloads.active.contains(kind) {
                         Button(role: .destructive) {
                             showingModels = false
                             deleting = kind
@@ -131,26 +122,11 @@ struct SpeakerModelPicker: View {
                 .controlSize(.small)
                 .buttonStyle(.bordered.clicking())
             }
-            if let error = failed[kind] {
+            if let error = downloads.errors[kind] {
                 Text(error).font(AppFont.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, Space.s3)
-    }
-
-    private func download(_ kind: SpeakerModelKind) {
-        downloading.insert(kind)
-        failed[kind] = nil
-        Task {
-            do {
-                _ = try await kind.load()
-                chosen = kind.rawValue
-            } catch {
-                failed[kind] = trf("下载失败：%@", error.localizedDescription)
-            }
-            downloading.remove(kind)
-            refresh += 1
-        }
     }
 }
