@@ -1,8 +1,8 @@
 import AVFoundation
 import SwiftUI
 
-/// The first-start guide: welcome, download the speech and translation models, allow the
-/// microphone, bind an API for better answers (optional), then start. Downloads keep going
+/// The first-start guide: welcome, download the speech and translation models, choose a speaker
+/// model (optional), allow the microphone, bind an API for better answers (optional), then start. Downloads keep going
 /// after the guide closes.
 struct OnboardingView: View {
     var model: AppModel
@@ -14,7 +14,9 @@ struct OnboardingView: View {
     @State private var microphone = AVAudioApplication.shared.recordPermission
     @State private var bindingProfile: LLMAPIProfile?
 
-    private let steps = 5
+    private let steps = 6
+    @AppStorage(SpeakerModelKind.enabledKey) private var speakersOn = true
+    @AppStorage(SpeakerModelKind.choiceKey) private var speakerChoice = SpeakerModelKind.standard.rawValue
     /// The services most students already have a key for; the editor's menu lists the rest.
     private let quickProviders = ["openai", "anthropic", "gemini", "deepseek", "kimi", "custom"]
 
@@ -33,8 +35,9 @@ struct OnboardingView: View {
                 switch step {
                 case 0: welcome
                 case 1: models
-                case 2: microphoneStep
-                case 3: apiStep
+                case 2: speakersStep
+                case 3: microphoneStep
+                case 4: apiStep
                 default: ready
                 }
             }
@@ -147,6 +150,104 @@ struct OnboardingView: View {
         }
     }
 
+    /// Optional: a live speaker model, so the transcript can say who said what.
+    private var speakersStep: some View {
+        let downloads = SpeakerModelDownloads.shared
+        let chosen = SpeakerModelKind(rawValue: speakerChoice) ?? .standard
+        let ready = downloads.isDownloaded(chosen)
+        let busy = downloads.active.contains(chosen)
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(tr("区分说话人（可选）")).font(.system(size: 22, weight: .bold))
+            Text(tr("录音时，Nomi 可以在这台 Mac 上分出不同的人，转写里每段话前标出说话人 1、2、3…，还能只看某些人说的话。选一个说话人模型下载，之后可以在设置里更换。"))
+                .font(AppFont.body)
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+                .padding(.bottom, Space.s4)
+            ForEach(SpeakerModelKind.allCases) { kind in
+                speakerCard(kind, selected: kind == chosen, downloads: downloads)
+            }
+            footer {
+                Button(tr("返回")) { go(1) }
+                    .buttonStyle(.link.clicking())
+                    .foregroundStyle(AppColor.textSecondary)
+                Spacer()
+                if ready {
+                    Button(tr("下一步")) {
+                        speakersOn = true
+                        go(3)
+                    }
+                    .buttonStyle(.borderedProminent.clicking())
+                    .keyboardShortcut(.defaultAction)
+                } else if busy {
+                    Button(tr("下载时继续")) {
+                        speakersOn = true
+                        go(3)
+                    }
+                    .buttonStyle(.bordered.clicking())
+                    .keyboardShortcut(.defaultAction)
+                } else {
+                    Button(tr("跳过")) {
+                        speakersOn = false
+                        go(3)
+                    }
+                    .buttonStyle(.bordered.clicking())
+                    Button(trf("下载 %@ · %@", chosen.title, chosen.size)) {
+                        speakersOn = true
+                        downloads.download(chosen)
+                    }
+                    .buttonStyle(.borderedProminent.clicking())
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+    }
+
+    private func speakerCard(_ kind: SpeakerModelKind, selected: Bool, downloads: SpeakerModelDownloads) -> some View {
+        let installed = downloads.isDownloaded(kind)
+        let busy = downloads.active.contains(kind)
+        return Button {
+            speakerChoice = kind.rawValue
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: Space.s2) {
+                    Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                        .foregroundStyle(selected ? AppColor.accent : AppColor.textSecondary)
+                    Text(kind.title).font(AppFont.body.weight(.semibold))
+                    if kind == .standard {
+                        Text(tr("推荐"))
+                            .font(AppFont.caption.weight(.bold))
+                            .foregroundStyle(AppColor.accentGreen)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 1)
+                            .background(AppColor.accentGreen.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
+                    Spacer()
+                    if busy {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(installed ? tr("已下载 ✓") : kind.size)
+                            .font(AppFont.secondary.weight(.semibold))
+                            .foregroundStyle(installed ? AppColor.accentGreen : AppColor.textSecondary)
+                    }
+                }
+                Text(kind.detail).font(AppFont.secondary).foregroundStyle(AppColor.textSecondary)
+                    .padding(.leading, 26)
+                if let error = downloads.errors[kind] {
+                    Text(error).font(AppFont.caption).foregroundStyle(.red).lineLimit(2).padding(.leading, 26)
+                }
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(selected ? AppColor.accent : AppColor.separator, lineWidth: selected ? 1.5 : 1))
+        }
+        .buttonStyle(.plain.clicking())
+        .padding(.bottom, Space.s2)
+    }
+
     private var microphoneStep: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(tr("允许使用麦克风")).font(.system(size: 22, weight: .bold))
@@ -174,16 +275,16 @@ struct OnboardingView: View {
             .padding(Space.s4)
             .background(AppColor.surfaceInset.opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             footer {
-                Button(tr("返回")) { go(1) }
+                Button(tr("返回")) { go(2) }
                     .buttonStyle(.link.clicking())
                     .foregroundStyle(AppColor.textSecondary)
                 Spacer()
                 if microphone == .granted {
-                    Button(tr("下一步")) { go(3) }
+                    Button(tr("下一步")) { go(4) }
                         .buttonStyle(.borderedProminent.clicking())
                         .keyboardShortcut(.defaultAction)
                 } else {
-                    Button(tr("跳过")) { go(3) }
+                    Button(tr("跳过")) { go(4) }
                         .buttonStyle(.bordered.clicking())
                     Button(microphone == .denied ? tr("打开系统设置") : tr("允许使用麦克风")) { askMicrophone() }
                         .buttonStyle(.borderedProminent.clicking())
@@ -243,15 +344,15 @@ struct OnboardingView: View {
                     .padding(.top, 6)
             }
             footer {
-                Button(tr("返回")) { go(2) }
+                Button(tr("返回")) { go(3) }
                     .buttonStyle(.link.clicking())
                     .foregroundStyle(AppColor.textSecondary)
                 Spacer()
                 if bound == nil {
-                    Button(tr("跳过")) { go(4) }
+                    Button(tr("跳过")) { go(5) }
                         .buttonStyle(.bordered.clicking())
                 } else {
-                    Button(tr("下一步")) { go(4) }
+                    Button(tr("下一步")) { go(5) }
                         .buttonStyle(.borderedProminent.clicking())
                         .keyboardShortcut(.defaultAction)
                 }
@@ -313,7 +414,7 @@ struct OnboardingView: View {
                     .padding(.top, 6)
             }
             footer {
-                Button(tr("返回")) { go(3) }
+                Button(tr("返回")) { go(4) }
                     .buttonStyle(.link.clicking())
                     .foregroundStyle(AppColor.textSecondary)
                 Spacer()

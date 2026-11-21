@@ -83,6 +83,15 @@ struct DetailSidePanel: View {
                         canCompare: false,
                         embedded: true,
                         jump: model.transcriptJump?.meetingID == meeting.id ? model.transcriptJump : nil,
+                        checkingVoices: model.checkingVoices.contains(meeting.id),
+                        voiceError: model.voiceError[meeting.id],
+                        onCheckVoices: { model.checkVoices(meeting.id) },
+                        onMarkMe: { model.markMe(meetingID: meeting.id, paragraphID: $0) },
+                        onClearMe: { model.clearMe(meetingID: meeting.id) },
+                        onRenameSpeaker: { model.renameSpeaker(meetingID: meeting.id, speaker: $0, name: $1) },
+                        onShowSpeaker: { model.showSpeaker(meetingID: meeting.id, speaker: $0, shown: $1) },
+                        liveVoices: model.liveVoices(for: meeting)?.voices,
+                        liveSpans: model.liveVoices(for: meeting)?.spans ?? [],
                         onCopy: { model.copyTranscript($0) }
                     )
                 case .info:

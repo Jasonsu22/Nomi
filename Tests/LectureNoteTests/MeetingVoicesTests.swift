@@ -1,0 +1,117 @@
+import Foundation
+import Testing
+@testable import LectureNoteApp
+
+/// Telling the teacher from classmates: labelling lines from the voice pass, and what the AI sees.
+struct MeetingVoicesTests {
+    private func paragraph() -> Paragraph {
+        Paragraph(id: 1, openedAt: 850, commits: [
+            Commit(id: 1, source: "Today we talk about nerves.", translation: "今天讲紧张。", start: 850, end: 858),
+            Commit(id: 2, source: "I usually get nervous in front of so many people.", translation: "我在很多人面前通常会紧张。", start: 859, end: 866),
+            Commit(id: 3, source: "Okay. You know your work, right? I feel nervous too.", translation: "好。你了解你的工作。我也紧张。", start: 866, end: 880),
+            Commit(id: 4, source: "Yes.", translation: "是。", start: 880, end: 880.2),
+        ], tail: "", closed: true)
+    }
+
+    // The English class of Nov 8, around 14:20: the teacher (S1) and a student (S2).
+    private let spans = [
+        VoiceSpan(start: 850, end: 858, speaker: "S1"),
+        VoiceSpan(start: 859.2, end: 866, speaker: "S2"),
+        VoiceSpan(start: 866, end: 874, speaker: "S1"),
+        VoiceSpan(start: 874, end: 880, speaker: "S2"),
+        VoiceSpan(start: 880, end: 880.2, speaker: "S2"),
+        VoiceSpan(start: 0, end: 600, speaker: "S1"),
+    ]
+
+    @Test func linesTakeTheVoiceThatSaysMostOfThem() {
+        let result = VoiceLabels.label([paragraph()], spans: spans)
+        #expect(result?.voices.teacher == "S1", "the voice heard most is the teacher")
+        let commits = result?.paragraphs[0].commits ?? []
+        #expect(commits.map(\.speaker) == ["S1", "S2", nil, nil])
+        #expect(result?.voices.isClassmate(commits[1]) == true)
+        #expect(result?.voices.isClassmate(commits[2]) == false, "a line with both voices stays the teacher's")
+        #expect(result?.voices.isClassmate(commits[3]) == false, "too short to tell")
+    }
+
+    @Test func noSpeechMeansNoLabels() {
+        #expect(VoiceLabels.label([paragraph()], spans: []) == nil)
+    }
+
+    @Test func choosingTheTeacherSwapsTheLabels() {
+        guard let result = VoiceLabels.label([paragraph()], spans: spans) else { Issue.record("no labels"); return }
+        #expect(VoiceLabels.voiceToPromote(in: result.paragraphs[0], voices: result.voices) == "S2")
+        var swapped = result.voices
+        swapped.teacher = "S2"
+        #expect(swapped.isClassmate(result.paragraphs[0].commits[0]))
+        #expect(!swapped.isClassmate(result.paragraphs[0].commits[1]))
+    }
+
+    @Test func oldMeetingsAndLinesStillLoad() throws {
+        let commit = try JSONDecoder().decode(Commit.self, from: Data(#"{"id":1,"source":"a","translation":"b","start":0,"end":1}"#.utf8))
+        #expect(commit.speaker == nil)
+        var meeting = Meeting.live(sourceLanguage: "en", targetLanguage: "zh")
+        meeting.voices = MeetingVoices(teacher: "S1", seconds: ["S1": 10], checkedAt: .now)
+        let again = try JSONDecoder().decode(Meeting.self, from: JSONEncoder().encode(meeting))
+        #expect(again.voices?.teacher == "S1")
+    }
+
+    @Test func yourSavedVoiceIsFoundOnlyWhenItClearlyMatches() {
+        let me: [Float] = [1, 0, 0, 0]
+        let prints: [String: [Float]] = [
+            "S1": [0, 0, 1, 0],          // the teacher
+            "S2": [0.9, 0.3, 0, 0],      // you, in another room
+            "S3": [0.4, 0, 0, 0.9],      // a classmate (about 0.4 similar, like the class measured)
+        ]
+        #expect(MyVoice.match(me, in: prints, teacher: "S1") == "S2")
+        #expect(MyVoice.match(me, in: ["S1": [1, 0, 0, 0], "S3": [0.4, 0, 0, 0.9]], teacher: "S1") == nil, "the teacher is never you, and nobody else is close enough")
+        #expect(MyVoice.match(me, in: ["S1": [0, 1, 0, 0], "S2": [0.9, 0.3, 0, 0], "S4": [0.88, 0.32, 0.05, 0]], teacher: "S1") == nil, "two voices too alike to choose")
+        // A blend of several voices (overlapping speech) is never taken as you, however close.
+        let withBlend: [String: [Float]] = [
+            "S1": [0, 0, 1, 0], "S2": [0.9, 0.3, 0, 0], "S4": [0.3, 0.9, 0.3, 0],
+            "S7": [0.7, 0.7, 0.3, 0],
+        ]
+        #expect(MyVoice.match([0.75, 0.65, 0.2, 0], in: withBlend, teacher: "S1") != "S7")
+        let blended = MyVoice.blended([1, 0, 0, 0], with: [0, 1, 0, 0])
+        #expect(MyVoice.cosine(blended, [1, 0, 0, 0]) > MyVoice.cosine(blended, [0, 1, 0, 0]), "the saved voice moves only a little")
+    }
+
+    @Test func speakersAreNumberedByHowMuchTheySpeakAndCanBeNamed() {
+        var voices = MeetingVoices(teacher: "S1", seconds: ["S1": 6956, "S2": 524, "S3": 167, "S7": 892], checkedAt: .now)
+        #expect(voices.others == ["S7", "S2", "S3"])
+        #expect(voices.number(of: "S1") == 1 && voices.number(of: "S7") == 2 && voices.number(of: "S3") == 4)
+        #expect(voices.name(of: "S1") == trf("说话人 %d", 1), "the voice heard most is Speaker 1, not assumed to be the teacher")
+        #expect(voices.name(of: "S2") == trf("说话人 %d", 3))
+        voices.me = "S2"
+        #expect(voices.name(of: "S2") == tr("我"))
+        voices.names = ["S3": "Jenny"]
+        #expect(voices.name(of: "S3") == "Jenny")
+        // A group close to two other voices is a blend, shown as several people.
+        voices.prints = ["S1": [0, 0, 1, 0], "S2": [1, 0, 0, 0], "S3": [0, 1, 0, 0], "S7": [0.7, 0.7, 0.2, 0]]
+        #expect(voices.name(of: "S7") == tr("多人"))
+    }
+
+
+    @Test func yourLinesAreYours() {
+        guard var result = VoiceLabels.label([paragraph()], spans: spans) else { Issue.record("no labels"); return }
+        #expect(VoiceLabels.mainVoice(in: result.paragraphs[0], excluding: result.voices.teacher) == "S2")
+        result.voices.me = "S2"
+        #expect(result.voices.side(of: result.paragraphs[0].commits[1]) == .me)
+        #expect(result.voices.name(of: "S2") == tr("我"))
+    }
+
+    @Test func hiddenSpeakersLeaveTheTranscriptAndWhatTheAIReads() {
+        guard let result = VoiceLabels.label([paragraph()], spans: spans) else { Issue.record("no labels"); return }
+        var meeting = Meeting.live(sourceLanguage: "en", targetLanguage: "zh")
+        meeting.paragraphs = result.paragraphs
+        meeting.voices = result.voices
+        #expect(meeting.shownParagraphs(meeting.paragraphs)[0].commits.count == 4, "nothing hidden: everything shows")
+        meeting.hiddenSpeakers = ["S2"]
+        let shown = meeting.shownParagraphs(meeting.paragraphs)
+        #expect(shown[0].commits.map(\.id) == [1, 3, 4], "Speaker 2's line is gone")
+        #expect(!shown[0].renderedSource(language: "en").contains("I usually get nervous"))
+        meeting.hiddenSpeakers = ["S1", "S2"]
+        #expect(meeting.shownParagraphs(meeting.paragraphs)[0].commits.map(\.id) == [3, 4], "lines with no clear speaker stay")
+        #expect(!ChatContext.systemPrompt(language: "Chinese", allowsWeb: false).contains("[Voice"), "the AI is not told who is a student")
+    }
+}
+

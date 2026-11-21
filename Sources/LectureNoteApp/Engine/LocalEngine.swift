@@ -32,6 +32,9 @@ final class LocalEngine: TranscriptionEngine {
     var transcriptionTopic = ""
     var inputDeviceUID: String?
     var recordingURL: URL?
+    /// Gets the recorded 16 kHz audio while it is being recorded (not while paused), on the audio
+    /// thread, for the live speaker model. Set before `start`.
+    var onSpeakerAudio: (@Sendable (UnsafeBufferPointer<Float>) -> Void)?
     var onFinished: (@MainActor ([Paragraph], TimeInterval) -> Void)?
     /// Called with the Mac microphone's name when the chosen input did not open and that one did.
     var onInputFallback: (@MainActor (String) -> Void)?
@@ -449,6 +452,8 @@ final class LocalEngine: TranscriptionEngine {
                 self.stop()
             }
         }
+        microphone.speakerTap = onSpeakerAudio
+        microphone.speakerGate = sendGate
         if let recordingURL {
             do {
                 microphone.recorder = try AudioFileRecorder(url: recordingURL, gate: sendGate)
@@ -825,6 +830,9 @@ private final class MicrophoneCapture {
     var onFailure: (@Sendable (String) -> Void)?
     /// Survives device-change restarts of the capture engine; released by `stop()`.
     var recorder: AudioFileRecorder?
+    /// The live speaker model's copy of the audio, and the gate that pauses it with the recording.
+    var speakerTap: (@Sendable (UnsafeBufferPointer<Float>) -> Void)?
+    fileprivate var speakerGate: SendGate?
     private var running: RunningAudioEngine?
     private var configurationObserver: NSObjectProtocol?
     private var watchdog: Task<Void, Never>?
@@ -837,7 +845,7 @@ private final class MicrophoneCapture {
         stopCapture()
         generation += 1
         let generation = generation
-        let processor = MicrophonePCMProcessor(onSamples: onSamples, onFailure: onFailure, recorder: recorder)
+        let processor = MicrophonePCMProcessor(onSamples: onSamples, onFailure: onFailure, recorder: recorder, speakerTap: speakerTap, speakerGate: speakerGate)
         Self.logger.notice("Opening microphone \(deviceUID ?? "default", privacy: .public)")
         let running: RunningAudioEngine = try await withCheckedThrowingContinuation { continuation in
             let once = OnceFlag()
@@ -905,6 +913,8 @@ private final class MicrophonePCMProcessor: @unchecked Sendable {
     private let onSamples: (@Sendable (Data, Double) -> Void)?
     private let onFailure: (@Sendable (String) -> Void)?
     private let recorder: AudioFileRecorder?
+    private let speakerTap: (@Sendable (UnsafeBufferPointer<Float>) -> Void)?
+    private let speakerGate: SendGate?
     private let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
     private var converter: AVAudioConverter?
     private var mono: AVAudioFormat?
@@ -920,10 +930,13 @@ private final class MicrophonePCMProcessor: @unchecked Sendable {
         return receivedAudio
     }
 
-    init(onSamples: (@Sendable (Data, Double) -> Void)?, onFailure: (@Sendable (String) -> Void)?, recorder: AudioFileRecorder?) {
+    init(onSamples: (@Sendable (Data, Double) -> Void)?, onFailure: (@Sendable (String) -> Void)?, recorder: AudioFileRecorder?,
+         speakerTap: (@Sendable (UnsafeBufferPointer<Float>) -> Void)? = nil, speakerGate: SendGate? = nil) {
         self.onSamples = onSamples
         self.onFailure = onFailure
         self.recorder = recorder
+        self.speakerTap = speakerTap
+        self.speakerGate = speakerGate
     }
 
     func convert(_ incoming: AVAudioPCMBuffer) {
@@ -951,6 +964,10 @@ private final class MicrophonePCMProcessor: @unchecked Sendable {
         guard let channel = converted.floatChannelData?.pointee else { return }
         let count = Int(converted.frameLength)
         guard count > 0 else { return }
+        // Same audio and same gate as the recording file, so speaker times match the transcript's.
+        if let speakerTap, speakerGate?.isOpen == true {
+            speakerTap(UnsafeBufferPointer(start: channel, count: count))
+        }
         lock.lock()
         receivedAudio = true
         lock.unlock()
