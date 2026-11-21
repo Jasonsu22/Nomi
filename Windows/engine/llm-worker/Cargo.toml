@@ -1,0 +1,23 @@
+[package]
+name = "llm-worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Qwen3.5 worker for Nomi on Windows (GGUF through llama.cpp)"
+
+[dependencies]
+voice-core = { path = "../../../Backend/crates/voice-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+minijinja = "2.12"
+minijinja-contrib = { version = "2.12", features = ["pycompat"] }
+
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
+llama-cpp-2 = { version = "0.1.161", default-features = false, features = ["dynamic-backends", "vulkan"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+llama-cpp-2 = { version = "0.1.161", default-features = false, features = ["dynamic-backends", "vulkan"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { version = "0.1.161", default-features = false, features = ["metal"] }

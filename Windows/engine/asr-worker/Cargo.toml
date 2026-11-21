@@ -1,0 +1,23 @@
+[package]
+name = "asr-worker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Qwen3-ASR worker for Nomi on Windows (GGUF through transcribe.cpp)"
+
+[dependencies]
+voice-core = { path = "../../../Backend/crates/voice-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+# Vulkan plus CPU builds chosen at run time on Windows, so one build suits any x64 PC.
+# macOS (for development only): Metal.
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
+transcribe-cpp = { version = "0.4.2", default-features = false, features = ["dynamic-backends", "vulkan", "serde"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+transcribe-cpp = { version = "0.4.2", default-features = false, features = ["dynamic-backends", "vulkan", "serde"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+transcribe-cpp = { version = "0.4.2", default-features = false, features = ["metal", "serde"] }

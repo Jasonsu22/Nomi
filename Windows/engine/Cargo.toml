@@ -1,0 +1,15 @@
+# The Windows speech and translation workers. They speak the same frames as the Mac's MLX
+# workers (Backend/crates/voice-core/src/protocol.rs), so the shared engine drives them unchanged.
+# Build each into its own target folder: transcribe.cpp and llama.cpp ship ggml DLLs with the
+# same names (see Windows/scripts/build-engine.*).
+[workspace]
+resolver = "2"
+members = ["asr-worker", "llm-worker"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[profile.release]
+debug = false

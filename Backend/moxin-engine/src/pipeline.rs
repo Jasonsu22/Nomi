@@ -51,7 +51,38 @@ pub struct Pipeline {
     /// The end of what was said so far. Each phrase is recognised with the sentence before it.
     recent: String,
     repeated_finals: RepeatedFinals,
+    /// When interim passes run. Each one re-reads the growing phrase, so on a slow PC they are
+    /// most of the speech model's work (Phase 0 findings).
+    interim: Interim,
+    /// Wall time at the first chunk of this session, to tell when the engine falls behind the audio.
+    session_started: Option<Instant>,
 }
+
+/// `NOMI_INTERIM`: `all` (default, as on the Mac), `skip-busy` (skip an interim pass while the
+/// engine is more than a second behind live audio) or `off` (finished phrases only).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Interim {
+    All,
+    SkipBusy,
+    Off,
+}
+
+impl Interim {
+    pub fn from_env() -> Self {
+        Self::parse(&std::env::var("NOMI_INTERIM").unwrap_or_default())
+    }
+
+    fn parse(value: &str) -> Self {
+        match value.trim() {
+            "skip-busy" => Self::SkipBusy,
+            "off" => Self::Off,
+            _ => Self::All,
+        }
+    }
+}
+
+/// Seconds behind live audio after which `skip-busy` stops interim passes.
+const BEHIND_LIMIT: f64 = 1.0;
 
 /// The same short line coming back phrase after phrase. Up to `ALLOWED` in a row are kept.
 #[derive(Default)]
@@ -153,6 +184,8 @@ impl Pipeline {
             topic: String::new(),
             recent: String::new(),
             repeated_finals: RepeatedFinals::default(),
+            interim: Interim::from_env(),
+            session_started: None,
         };
         if pipeline.asr_status.files_ready {
             if let Err(error) = pipeline.load_asr() {
@@ -174,6 +207,7 @@ impl Pipeline {
         self.vad = Vad::new(VadConfig::default());
         self.committer = Committer::new(source_language);
         self.clock = 0.0;
+        self.session_started = None;
         self.last_level = 0.0;
         self.revision = 0;
         self.translation_retry_at = None;
@@ -258,9 +292,13 @@ impl Pipeline {
         if !status.files_ready {
             return Err(anyhow!("模型文件不完整：{}", path.display()));
         }
-        let config: serde_json::Value = serde_json::from_slice(&std::fs::read(path.join("config.json"))?)?;
+        let config: serde_json::Value = if is_gguf(&path) {
+            serde_json::json!({ "model_type": "gguf" })
+        } else {
+            serde_json::from_slice(&std::fs::read(path.join("config.json"))?)?
+        };
         if role == "assistant" {
-            if !matches!(config["model_type"].as_str(), Some("qwen3" | "qwen3_5")) {
+            if !matches!(config["model_type"].as_str(), Some("qwen3" | "qwen3_5" | "gguf")) {
                 return Err(anyhow!("当前大模型架构不受支持"));
             }
             let previous = self.assistant_status();
@@ -283,7 +321,9 @@ impl Pipeline {
             "translator" => "qwen3_5",
             _ => return Err(anyhow!("未知的模型类型")),
         };
-        if config.get("model_type").and_then(|value| value.as_str()) != Some(expected) {
+        // A GGUF file names its architecture inside; the worker checks it when loading.
+        let named = config.get("model_type").and_then(|value| value.as_str());
+        if named != Some(expected) && named != Some("gguf") {
             return Err(anyhow!("当前引擎不支持这个模型架构"));
         }
         let previous = if role == "asr" {
@@ -422,6 +462,11 @@ impl Pipeline {
 
     pub fn push_audio(&mut self, samples: &[f32]) -> Vec<OutEvent> {
         let mut events = Vec::new();
+        if self.session_started.is_none() {
+            // The first chunk was spoken during the time it covers.
+            let spoken = std::time::Duration::from_secs_f64(samples.len() as f64 / 16_000.0);
+            self.session_started = Some(Instant::now().checked_sub(spoken).unwrap_or_else(Instant::now));
+        }
         let before = self.clock;
         self.clock += samples.len() as f64 / 16_000.0;
         if (self.clock / 30.0).floor() > (before / 30.0).floor() {
@@ -471,6 +516,9 @@ impl Pipeline {
                 });
                 continue;
             }
+            if !segment.is_final && self.skips_interim() {
+                continue;
+            }
             let response = self.transcribe(&segment);
             let text = match response {
                 // A noise burst that opened the gate comes back empty or as stock filler; drop it.
@@ -514,6 +562,21 @@ impl Pipeline {
             events.extend(self.drain_commits());
         }
         events
+    }
+
+    /// True when this interim pass should not run: interim text is off, or the engine is behind
+    /// live audio. A finished phrase always runs, so no text is lost; the grey line updates less.
+    fn skips_interim(&self) -> bool {
+        match self.interim {
+            Interim::All => false,
+            Interim::Off => true,
+            Interim::SkipBusy => self.behind_seconds() > BEHIND_LIMIT,
+        }
+    }
+
+    /// How far processing lags the audio. Negative when audio arrives faster than live (replay).
+    fn behind_seconds(&self) -> f64 {
+        self.session_started.map_or(0.0, |started| started.elapsed().as_secs_f64() - self.clock)
     }
 
     /// One phrase to text. With Auto, the language lock picks what to ask for and catches a phrase
@@ -640,6 +703,10 @@ fn model_json(status: &ModelStatus) -> serde_json::Value {
 }
 
 fn inspect(path: &Path, required: &[&str]) -> ModelStatus {
+    // The Windows workers read one GGUF file instead of an MLX folder.
+    if is_gguf(path) {
+        return ModelStatus { path: path.to_path_buf(), files_ready: nonempty_file(path), loaded: false, error: None };
+    }
     ModelStatus {
         path: path.to_path_buf(),
         files_ready: required.iter().filter(|name| **name != "model.safetensors" && **name != "tokenizer.json")
@@ -647,6 +714,10 @@ fn inspect(path: &Path, required: &[&str]) -> ModelStatus {
         loaded: false,
         error: None,
     }
+}
+
+fn is_gguf(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
 }
 
 fn nonempty_file(path: &Path) -> bool {
@@ -723,6 +794,19 @@ fn is_noise_transcript(text: &str) -> bool {
         "字幕由amaraorg社区提供", "中文字幕", "ご視聴ありがとうございました", "시청해 주셔서 감사합니다",
     ];
     FILLER.contains(&words.as_str()) || words.starts_with("字幕") || words.contains("amaraorg")
+}
+
+#[cfg(test)]
+mod interim_tests {
+    use super::Interim;
+
+    #[test]
+    fn interim_mode_reads_the_setting() {
+        assert_eq!(Interim::parse(""), Interim::All);
+        assert_eq!(Interim::parse("all"), Interim::All);
+        assert_eq!(Interim::parse("skip-busy"), Interim::SkipBusy);
+        assert_eq!(Interim::parse("off"), Interim::Off);
+    }
 }
 
 #[cfg(test)]

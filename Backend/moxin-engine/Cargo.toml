@@ -16,6 +16,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 hound = "3.5"
 futures = "0.3"
+
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [[bin]]
