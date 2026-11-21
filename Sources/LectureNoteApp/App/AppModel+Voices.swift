@@ -32,17 +32,6 @@ extension AppModel {
         }
     }
 
-    /// "This is the teacher" on a paragraph: its other voice becomes the teacher's.
-    func markTeacher(meetingID: UUID, paragraphID: Int) {
-        guard let index = meetings.firstIndex(where: { $0.id == meetingID }),
-              var voices = meetings[index].voices,
-              let paragraph = meetings[index].paragraphs.first(where: { $0.id == paragraphID }),
-              let voice = VoiceLabels.voiceToPromote(in: paragraph, voices: voices) else { return }
-        voices.teacher = voice
-        if voices.me == voice { voices.me = nil }
-        meetings[index].voices = voices
-    }
-
     /// "This is me" on a paragraph: its main non-teacher voice is yours. Your voice is remembered and
     /// looked for in every other lecture whose voices have been told apart, unless you chose there yourself.
     func markMe(meetingID: UUID, paragraphID: Int) {
@@ -57,6 +46,14 @@ extension AppModel {
         let mine = MyVoice.blended(MyVoice.print, with: print)
         MyVoice.print = mine
         findMe(using: mine, skipping: meetingID)
+    }
+
+    /// The speaker filter: hidden speakers' lines leave the transcript and what the AI reads.
+    func showSpeaker(meetingID: UUID, speaker: String, shown: Bool) {
+        guard let index = meetings.firstIndex(where: { $0.id == meetingID }) else { return }
+        var hidden = Set(meetings[index].hiddenSpeakers ?? [])
+        if shown { hidden.remove(speaker) } else { hidden.insert(speaker) }
+        meetings[index].hiddenSpeakers = hidden.isEmpty ? nil : hidden.sorted()
     }
 
     /// Gives a voice a name in this recording; an empty name brings back Speaker N.

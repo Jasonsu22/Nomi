@@ -115,12 +115,11 @@ struct ParagraphRow: View, Equatable {
         return result
     }
 
-    /// The teacher in grey, you in the accent colour, everyone else in a colour of their own.
+    /// You in the accent colour; every other speaker, Speaker 1 included, in a colour of their own.
     static func color(of speaker: String, in voices: MeetingVoices) -> Color {
-        if speaker == voices.teacher { return AppColor.textSecondary }
         if speaker == voices.me { return AppColor.accent }
-        let palette: [Color] = [.orange, .pink, .purple, .green, .brown, .indigo, .mint, .red, .teal, .yellow]
-        return palette[(voices.number(of: speaker) - 2) % palette.count]
+        let palette: [Color] = [.teal, .orange, .pink, .purple, .green, .brown, .indigo, .mint, .red, .yellow]
+        return palette[(voices.number(of: speaker) - 1) % palette.count]
     }
 
     private var plainSpoken: Text {

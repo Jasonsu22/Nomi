@@ -30,6 +30,21 @@ struct Meeting: Identifiable, Equatable, Codable {
     var assistant: MeetingAssistantRecord? = nil
     /// Which voice is the teacher's, after the voice pass has run on the recording.
     var voices: MeetingVoices? = nil
+    /// Speakers the student filtered out: their lines are hidden in the transcript and left out of
+    /// what the AI reads about this meeting.
+    var hiddenSpeakers: [String]? = nil
+
+    /// The paragraphs without the hidden speakers' lines; paragraphs left empty are dropped.
+    func shownParagraphs(_ paragraphs: [Paragraph]) -> [Paragraph] {
+        guard let hidden = hiddenSpeakers, !hidden.isEmpty else { return paragraphs }
+        let set = Set(hidden)
+        return paragraphs.compactMap { paragraph in
+            guard paragraph.commits.contains(where: { $0.speaker.map(set.contains) == true }) else { return paragraph }
+            var kept = paragraph
+            kept.commits = paragraph.commits.filter { !($0.speaker.map(set.contains) ?? false) }
+            return kept.commits.isEmpty && kept.tail.isEmpty ? nil : kept
+        }
+    }
 
     var inputTitle: String { inputDeviceName ?? source.title }
 

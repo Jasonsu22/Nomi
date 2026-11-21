@@ -35,11 +35,11 @@ struct MeetingVoices: Equatable, Codable, Sendable {
         speaker == teacher ? 1 : (others.firstIndex(of: speaker) ?? others.count) + 2
     }
 
-    /// What a voice is called in the transcript: its given name, Teacher, Me, Several people for a
-    /// blended group, or Speaker N.
+    /// What a voice is called in the transcript: its given name, Me, Several people for a blended
+    /// group, or Speaker N. The voice heard most is Speaker 1; it is often the teacher, but Nomi does
+    /// not call it that, since it may not be. The student can rename it "Teacher".
     func name(of speaker: String) -> String {
         if let given = names?[speaker]?.trimmingCharacters(in: .whitespacesAndNewlines), !given.isEmpty { return given }
-        if speaker == teacher { return tr("老师") }
         if speaker == me { return tr("我") }
         if MyVoice.blends(in: prints ?? [:]).contains(speaker) { return tr("多人") }
         return trf("说话人 %d", number(of: speaker))
@@ -234,32 +234,3 @@ enum MyVoice {
     }
 }
 
-extension Paragraph {
-    /// The original text with a classmate's lines marked "[Student]" and yours "[Me]", for the AI.
-    func renderedSourceMarkingStudents(language: String, voices: MeetingVoices?) -> String {
-        guard let voices, commits.contains(where: { voices.side(of: $0) != .teacher }) else { return renderedSource(language: language) }
-        var parts: [String] = []
-        var run: [String] = []
-        var side = MeetingVoices.Side.teacher
-        var name = ""
-        func flush() {
-            guard !run.isEmpty else { return }
-            let text = TranscriptText.join(run, language: sourceLanguage ?? language)
-            switch side {
-            case .teacher: parts.append(text)
-            case .classmate: parts.append("[Student: \(name)] \(text) [/Student]")
-            case .me: parts.append("[Me] \(text) [/Me]")
-            }
-            run = []
-        }
-        for commit in commits {
-            let next = voices.side(of: commit)
-            let nextName = commit.speaker.map(voices.name(of:)) ?? name
-            if next != side || (next == .classmate && nextName != name) { flush(); side = next }
-            name = nextName
-            run.append(commit.source)
-        }
-        flush()
-        return parts.joined(separator: " ")
-    }
-}

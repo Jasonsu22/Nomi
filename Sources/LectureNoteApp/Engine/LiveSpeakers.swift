@@ -26,9 +26,18 @@ enum SpeakerModelKind: String, CaseIterable, Identifiable, Sendable {
 
     var detail: String {
         switch self {
-        case .standard: tr("最快、最小，测试中最准；标签约晚 5 秒出现。能记住你的声音。")
-        case .sortformer: tr("噪音大的教室更稳；最多分出 4 个人。")
-        case .nemotron: tr("最多分出 8 个人；比标准稍慢，偶尔会把老师标成别人。")
+        case .standard: tr("最快，测试中最准，能记住你的声音")
+        case .sortformer: tr("噪音大时更稳，最多 4 人")
+        case .nemotron: tr("最多 8 人，稍慢")
+        }
+    }
+
+    /// The model's page on Hugging Face.
+    var page: URL {
+        switch self {
+        case .standard: URL(string: "https://huggingface.co/FluidInference/speaker-diarization-coreml")!
+        case .sortformer: URL(string: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml")!
+        case .nemotron: URL(string: "https://huggingface.co/FluidInference/nemotron-3-diarization-coreml")!
         }
     }
 
@@ -212,10 +221,11 @@ final class LiveSpeakerTracker: @unchecked Sendable {
     /// Loads the model in the background; audio that arrives meanwhile waits for it.
     func start() {
         let kind = kind
+        let queue = queue
         Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 let model = try await kind.load()
-                self?.queue.async {
+                queue.async { [weak self] in
                     guard let self, !self.stopped else { return }
                     self.model = model
                     self.drain(force: self.finishing != nil)
@@ -223,7 +233,7 @@ final class LiveSpeakerTracker: @unchecked Sendable {
                 }
             } catch {
                 Self.logger.error("Live speakers could not start: \(String(describing: error), privacy: .public)")
-                self?.queue.async {
+                queue.async { [weak self] in
                     guard let self else { return }
                     self.loadFailed = true
                     if let finishing = self.finishing { self.complete(finishing) }

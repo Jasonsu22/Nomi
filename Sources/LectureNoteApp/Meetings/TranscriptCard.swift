@@ -13,10 +13,11 @@ struct TranscriptCard: View {
     var checkingVoices = false
     var voiceError: String? = nil
     var onCheckVoices: (() -> Void)? = nil
-    var onMarkTeacher: ((Int) -> Void)? = nil
     var onMarkMe: ((Int) -> Void)? = nil
     var onClearMe: (() -> Void)? = nil
     var onRenameSpeaker: ((String, String) -> Void)? = nil
+    /// Show (true) or hide (false) one speaker's lines.
+    var onShowSpeaker: ((String, Bool) -> Void)? = nil
     /// While recording: the live speaker model's voices and who spoke when.
     var liveVoices: MeetingVoices? = nil
     var liveSpans: [VoiceSpan] = []
@@ -126,19 +127,39 @@ struct TranscriptCard: View {
     /// "Teacher only" once voices are known; before that, a way to find them in a finished recording.
     @ViewBuilder
     private var voiceControl: some View {
-        // A pass from before voiceprints were kept is run again, so "This is me" can be remembered.
-        if voices != nil && (meeting.isLive || meeting.voices?.prints != nil), !checkingVoices {
-            Button {
-                showSpeakers.toggle()
+        if let voices, !checkingVoices {
+            let hidden = Set(meeting.hiddenSpeakers ?? [])
+            Menu {
+                Toggle(tr("显示说话人标签"), isOn: $showSpeakers)
+                Divider()
+                Section(tr("只显示勾选的说话人")) {
+                    ForEach(speakers(voices), id: \.self) { speaker in
+                        Toggle(isOn: Binding(
+                            get: { !hidden.contains(speaker) },
+                            set: { onShowSpeaker?(speaker, $0) }
+                        )) {
+                            Text(voices.name(of: speaker) + " · " + Self.talkTime(voices.seconds[speaker] ?? 0))
+                        }
+                    }
+                }
+                if !hidden.isEmpty {
+                    Divider()
+                    Button(tr("显示所有说话人")) {
+                        for speaker in hidden { onShowSpeaker?(speaker, true) }
+                    }
+                }
             } label: {
-                Label(tr("说话人"), systemImage: showSpeakers ? "person.2.fill" : "person.2")
+                Label(hidden.isEmpty ? tr("说话人") : trf("说话人（隐藏 %d）", hidden.count),
+                      systemImage: showSpeakers ? "person.2.fill" : "person.2")
                     .font(AppFont.caption)
-                    .foregroundStyle(showSpeakers ? AppColor.accent : AppColor.textSecondary)
+                    .foregroundStyle(showSpeakers || !hidden.isEmpty ? AppColor.accent : AppColor.textSecondary)
                     .padding(.horizontal, 6)
                     .frame(height: 24)
             }
-            .buttonStyle(.plain.clicking())
-            .help(showSpeakers ? tr("隐藏说话人。右键一段可以改名，或标出老师和你自己") : tr("在每段话前标出是谁说的"))
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(tr("显示或隐藏说话人标签，只看某些人说的话。右键一段可以给说话人改名，或标出你自己"))
         } else if checkingVoices {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
@@ -148,15 +169,25 @@ struct TranscriptCard: View {
             .foregroundStyle(AppColor.textSecondary)
         } else if let onCheckVoices, !meeting.isLive, !(meeting.audioFiles ?? []).isEmpty {
             Button(action: onCheckVoices) {
-                Label(tr("识别同学的声音"), systemImage: "person.2.wave.2")
+                Label(tr("识别说话人"), systemImage: "person.2.wave.2")
                     .font(AppFont.caption)
                     .foregroundStyle(AppColor.textSecondary)
                     .padding(.horizontal, 6)
                     .frame(height: 24)
             }
             .buttonStyle(.plain.clicking())
-            .help(voiceError ?? tr("从录音里分出老师和同学的声音，同学说的话会变灰"))
+            .help(voiceError ?? tr("从这场录音里分出每个人的声音，在每段话前标出说话人"))
         }
+    }
+
+    /// Everyone heard, Speaker 1 first.
+    private func speakers(_ voices: MeetingVoices) -> [String] {
+        voices.seconds.keys.filter { (voices.seconds[$0] ?? 0) >= 1 }.sorted { voices.number(of: $0) < voices.number(of: $1) }
+    }
+
+    /// "12 min" or "40 s".
+    static func talkTime(_ seconds: Double) -> String {
+        seconds >= 60 ? trf("%d 分钟", Int((seconds / 60).rounded())) : trf("%d 秒", Int(seconds.rounded()))
     }
 
     private func fontButton(_ title: String, action: @escaping () -> Void) -> some View {
@@ -180,7 +211,7 @@ struct TranscriptCard: View {
                             .foregroundStyle(AppColor.textSecondary)
                             .padding(Space.s5)
                     } else {
-                        ForEach(paragraphs) { paragraph in
+                        ForEach(meeting.shownParagraphs(paragraphs)) { paragraph in
                             ParagraphRow(
                                 paragraph: paragraph,
                                 sourceLanguage: meeting.sourceLanguage,
@@ -200,9 +231,6 @@ struct TranscriptCard: View {
                                     }
                                     if let onClearMe, voices.me != nil, paragraph.commits.contains(where: { voices.side(of: $0) == .me }) {
                                         Button(tr("这不是我的声音")) { onClearMe() }
-                                    }
-                                    if let onMarkTeacher, other != nil {
-                                        Button(tr("这是老师的声音")) { onMarkTeacher(paragraph.id) }
                                     }
                                     if onRenameSpeaker != nil {
                                         let present = Array(NSOrderedSet(array: paragraph.commits.compactMap(\.speaker))) as? [String] ?? []

@@ -46,14 +46,6 @@ struct MeetingVoicesTests {
         #expect(!swapped.isClassmate(result.paragraphs[0].commits[1]))
     }
 
-    @Test func theAIIsToldWhichWordsAreAStudents() {
-        guard let result = VoiceLabels.label([paragraph()], spans: spans) else { Issue.record("no labels"); return }
-        let text = result.paragraphs[0].renderedSourceMarkingStudents(language: "en", voices: result.voices)
-        #expect(text.hasPrefix("Today we talk about nerves. [Student: \(tr("说话人 %d").replacingOccurrences(of: "%d", with: "2"))] I usually get nervous in front of so many people. [/Student] Okay."))
-        #expect(paragraph().renderedSourceMarkingStudents(language: "en", voices: nil) == paragraph().renderedSource(language: "en"))
-        #expect(ChatContext.systemPrompt(language: "Chinese", allowsWeb: false).contains("[Student: name]"))
-    }
-
     @Test func oldMeetingsAndLinesStillLoad() throws {
         let commit = try JSONDecoder().decode(Commit.self, from: Data(#"{"id":1,"source":"a","translation":"b","start":0,"end":1}"#.utf8))
         #expect(commit.speaker == nil)
@@ -61,19 +53,6 @@ struct MeetingVoicesTests {
         meeting.voices = MeetingVoices(teacher: "S1", seconds: ["S1": 10], checkedAt: .now)
         let again = try JSONDecoder().decode(Meeting.self, from: JSONEncoder().encode(meeting))
         #expect(again.voices?.teacher == "S1")
-    }
-
-    @Test func yourLinesAreYoursAndMarkedForTheAI() {
-        guard var result = VoiceLabels.label([paragraph()], spans: spans) else { Issue.record("no labels"); return }
-        #expect(VoiceLabels.mainVoice(in: result.paragraphs[0], excluding: result.voices.teacher) == "S2")
-        result.voices.me = "S2"
-        let commits = result.paragraphs[0].commits
-        #expect(result.voices.side(of: commits[0]) == .teacher)
-        #expect(result.voices.side(of: commits[1]) == .me)
-        #expect(!result.voices.isClassmate(commits[1]), "your lines are not a classmate's")
-        let text = result.paragraphs[0].renderedSourceMarkingStudents(language: "en", voices: result.voices)
-        #expect(text.contains("[Me] I usually get nervous in front of so many people. [/Me]"))
-        #expect(ChatContext.studentRule.contains("[Me]"))
     }
 
     @Test func yourSavedVoiceIsFoundOnlyWhenItClearlyMatches() {
@@ -100,7 +79,7 @@ struct MeetingVoicesTests {
         var voices = MeetingVoices(teacher: "S1", seconds: ["S1": 6956, "S2": 524, "S3": 167, "S7": 892], checkedAt: .now)
         #expect(voices.others == ["S7", "S2", "S3"])
         #expect(voices.number(of: "S1") == 1 && voices.number(of: "S7") == 2 && voices.number(of: "S3") == 4)
-        #expect(voices.name(of: "S1") == tr("老师"))
+        #expect(voices.name(of: "S1") == trf("说话人 %d", 1), "the voice heard most is Speaker 1, not assumed to be the teacher")
         #expect(voices.name(of: "S2") == trf("说话人 %d", 3))
         voices.me = "S2"
         #expect(voices.name(of: "S2") == tr("我"))
@@ -111,14 +90,28 @@ struct MeetingVoicesTests {
         #expect(voices.name(of: "S7") == tr("多人"))
     }
 
-    @Test func eachClassmateKeepsTheirOwnNameForTheAI() {
-        var p = paragraph()
-        p.commits[0].speaker = "S2"
-        p.commits[1].speaker = "S3"
-        let voices = MeetingVoices(teacher: "S1", seconds: ["S1": 100, "S2": 20, "S3": 10], checkedAt: .now, names: ["S3": "Jenny"])
-        let text = p.renderedSourceMarkingStudents(language: "en", voices: voices)
-        #expect(text.contains("[Student: Jenny] I usually get nervous"))
-        #expect(text.hasPrefix("[Student: \(trf("说话人 %d", 2))] Today we talk about nerves. [/Student] [Student: Jenny]"))
+
+    @Test func yourLinesAreYours() {
+        guard var result = VoiceLabels.label([paragraph()], spans: spans) else { Issue.record("no labels"); return }
+        #expect(VoiceLabels.mainVoice(in: result.paragraphs[0], excluding: result.voices.teacher) == "S2")
+        result.voices.me = "S2"
+        #expect(result.voices.side(of: result.paragraphs[0].commits[1]) == .me)
+        #expect(result.voices.name(of: "S2") == tr("我"))
+    }
+
+    @Test func hiddenSpeakersLeaveTheTranscriptAndWhatTheAIReads() {
+        guard let result = VoiceLabels.label([paragraph()], spans: spans) else { Issue.record("no labels"); return }
+        var meeting = Meeting.live(sourceLanguage: "en", targetLanguage: "zh")
+        meeting.paragraphs = result.paragraphs
+        meeting.voices = result.voices
+        #expect(meeting.shownParagraphs(meeting.paragraphs)[0].commits.count == 4, "nothing hidden: everything shows")
+        meeting.hiddenSpeakers = ["S2"]
+        let shown = meeting.shownParagraphs(meeting.paragraphs)
+        #expect(shown[0].commits.map(\.id) == [1, 3, 4], "Speaker 2's line is gone")
+        #expect(!shown[0].renderedSource(language: "en").contains("I usually get nervous"))
+        meeting.hiddenSpeakers = ["S1", "S2"]
+        #expect(meeting.shownParagraphs(meeting.paragraphs)[0].commits.map(\.id) == [3, 4], "lines with no clear speaker stay")
+        #expect(!ChatContext.systemPrompt(language: "Chinese", allowsWeb: false).contains("[Voice"), "the AI is not told who is a student")
     }
 }
 
