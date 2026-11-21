@@ -24,7 +24,9 @@ struct MeetingVoices: Equatable, Codable, Sendable {
 
     /// The voices other than the teacher, most heard first: Speaker 2, Speaker 3, ….
     var others: [String] {
-        seconds.keys.filter { $0 != teacher }.sorted {
+        // A blended group is shown as Several people, so it takes no number and leaves no gap.
+        let blends = MyVoice.blends(in: prints ?? [:])
+        return seconds.keys.filter { $0 != teacher && !blends.contains($0) }.sorted {
             let a = seconds[$0] ?? 0, b = seconds[$1] ?? 0
             return a == b ? $0 < $1 : a > b
         }
