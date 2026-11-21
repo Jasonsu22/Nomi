@@ -47,9 +47,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            Backend -> target-windows
-            Windows/engine -> target-asr
-            Windows/engine -> target-llm
             Windows/app/src-tauri -> target
           key: windows-app
 
@@ -58,6 +55,7 @@ jobs:
         env:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
           CMAKE_GENERATOR: Ninja
+          NOMI_TARGETS: C:\t
         run: ./Windows/scripts/build-engine.ps1
 
       - name: Engine sees the CPU
@@ -70,9 +68,9 @@ jobs:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
           CMAKE_GENERATOR: Ninja
         run: |
-          cargo test --release --manifest-path Backend/Cargo.toml --target-dir Backend/target-windows -p moxin-engine -p voice-core
+          cargo test --release --manifest-path Backend/Cargo.toml --target-dir C:\t\engine -p moxin-engine -p voice-core
           if ($LASTEXITCODE) { exit 1 }
-          cargo test --release --manifest-path Windows/engine/Cargo.toml --target-dir Windows/engine/target-asr -p asr-worker
+          cargo test --release --manifest-path Windows/engine/Cargo.toml --target-dir C:\t\target-asr -p asr-worker
           if ($LASTEXITCODE) { exit 1 }
           cargo test --manifest-path Windows/app/src-tauri/Cargo.toml
           if ($LASTEXITCODE) { exit 1 }

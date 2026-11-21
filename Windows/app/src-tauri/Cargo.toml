@@ -44,7 +44,7 @@ open = "5"
 sherpa-rs = { version = "0.6.8", default-features = false, features = ["download-binaries", "static"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = ["Media_Ocr", "Graphics_Imaging", "Storage", "Storage_Streams", "Globalization", "Foundation", "Foundation_Collections", "Win32_System_Registry"] }
+windows = { version = "0.58", features = ["Media_Ocr", "Graphics_Imaging", "Storage", "Storage_Streams", "Globalization", "Foundation", "Foundation_Collections", "Win32_Foundation", "Win32_System_Registry"] }
 
 [profile.release]
 strip = true
