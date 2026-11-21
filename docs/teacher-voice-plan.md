@@ -144,3 +144,24 @@ labelled teacher; it may be the teacher reading out students' answers.
 2. **Classmates' lines:** greyed with a tag, hidden only by a filter? **Suggestion: greyed, never hidden by default.**
 3. **Remember the teacher per class?** **Suggestion: yes,** saved as a voice fingerprint only (no audio), on this Mac.
 4. **First version:** after recording only, with live labelling later? **Suggestion: yes.**
+
+## 9. Live speakers: test results (2026-11-20)
+
+The after-recording pass is not enough on its own, so speakers are now labelled while recording. Each
+candidate was replayed through Nomi's own live tracker in 0.1 s pieces, as the microphone delivers audio,
+on 20 minutes of the English class and 20 minutes of the NLP lecture. Each was compared second by
+second with the after-recording pass, which is the reference here, not hand-checked truth.
+
+| Model | Download | English: agree / others caught / teacher marked other | NLP: agree / caught / marked other | Speed |
+|---|---|---|---|---|
+| Standard (pyannote + WeSpeaker, 5 s chunks, match 0.5) | 36 MB | 92% / 79% / 7.3% | 100% / 100% / 0.2% | 110× real time |
+| Sortformer | 236 MB | 93% / 68% / 5.3% | 100% / 99% / 0.3% | 13× |
+| Nemotron 3 (low latency) | 195 MB | 92% / 80% / 7.7% | 98% / 99% / 2.4% | 6–12× |
+| LS-EEND (all four versions) | 172 MB | merged the students into the teacher | | |
+| Streaming diarizer, default match | | merged everyone into one voice | | |
+
+**Results:**
+- **Model choice:** Standard, Sortformer and Nemotron 3 are offered in Settings, each downloaded only when
+  chosen. Standard is the default: the fastest, the smallest, and it keeps voiceprints for "This Is Me".
+- **Label delay:** Standard labels lines about 5 s after they are spoken. Longer 10 s chunks were more
+  accurate (96%) but slower to appear; shorter 3 s chunks were less accurate (88%).

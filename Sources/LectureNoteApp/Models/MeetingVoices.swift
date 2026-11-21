@@ -86,6 +86,61 @@ enum VoiceLabels {
         return top
     }
 
+    /// Like `speaker(of:in:)`, for spans sorted by start: only those that can reach the line are
+    /// looked at, so labelling a long live transcript every second stays cheap.
+    static func speaker(of commit: Commit, sorted spans: [VoiceSpan], longest: TimeInterval) -> String? {
+        var low = 0, high = spans.count
+        let from = commit.start - longest
+        while low < high {
+            let middle = (low + high) / 2
+            if spans[middle].start < from { low = middle + 1 } else { high = middle }
+        }
+        var near: [VoiceSpan] = []
+        var index = low
+        while index < spans.count, spans[index].start < commit.end {
+            if spans[index].end > commit.start { near.append(spans[index]) }
+            index += 1
+        }
+        return speaker(of: commit, in: near)
+    }
+
+    /// Labels the lines that these spans cover and leaves the rest as they were (a resumed meeting's
+    /// earlier runs keep their labels).
+    static func apply(_ spans: [VoiceSpan], to paragraphs: [Paragraph]) -> [Paragraph] {
+        guard let first = spans.map(\.start).min(), let last = spans.map(\.end).max() else { return paragraphs }
+        let sorted = spans.sorted { $0.start < $1.start }
+        let longest = sorted.map { $0.end - $0.start }.max() ?? 0
+        var labelled = paragraphs
+        for p in labelled.indices {
+            for c in labelled[p].commits.indices where labelled[p].commits[c].end > first && labelled[p].commits[c].start < last {
+                labelled[p].commits[c].speaker = speaker(of: labelled[p].commits[c], sorted: sorted, longest: longest)
+            }
+        }
+        return labelled
+    }
+
+    /// The voices of a recording after a live run: earlier runs' voices plus this run's. This run's
+    /// most heard voice is taken to be the same teacher as before; others keep their own labels.
+    static func merging(_ prior: MeetingVoices?, spans: [VoiceSpan], prints: [String: [Float]], now: Date = .now) -> (voices: MeetingVoices, spans: [VoiceSpan])? {
+        var seconds: [String: Double] = [:]
+        for span in spans { seconds[span.speaker, default: 0] += max(0, span.end - span.start) }
+        guard let top = MeetingVoices.mostHeard(seconds) else { return prior.map { ($0, spans) } }
+        guard var voices = prior else {
+            var fresh = MeetingVoices(teacher: top, seconds: seconds, checkedAt: now)
+            fresh.prints = prints.isEmpty ? nil : prints
+            return (fresh, spans)
+        }
+        let renamed = spans.map { span in
+            span.speaker == top ? VoiceSpan(start: span.start, end: span.end, speaker: voices.teacher) : span
+        }
+        for (speaker, time) in seconds { voices.seconds[speaker == top ? voices.teacher : speaker, default: 0] += time }
+        var allPrints = voices.prints ?? [:]
+        for (speaker, print) in prints where speaker != top { allPrints[speaker] = print }
+        voices.prints = allPrints.isEmpty ? nil : allPrints
+        voices.checkedAt = now
+        return (voices, renamed)
+    }
+
     /// Labels every line of `paragraphs` and works out who the teacher is. Nil when no speech was found.
     static func label(_ paragraphs: [Paragraph], spans: [VoiceSpan], now: Date = .now) -> (paragraphs: [Paragraph], voices: MeetingVoices)? {
         var seconds: [String: Double] = [:]

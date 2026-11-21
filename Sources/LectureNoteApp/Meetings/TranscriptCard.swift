@@ -17,6 +17,9 @@ struct TranscriptCard: View {
     var onMarkMe: ((Int) -> Void)? = nil
     var onClearMe: (() -> Void)? = nil
     var onRenameSpeaker: ((String, String) -> Void)? = nil
+    /// While recording: the live speaker model's voices and who spoke when.
+    var liveVoices: MeetingVoices? = nil
+    var liveSpans: [VoiceSpan] = []
     var onCopy: (Meeting) -> Void
 
     @AppStorage("lecturenote.transcriptFontSize") private var fontSize = 15.0
@@ -70,8 +73,13 @@ struct TranscriptCard: View {
     }
 
     private var paragraphs: [Paragraph] {
-        meeting.isLive ? transcript.paragraphs : meeting.paragraphs
+        guard meeting.isLive else { return meeting.paragraphs }
+        // While recording, lines take their speaker as the live model hears them.
+        return liveSpans.isEmpty ? transcript.paragraphs : VoiceLabels.apply(liveSpans, to: transcript.paragraphs)
     }
+
+    /// Who speaks: the live model's voices while recording, the saved ones after.
+    private var voices: MeetingVoices? { liveVoices ?? meeting.voices }
 
     private var toolbar: some View {
         HStack(spacing: Space.s2) {
@@ -119,7 +127,7 @@ struct TranscriptCard: View {
     @ViewBuilder
     private var voiceControl: some View {
         // A pass from before voiceprints were kept is run again, so "This is me" can be remembered.
-        if meeting.voices?.prints != nil, !checkingVoices {
+        if voices != nil && (meeting.isLive || meeting.voices?.prints != nil), !checkingVoices {
             Button {
                 showSpeakers.toggle()
             } label: {
@@ -180,12 +188,12 @@ struct TranscriptCard: View {
                                 compare: sideBySide,
                                 fontSize: fontSize,
                                 highlighted: paragraph.id == highlighted,
-                                voices: meeting.voices,
+                                voices: voices,
                                 showSpeakers: showSpeakers
                             )
                             .equatable()
                             .contextMenu {
-                                if let voices = meeting.voices {
+                                if !meeting.isLive, let voices = meeting.voices {
                                     let other = VoiceLabels.voiceToPromote(in: paragraph, voices: voices)
                                     if let onMarkMe, let other, other != voices.me {
                                         Button(tr("这是我的声音")) { onMarkMe(paragraph.id) }
