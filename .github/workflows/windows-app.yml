@@ -30,6 +30,14 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # llama.cpp's Vulkan shader tool fails to build under the Visual Studio generator
+      # ("Not a file: …vulkan-shaders-gen-build/cmake_install.cmake"); Ninja in the MSVC
+      # environment builds it.
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: seanmiddleditch/gha-setup-ninja@v6
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -49,6 +57,7 @@ jobs:
         shell: pwsh
         env:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CMAKE_GENERATOR: Ninja
         run: ./Windows/scripts/build-engine.ps1
 
       - name: Engine sees the CPU
@@ -59,6 +68,7 @@ jobs:
         shell: pwsh
         env:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CMAKE_GENERATOR: Ninja
         run: |
           cargo test --release --manifest-path Backend/Cargo.toml --target-dir Backend/target-windows -p moxin-engine -p voice-core
           if ($LASTEXITCODE) { exit 1 }

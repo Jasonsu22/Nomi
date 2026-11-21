@@ -25,6 +25,14 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # llama.cpp's Vulkan shader tool fails to build under the Visual Studio generator
+      # ("Not a file: …vulkan-shaders-gen-build/cmake_install.cmake"); Ninja in the MSVC
+      # environment builds it.
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: seanmiddleditch/gha-setup-ninja@v6
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: Windows/phase0 -> target-asr
@@ -36,12 +44,14 @@ jobs:
         working-directory: Windows/phase0
         env:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CMAKE_GENERATOR: Ninja
         run: cargo build --release -p asr-bench --target-dir target-asr
 
       - name: Build llm-bench
         working-directory: Windows/phase0
         env:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CMAKE_GENERATOR: Ninja
         run: cargo build --release -p llm-bench --target-dir target-llm
 
       - name: Package
