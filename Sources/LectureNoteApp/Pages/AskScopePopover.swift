@@ -90,6 +90,7 @@ struct AskScopePopover: View {
             }
             .padding(Space.s2)
         }
+        .fadingScrollBar()
     }
 
     private var detailColumn: some View {
@@ -132,6 +133,7 @@ struct AskScopePopover: View {
                     .padding(.bottom, Space.s3)
                 }
             }
+            .fadingScrollBar()
         }
     }
 

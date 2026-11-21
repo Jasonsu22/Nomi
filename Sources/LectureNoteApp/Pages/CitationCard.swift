@@ -67,7 +67,7 @@ struct CitationCard: View {
             if details.kind != .missing {
                 Button(action: onOpen) {
                     HStack(spacing: 3) {
-                        Text(details.kind == .lecture ? tr("跳到这一刻") : tr("打开"))
+                        Text(details.kind == .lecture ? tr("跳到这里") : tr("打开"))
                         Image(systemName: "arrow.up.right").font(.system(size: 9, weight: .bold))
                     }
                     .font(AppFont.caption.weight(.semibold))
@@ -270,7 +270,7 @@ private struct Scrolling<Content: View>: View {
                 ScrollView(.vertical) {
                     content
                 }
-                .scrollIndicators(.automatic)
+                .fadingScrollBar()
                 .scrollBounceBehavior(.basedOnSize)
             }
             .accessibilityElement(children: .contain)

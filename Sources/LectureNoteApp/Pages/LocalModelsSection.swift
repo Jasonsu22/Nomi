@@ -98,6 +98,7 @@ struct LocalModelPicker: View {
                             modelListHeight = height
                         }
                     }
+                    .fadingScrollBar()
                     .frame(height: min(400, modelListHeight))
                     Text(tr("来源：Hugging Face。下载完成后点击「使用」切换。"))
                         .font(AppFont.caption).foregroundStyle(AppColor.textSecondary)

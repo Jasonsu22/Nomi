@@ -153,7 +153,7 @@ struct AskView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .defaultScrollAnchor(.bottom)
-                        .scrollPosition($scrollPosition)
+                        .fadingScrollBar(position: $scrollPosition)
                         .onScrollGeometryChange(for: ChatFollow.Geometry.self) { geometry in
                             ChatFollow.Geometry(visibleBottom: geometry.visibleRect.maxY, contentHeight: geometry.contentSize.height)
                         } action: { old, new in

@@ -102,6 +102,7 @@ enum ChatContext {
     }
 
     /// How to cite. The app turns each [n] into a citation chip; anything else shows as plain text.
+
     static let citeRule = "Cite sparingly: put one or two passage numbers, like [3], at the end of a paragraph or list item whose facts come from the material, not after every sentence, and never repeat the same passage in one paragraph. Cite only with the bracketed number: never write a source's title, date, timestamp or page as a citation, because the app shows those itself. Do not invent numbers, timestamps, page numbers or links."
 
     static func systemPrompt(language: String, allowsWeb: Bool, hasPassages: Bool = true, tools: Bool = false, webTool: WebTool = .off, library: LibraryTool = .off, currentClass: String? = nil, now: Date = .now) -> String {

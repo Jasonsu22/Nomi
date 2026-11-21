@@ -43,6 +43,7 @@ struct SettingsView: View {
                             SettingsSwitch(label: tr("课堂麦克风（实验）"), isOn: $classroomMic)
                         }
                     }
+                    SpeakerModelsSection()
                     LLMSettingsSection(model: model)
                     SearchSettingsSection(model: model)
                         .id("search-settings")
@@ -53,6 +54,7 @@ struct SettingsView: View {
                 .pageColumn(maxWidth: PageColumnLayout.narrowWidth)
                 .padding(.bottom, Space.s7)
             }
+            .fadingScrollBar()
             .onAppear {
                 revealSearch(proxy)
                 revealMemory(proxy)

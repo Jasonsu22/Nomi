@@ -9,6 +9,18 @@ struct TranscriptCard: View {
     var embedded = false
     /// A moment to scroll to, sent from the Q&A tab.
     var jump: TranscriptJump? = nil
+    /// The voice pass: running now, why it failed, how to start it, and "This is the teacher".
+    var checkingVoices = false
+    var voiceError: String? = nil
+    var onCheckVoices: (() -> Void)? = nil
+    var onMarkMe: ((Int) -> Void)? = nil
+    var onClearMe: (() -> Void)? = nil
+    var onRenameSpeaker: ((String, String) -> Void)? = nil
+    /// Show (true) or hide (false) one speaker's lines.
+    var onShowSpeaker: ((String, Bool) -> Void)? = nil
+    /// While recording: the live speaker model's voices and who spoke when.
+    var liveVoices: MeetingVoices? = nil
+    var liveSpans: [VoiceSpan] = []
     var onCopy: (Meeting) -> Void
 
     @AppStorage("lecturenote.transcriptFontSize") private var fontSize = 15.0
@@ -22,6 +34,10 @@ struct TranscriptCard: View {
     /// The paragraph a Q&A timestamp jumped to, lit for a moment.
     @State private var highlighted: Int?
     @State private var highlightFade: Task<Void, Never>?
+    @AppStorage("lecturenote.showSpeakers") private var showSpeakers = true
+    /// The voice being renamed, and the name typed so far.
+    @State private var renaming: String?
+    @State private var newName = ""
 
     var body: some View {
         let paragraphs = paragraphs
@@ -36,6 +52,16 @@ struct TranscriptCard: View {
             toolbar
             transcript(paragraphs)
         }
+        .alert(tr("给说话人起个名字"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField(tr("名字，例如 Jenny"), text: $newName)
+            Button(tr("保存")) {
+                if let renaming { onRenameSpeaker?(renaming, newName) }
+                renaming = nil
+            }
+            Button(tr("取消"), role: .cancel) { renaming = nil }
+        } message: {
+            Text(tr("这场录音里这个声音说的话都会用这个名字。留空就恢复原来的名字。"))
+        }
         return Group {
             if embedded {
                 content
@@ -48,8 +74,13 @@ struct TranscriptCard: View {
     }
 
     private var paragraphs: [Paragraph] {
-        meeting.isLive ? transcript.paragraphs : meeting.paragraphs
+        guard meeting.isLive else { return meeting.paragraphs }
+        // While recording, lines take their speaker as the live model hears them.
+        return liveSpans.isEmpty ? transcript.paragraphs : VoiceLabels.apply(liveSpans, to: transcript.paragraphs)
     }
+
+    /// Who speaks: the live model's voices while recording, the saved ones after.
+    private var voices: MeetingVoices? { liveVoices ?? meeting.voices }
 
     private var toolbar: some View {
         HStack(spacing: Space.s2) {
@@ -59,6 +90,7 @@ struct TranscriptCard: View {
                     .foregroundStyle(AppColor.textPrimary)
             }
             Spacer(minLength: Space.s2)
+            voiceControl
             fontButton("A−") { fontSize = max(13, fontSize - 1) }
             fontButton("A+") { fontSize = min(20, fontSize + 1) }
             if canCompare {
@@ -92,6 +124,72 @@ struct TranscriptCard: View {
         .padding(.bottom, Space.s3)
     }
 
+    /// "Teacher only" once voices are known; before that, a way to find them in a finished recording.
+    @ViewBuilder
+    private var voiceControl: some View {
+        if let voices, !checkingVoices {
+            let hidden = Set(meeting.hiddenSpeakers ?? [])
+            Menu {
+                Toggle(tr("显示说话人标签"), isOn: $showSpeakers)
+                Divider()
+                Section(tr("只显示勾选的说话人")) {
+                    ForEach(speakers(voices), id: \.self) { speaker in
+                        Toggle(isOn: Binding(
+                            get: { !hidden.contains(speaker) },
+                            set: { onShowSpeaker?(speaker, $0) }
+                        )) {
+                            Text(voices.name(of: speaker) + " · " + Self.talkTime(voices.seconds[speaker] ?? 0))
+                        }
+                    }
+                }
+                if !hidden.isEmpty {
+                    Divider()
+                    Button(tr("显示所有说话人")) {
+                        for speaker in hidden { onShowSpeaker?(speaker, true) }
+                    }
+                }
+            } label: {
+                Label(hidden.isEmpty ? tr("说话人") : trf("说话人（隐藏 %d）", hidden.count),
+                      systemImage: showSpeakers ? "person.2.fill" : "person.2")
+                    .font(AppFont.caption)
+                    .foregroundStyle(showSpeakers || !hidden.isEmpty ? AppColor.accent : AppColor.textSecondary)
+                    .padding(.horizontal, 6)
+                    .frame(height: 24)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(tr("显示或隐藏说话人标签，只看某些人说的话。右键一段可以给说话人改名，或标出你自己"))
+        } else if checkingVoices {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text(tr("正在识别声音…"))
+            }
+            .font(AppFont.caption)
+            .foregroundStyle(AppColor.textSecondary)
+        } else if let onCheckVoices, !meeting.isLive, !(meeting.audioFiles ?? []).isEmpty {
+            Button(action: onCheckVoices) {
+                Label(tr("识别说话人"), systemImage: "person.2.wave.2")
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .padding(.horizontal, 6)
+                    .frame(height: 24)
+            }
+            .buttonStyle(.plain.clicking())
+            .help(voiceError ?? tr("从这场录音里分出每个人的声音，在每段话前标出说话人"))
+        }
+    }
+
+    /// Everyone heard, Speaker 1 first.
+    private func speakers(_ voices: MeetingVoices) -> [String] {
+        voices.seconds.keys.filter { (voices.seconds[$0] ?? 0) >= 1 }.sorted { voices.number(of: $0) < voices.number(of: $1) }
+    }
+
+    /// "12 min" or "40 s".
+    static func talkTime(_ seconds: Double) -> String {
+        seconds >= 60 ? trf("%d 分钟", Int((seconds / 60).rounded())) : trf("%d 秒", Int(seconds.rounded()))
+    }
+
     private func fontButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -113,16 +211,39 @@ struct TranscriptCard: View {
                             .foregroundStyle(AppColor.textSecondary)
                             .padding(Space.s5)
                     } else {
-                        ForEach(paragraphs) { paragraph in
+                        ForEach(meeting.shownParagraphs(paragraphs)) { paragraph in
                             ParagraphRow(
                                 paragraph: paragraph,
                                 sourceLanguage: meeting.sourceLanguage,
                                 targetLanguage: meeting.targetLanguage,
                                 compare: sideBySide,
                                 fontSize: fontSize,
-                                highlighted: paragraph.id == highlighted
+                                highlighted: paragraph.id == highlighted,
+                                voices: voices,
+                                showSpeakers: showSpeakers
                             )
                             .equatable()
+                            .contextMenu {
+                                if !meeting.isLive, let voices = meeting.voices {
+                                    let other = VoiceLabels.voiceToPromote(in: paragraph, voices: voices)
+                                    if let onMarkMe, let other, other != voices.me {
+                                        Button(tr("这是我的声音")) { onMarkMe(paragraph.id) }
+                                    }
+                                    if let onClearMe, voices.me != nil, paragraph.commits.contains(where: { voices.side(of: $0) == .me }) {
+                                        Button(tr("这不是我的声音")) { onClearMe() }
+                                    }
+                                    if onRenameSpeaker != nil {
+                                        let present = Array(NSOrderedSet(array: paragraph.commits.compactMap(\.speaker))) as? [String] ?? []
+                                        if !present.isEmpty { Divider() }
+                                        ForEach(present, id: \.self) { speaker in
+                                            Button(trf("重命名“%@”…", voices.name(of: speaker))) {
+                                                newName = voices.names?[speaker] ?? ""
+                                                renaming = speaker
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     Color.clear
@@ -136,8 +257,7 @@ struct TranscriptCard: View {
             }
             .defaultScrollAnchor(meeting.isLive ? .bottom : .top, for: .initialOffset)
             .defaultScrollAnchor(followsLatest && meeting.isLive ? .bottom : nil, for: .sizeChanges)
-            .scrollIndicators(userScrolling ? .automatic : .hidden, axes: .vertical)
-            .background(LiveScrollerGate(shown: userScrolling))
+            .fadingScrollBar()
             .onScrollPhaseChange { _, phase in
                 switch phase {
                 case .interacting, .tracking, .decelerating:
@@ -233,27 +353,8 @@ struct TranscriptCard: View {
     }
 }
 
-/// Overlay scrollers, and only while the user is dragging. Content growth must
-/// not flash the bar or change the text width.
-private struct LiveScrollerGate: NSViewRepresentable {
-    var shown: Bool
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        view.isHidden = true
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let scroll = nsView.enclosingScrollView else { return }
-            scroll.scrollerStyle = .overlay
-            scroll.autohidesScrollers = true
-            scroll.hasVerticalScroller = shown
-        }
-    }
-}
-
+/// Whether the transcript is scrolled to its newest line.
 private final class ScrollEdge {
     var atBottom = true
 }
+

@@ -65,6 +65,7 @@ struct MeetingAssistantPanel: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .fadingScrollBar()
             if let error = state?.error {
                 Text(error).font(AppFont.caption).foregroundStyle(.red).textSelection(.enabled)
             }

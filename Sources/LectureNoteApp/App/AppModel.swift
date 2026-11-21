@@ -75,6 +75,14 @@ final class AppModel {
     var windowAllowsCompact = false
     var exportError: String?
     var storageError: String?
+    /// Meetings whose voices are being told apart right now (`checkVoices`).
+    var checkingVoices: Set<UUID> = []
+    /// Who has spoken so far in the recording that is running, from the live speaker model.
+    var liveSpeakerSpans: [VoiceSpan] = []
+    var liveSpeakerPrints: [String: [Float]] = [:]
+    @ObservationIgnored var speakerTracker: LiveSpeakerTracker?
+    /// Why the last voice pass failed, shown on its meeting.
+    var voiceError: [UUID: String] = [:]
     var sourceError: String?
     var sources: [KnowledgeSource] = [] {
         didSet { persistSources() }
@@ -426,6 +434,7 @@ final class AppModel {
         refreshTranscriptionTopic(meeting.id)
         openMeetingID = meeting.id
         page = .meetings
+        startLiveSpeakers(meeting.id, offset: 0)
         engine.start()
     }
 
@@ -456,6 +465,7 @@ final class AppModel {
         page = .meetings
         recordingSetupPresented = false
         recordingResumeID = nil
+        startLiveSpeakers(id, offset: offset)
         engine.start(resuming: history, at: offset)
     }
 
@@ -960,6 +970,7 @@ final class AppModel {
         resumedMeetingSnapshot = nil
         persistMeetings()
         finishQuestionScan(id)
+        finishLiveSpeakers(id)
     }
 
     /// The meeting being recorded, if any.

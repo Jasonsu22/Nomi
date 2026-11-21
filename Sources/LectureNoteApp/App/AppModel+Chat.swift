@@ -949,7 +949,7 @@ extension AppModel {
                 id: meeting.id,
                 title: meeting.title,
                 startedAt: meeting.startedAt,
-                paragraphs: meeting.paragraphs.map {
+                paragraphs: meeting.shownParagraphs(meeting.paragraphs).map {
                     ($0.openedAt, $0.renderedSource(language: language), $0.renderedTranslation(language: meeting.targetLanguage))
                 },
                 summary: meeting.assistant?.summary
@@ -976,7 +976,7 @@ extension AppModel {
             if length > summaryAbove, let summary = meeting.assistant?.summary, !summary.isEmpty {
                 blocks.append(ContextBlock(title: meeting.title, detail: tr("会议摘要"), body: summary, meetingID: meeting.id, pinned: true))
             }
-            for paragraph in meeting.paragraphs {
+            for paragraph in meeting.shownParagraphs(meeting.paragraphs) {
                 let text = paragraph.renderedSource(language: meeting.sourceLanguage)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { continue }

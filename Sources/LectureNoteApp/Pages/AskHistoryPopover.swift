@@ -59,6 +59,7 @@ struct AskHistoryPopover: View {
                     .padding(.horizontal, Space.s2)
                     .padding(.bottom, Space.s3)
                 }
+                .fadingScrollBar()
             }
         }
         // At most this tall, and shorter when the window is: the list scrolls rather than pushing the window taller.
