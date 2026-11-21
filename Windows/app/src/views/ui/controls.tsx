@@ -142,7 +142,7 @@ export function Popover({ anchor, onClose, children, align = "start", side = "be
     };
   }, [anchor, onClose]);
   return createPortal(
-    <div ref={box} data-popover className="pop-in fixed z-[1000]" style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? "visible" : "hidden" }}>
+    <div ref={box} data-popover className="pop-in fixed z-[1000]" style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, opacity: pos ? 1 : 0, pointerEvents: pos ? "auto" : "none" }}>
       {children}
     </div>,
     document.body,
