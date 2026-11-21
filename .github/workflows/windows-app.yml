@@ -1,0 +1,80 @@
+# Builds Nomi for Windows (the Tauri app, the shared engine and the GGUF workers) into an unsigned
+# NSIS installer, and runs the Rust tests on Windows. Only on the Windows branches, never on main.
+name: Windows app
+
+on:
+  push:
+    branches: ["windows/**"]
+    paths:
+      - "Windows/app/**"
+      - "Windows/engine/**"
+      - "Windows/scripts/**"
+      - "Backend/**"
+      - ".github/workflows/windows-app.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: latest
+          install_runtime: true
+          cache: true
+          stripdown: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Windows/app/package-lock.json
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            Backend -> target-windows
+            Windows/engine -> target-asr
+            Windows/engine -> target-llm
+            Windows/app/src-tauri -> target
+          key: windows-app
+
+      - name: Engine and workers
+        shell: pwsh
+        env:
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        run: ./Windows/scripts/build-engine.ps1
+
+      - name: Engine sees the CPU
+        working-directory: Windows/app/src-tauri/engine
+        run: .\asr\asr-worker.exe devices
+
+      - name: Tests (engine, workers, app core)
+        shell: pwsh
+        env:
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        run: |
+          cargo test --release --manifest-path Backend/Cargo.toml --target-dir Backend/target-windows -p moxin-engine -p voice-core
+          if ($LASTEXITCODE) { exit 1 }
+          cargo test --release --manifest-path Windows/engine/Cargo.toml --target-dir Windows/engine/target-asr -p asr-worker
+          if ($LASTEXITCODE) { exit 1 }
+          cargo test --manifest-path Windows/app/src-tauri/Cargo.toml
+          if ($LASTEXITCODE) { exit 1 }
+
+      - name: Installer
+        working-directory: Windows/app
+        run: |
+          npm ci
+          npx tauri build --bundles nsis
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nomi-windows-x64-setup
+          path: Windows/app/src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 30
