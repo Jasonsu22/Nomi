@@ -7,8 +7,9 @@
 //!
 //! Each WAV goes through Nomi's own phrase cutter (`voice-core`), as in the engine. Every
 //! phrase is transcribed when it ends, and long phrases also get a pass every 1.5 s of speech
-//! while they grow (the grey interim text). The engine skips an interim pass when the model is
-//! still busy; this tool runs them all, so its numbers are a safe upper bound.
+//! while they grow (the grey interim text). Timing is simulated live: audio arrives in real time,
+//! and `--interim` chooses what happens to an interim pass the model is not free for:
+//! `all` runs it anyway (today's engine), `skip-busy` drops it, `off` runs none.
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
@@ -106,7 +107,9 @@ struct ClipReport {
     audio_seconds: f64,
     phrases: usize,
     interim_passes: usize,
-    /// All model time divided by the clip's length. Under 1.0 keeps up; under 0.5 leaves room
+    /// Interim passes dropped because the model was still busy (`--interim skip-busy`) or off.
+    interim_skipped: usize,
+    /// Model time actually spent divided by the clip's length. Under 1.0 keeps up; under 0.5 leaves room
     /// for translation and the rest of the PC.
     load: f64,
     /// Same, counting only the end-of-phrase passes (interim text turned off).
@@ -114,6 +117,9 @@ struct ClipReport {
     final_latency_ms_mean: f64,
     final_latency_ms_p90: f64,
     final_latency_ms_max: f64,
+    /// How far the model still lags when the recording ends. Above a few seconds it is falling
+    /// behind and would keep falling behind in a longer lecture.
+    behind_at_end_seconds: f64,
     transcript: String,
 }
 
@@ -126,6 +132,7 @@ struct Report {
     device: String,
     threads: i32,
     language: String,
+    interim: String,
     load_seconds: f64,
     context_prompt: bool,
     clips: Vec<ClipReport>,
@@ -138,6 +145,12 @@ fn run(args: &[String]) -> Result<()> {
     let device = flag(args, "--device").unwrap_or_else(|| "cpu".into());
     let threads: i32 = flag(args, "--threads").map(|value| value.parse()).transpose()?.unwrap_or(0);
     let language = flag(args, "--language").unwrap_or_else(|| "auto".into());
+    // all: every interim pass, as the engine does today. skip-busy: drop an interim pass the
+    // model is not free for. off: end-of-phrase passes only.
+    let interim = flag(args, "--interim").unwrap_or_else(|| "skip-busy".into());
+    if !["all", "skip-busy", "off"].contains(&interim.as_str()) {
+        bail!("--interim must be all, skip-busy or off");
+    }
     let audio: Vec<PathBuf> = flags(args, "--audio").into_iter().map(PathBuf::from).collect();
     if audio.is_empty() {
         bail!("give at least one --audio file");
@@ -171,9 +184,27 @@ fn run(args: &[String]) -> Result<()> {
         }
         segments.extend(vad.finish());
 
+        // Live timing: audio arrives in real time and there is one speech model. A pass can start
+        // only when its audio exists and the model is free. With `skip-busy`, an interim pass
+        // that would have to wait is dropped, as a live caption should be; end-of-phrase passes
+        // always run, and wait their turn.
         let mut calls = Vec::new();
         let mut finals: Vec<String> = Vec::new();
+        let mut free_at = 0.0f64;
+        let mut waits_ms: Vec<f64> = Vec::new();
+        let mut skipped = 0usize;
         for segment in segments {
+            if !segment.is_final {
+                let skip = match interim.as_str() {
+                    "off" => true,
+                    "skip-busy" => free_at > segment.end,
+                    _ => false,
+                };
+                if skip {
+                    skipped += 1;
+                    continue;
+                }
+            }
             let mut options = RunOptions::default();
             if language != "auto" {
                 options.language = Some(language.clone());
@@ -187,8 +218,14 @@ fn run(args: &[String]) -> Result<()> {
             }
             let clock = Instant::now();
             let result = session.run(&segment.samples, &options);
-            let compute_ms = clock.elapsed().as_secs_f64() * 1000.0;
-            calls.push(Call { final_pass: segment.is_final, audio_seconds: segment.samples.len() as f64 / RATE as f64, compute_ms });
+            let compute = clock.elapsed().as_secs_f64();
+            let begin = free_at.max(segment.end);
+            free_at = begin + compute;
+            calls.push(Call { final_pass: segment.is_final, audio_seconds: segment.samples.len() as f64 / RATE as f64, compute_ms: compute * 1000.0 });
+            if segment.is_final {
+                // From the end of the phrase until its text is ready, queueing included.
+                waits_ms.push((free_at - segment.end) * 1000.0);
+            }
             match result {
                 Ok(transcript) if segment.is_final => finals.push(transcript.text.trim().to_string()),
                 Ok(_) => {}
@@ -197,24 +234,26 @@ fn run(args: &[String]) -> Result<()> {
         }
 
         let total: f64 = calls.iter().map(|call| call.compute_ms).sum::<f64>() / 1000.0;
-        let mut final_ms: Vec<f64> = calls.iter().filter(|call| call.final_pass).map(|call| call.compute_ms).collect();
-        let final_total: f64 = final_ms.iter().sum::<f64>() / 1000.0;
-        final_ms.sort_by(|a, b| a.total_cmp(b));
+        let final_total: f64 = calls.iter().filter(|call| call.final_pass).map(|call| call.compute_ms).sum::<f64>() / 1000.0;
+        waits_ms.sort_by(|a, b| a.total_cmp(b));
         let report = ClipReport {
             file: path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default(),
             audio_seconds,
-            phrases: final_ms.len(),
+            phrases: waits_ms.len(),
             interim_passes: calls.iter().filter(|call| !call.final_pass).count(),
+            interim_skipped: skipped,
             load: total / audio_seconds,
             load_without_interim: final_total / audio_seconds,
-            final_latency_ms_mean: mean(&final_ms),
-            final_latency_ms_p90: percentile(&final_ms, 0.9),
-            final_latency_ms_max: final_ms.last().copied().unwrap_or(0.0),
+            final_latency_ms_mean: mean(&waits_ms),
+            final_latency_ms_p90: percentile(&waits_ms, 0.9),
+            final_latency_ms_max: waits_ms.last().copied().unwrap_or(0.0),
+            behind_at_end_seconds: (free_at - audio_seconds).max(0.0),
             transcript: finals.join("\n"),
         };
         eprintln!(
-            "  {} phrases, load {:.2} (without interim {:.2}), phrase latency mean {:.0} ms, p90 {:.0} ms",
-            report.phrases, report.load, report.load_without_interim, report.final_latency_ms_mean, report.final_latency_ms_p90
+            "  {} phrases, interim {} run / {} skipped, load {:.2}, text ready after: mean {:.1} s, p90 {:.1} s, max {:.1} s, behind at end {:.0} s",
+            report.phrases, report.interim_passes, report.interim_skipped, report.load,
+            report.final_latency_ms_mean / 1000.0, report.final_latency_ms_p90 / 1000.0, report.final_latency_ms_max / 1000.0, report.behind_at_end_seconds
         );
         clips.push(report);
     }
@@ -230,6 +269,7 @@ fn run(args: &[String]) -> Result<()> {
         device: bound,
         threads,
         language,
+        interim,
         load_seconds,
         context_prompt,
         clips,

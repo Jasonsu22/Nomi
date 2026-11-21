@@ -140,9 +140,11 @@ $sentencesEn = Join-Path $here 'sentences-en.txt'
 $sentencesZh = Join-Path $here 'sentences-zh.txt'
 foreach ($model in $asrModels) {
     foreach ($place in $placements) {
-        $name = "asr-$($model.id)-$place"
-        Say "Speech alone: $($model.id) on $place"
-        $null = Run-Tool $asrExe (@('run', '--model', "`"$($paths[$model.id])`"", '--device', $place, '--json', "`"$(Join-Path $out "$name.json")`"") + $clipArgs) $name
+        foreach ($interim in @('skip-busy', 'off')) {
+            $name = "asr-$($model.id)-$place-$interim"
+            Say "Speech alone: $($model.id) on $place, interim $interim"
+            $null = Run-Tool $asrExe (@('run', '--model', "`"$($paths[$model.id])`"", '--device', $place, '--interim', $interim, '--json', "`"$(Join-Path $out "$name.json")`"") + $clipArgs) $name
+        }
     }
 }
 foreach ($model in $llmModels) {
@@ -200,14 +202,19 @@ $lines += "- $($system.cpu), $($system.cores) cores / $($system.threads) threads
 foreach ($gpu in $gpus) { $lines += "- $($gpu.name), driver $($gpu.driver)" }
 $lines += "- On battery: $onBattery"
 $lines += ""
-$lines += "## Speech alone"
-$lines += "| Model | Device | Load | Load, interim off | Phrase p90 ms |"
-$lines += "|---|---|---:|---:|---:|"
-foreach ($model in $asrModels) { foreach ($place in $placements) {
-    $r = Read-Result "asr-$($model.id)-$place"
-    if ($r) { $p90 = ($r.clips | Measure-Object final_latency_ms_p90 -Maximum).Maximum; $lines += "| $($model.id) | $place ($($r.device)) | $([math]::Round($r.load, 2)) | $([math]::Round($r.load_without_interim, 2)) | $([math]::Round($p90)) |" }
-    else { $lines += "| $($model.id) | $place | failed | | |" }
-} }
+$lines += "## Speech alone (live timing)"
+$lines += "| Model | Device | Interim text | Load | Text ready p90 s | Max s | Behind at end s |"
+$lines += "|---|---|---|---:|---:|---:|---:|"
+foreach ($model in $asrModels) { foreach ($place in $placements) { foreach ($interim in @('skip-busy', 'off')) {
+    $r = Read-Result "asr-$($model.id)-$place-$interim"
+    if ($r) {
+        $p90 = ($r.clips | Measure-Object final_latency_ms_p90 -Maximum).Maximum / 1000
+        $max = ($r.clips | Measure-Object final_latency_ms_max -Maximum).Maximum / 1000
+        $behind = ($r.clips | Measure-Object behind_at_end_seconds -Maximum).Maximum
+        $lines += "| $($model.id) | $place ($($r.device)) | $interim | $([math]::Round($r.load, 2)) | $([math]::Round($p90, 1)) | $([math]::Round($max, 1)) | $([math]::Round($behind)) |"
+    }
+    else { $lines += "| $($model.id) | $place | $interim | failed | | | |" }
+} } }
 $lines += ""
 $lines += "## Translation alone"
 $lines += "| Model | Device | Direction | Mean ms | p90 ms | Tokens/s |"
