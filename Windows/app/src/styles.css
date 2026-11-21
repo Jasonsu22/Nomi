@@ -70,73 +70,47 @@
   }
 }
 
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-}
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
 
-/* With Mica (Windows 11) or vibrancy, the page is a tint over the system material; without, it is solid. */
-body {
-  background: var(--page);
-  overflow: hidden;
-  -webkit-font-smoothing: antialiased;
-  user-select: none;
-}
-body.solid {
-  background: var(--canvas);
-}
+  /* With Mica (Windows 11) or vibrancy, the page is a tint over the system material; without, it is solid. */
+  body {
+    background: var(--page);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  body.solid {
+    background: var(--canvas);
+  }
 
-::selection {
-  background: var(--selection);
-  color: var(--on-selection);
-}
+  ::selection {
+    background: var(--selection);
+    color: var(--on-selection);
+  }
 
-.selectable {
-  user-select: text;
-}
+  .selectable {
+    user-select: text;
+  }
 
-/* A glass panel. backdrop-filter runs on the GPU in WebView2, so it stays smooth while scrolling. */
-.glass {
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(24px) saturate(1.6);
-  backdrop-filter: blur(24px) saturate(1.6);
-  border: 1px solid var(--glass-line);
-  box-shadow: inset 0 1px 0 var(--glass-edge), var(--glass-shadow);
-}
-.glass-strong {
-  background: var(--glass-strong);
-  -webkit-backdrop-filter: blur(30px) saturate(1.8);
-  backdrop-filter: blur(30px) saturate(1.8);
-  border: 1px solid var(--glass-line);
-  box-shadow: inset 0 1px 0 var(--glass-edge), var(--glass-shadow);
-}
-/* The light that sits on top of a glass button and follows the pointer. */
-.sheen {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-}
-.sheen::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: radial-gradient(120px circle at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, 0.35), transparent 60%);
-  opacity: 0;
-  transition: opacity var(--t-tap) var(--ease);
-}
-.sheen:hover::after {
-  opacity: 1;
-}
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
 
-.press {
-  transition: transform var(--t-tap) var(--ease-spring), background-color var(--t-tap) var(--ease), opacity var(--t-tap) var(--ease);
-}
-.press:active {
-  transform: scale(0.97);
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
 }
 
 /* Pages and lines come in by fading and rising a little; only opacity and transform move. */
@@ -158,36 +132,68 @@ body.solid {
     opacity: 1;
   }
 }
-.enter {
-  animation: rise var(--t-page) var(--ease) both;
-}
-.fade-in {
-  animation: fade var(--t-page) var(--ease) both;
-}
+@layer components {
+  /* A glass panel. backdrop-filter runs on the GPU in WebView2, so it stays smooth while scrolling. */
+  .glass {
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    backdrop-filter: blur(24px) saturate(1.6);
+    border: 1px solid var(--glass-line);
+    box-shadow: inset 0 1px 0 var(--glass-edge), var(--glass-shadow);
+  }
+  .glass-strong {
+    background: var(--glass-strong);
+    -webkit-backdrop-filter: blur(30px) saturate(1.8);
+    backdrop-filter: blur(30px) saturate(1.8);
+    border: 1px solid var(--glass-line);
+    box-shadow: inset 0 1px 0 var(--glass-edge), var(--glass-shadow);
+  }
+  /* The light that sits on top of a glass button and follows the pointer. */
+  .sheen {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .sheen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(120px circle at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, 0.35), transparent 60%);
+    opacity: 0;
+    transition: opacity var(--t-tap) var(--ease);
+  }
+  .sheen:hover::after {
+    opacity: 1;
+  }
 
-/* The scroll bar shows while scrolling or hovering and fades otherwise, as on the Mac (0.10). */
-.scroll {
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-  transition: scrollbar-color 400ms var(--ease);
-}
-.scroll:hover,
-.scroll.scrolling {
-  scrollbar-color: color-mix(in srgb, var(--text-2) 45%, transparent) transparent;
-}
+  .press {
+    transition: transform var(--t-tap) var(--ease-spring), background-color var(--t-tap) var(--ease), opacity var(--t-tap) var(--ease);
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
 
-input,
-select,
-textarea,
-button {
-  font: inherit;
-  color: inherit;
-}
+  .enter {
+    animation: rise var(--t-page) var(--ease) backwards;
+  }
+  .fade-in {
+    animation: fade var(--t-page) var(--ease) backwards;
+  }
 
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  /* The scroll bar shows while scrolling or hovering and fades otherwise, as on the Mac (0.10). */
+  .scroll {
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 400ms var(--ease);
+  }
+  .scroll:hover,
+  .scroll.scrolling {
+    scrollbar-color: color-mix(in srgb, var(--text-2) 45%, transparent) transparent;
+  }
+
 }
 
 @media (prefers-reduced-motion: reduce) {

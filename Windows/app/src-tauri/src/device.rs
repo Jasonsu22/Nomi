@@ -13,6 +13,7 @@ pub struct Gpu {
     pub backend: String,
     /// gpu (discrete) or igpu (integrated).
     pub kind: String,
+    #[serde(alias = "memory_total_mb")]
     pub memory_total_mb: u64,
 }
 
@@ -71,7 +72,12 @@ fn list_gpus(engine_dir: &std::path::Path) -> Vec<Gpu> {
     }
     let Ok(output) = command.output() else { return Vec::new() };
     let devices: Vec<Gpu> = serde_json::from_slice(&output.stdout).unwrap_or_default();
-    devices.into_iter().filter(|d| d.kind == "gpu" || d.kind == "igpu").collect()
+    devices
+        .into_iter()
+        .filter(|d| d.kind == "gpu" || d.kind == "igpu")
+        // Apple's GPU shares the system's memory, like an integrated one.
+        .map(|d| if d.backend.eq_ignore_ascii_case("metal") { Gpu { kind: "igpu".into(), ..d } } else { d })
+        .collect()
 }
 
 #[cfg(test)]

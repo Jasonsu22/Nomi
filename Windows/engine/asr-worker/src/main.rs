@@ -69,7 +69,22 @@ fn main() -> Result<()> {
                 if context_prompt && !context.trim().is_empty() {
                     options.prompt = Some(context);
                 }
-                let event = match session.run(&samples, &options) {
+                let mut result = session.run(&samples, &options);
+                // Auto on GGUF sometimes writes English speech half in Chinese characters
+                // ("Please.你 know，你 know"). Mostly-Latin text with Chinese mixed in is redone as English.
+                if options.language.is_none() {
+                    if let Ok(transcript) = &result {
+                        if half_translated(&transcript.text) {
+                            let mut english = options.clone();
+                            english.language = Some("en".into());
+                            if let Ok(redone) = session.run(&samples, &english) {
+                                result = Ok(redone);
+                                options.language = Some("en".into());
+                            }
+                        }
+                    }
+                }
+                let event = match result {
                     Ok(transcript) => {
                         let mut text = transcript.text.trim().to_string();
                         // More text than a short phrase can hold is the model repeating its context.
@@ -173,6 +188,14 @@ fn device_list() -> Vec<DeviceInfo> {
         .collect()
 }
 
+/// English speech written partly in Chinese characters: mostly Latin letters, a few CJK ones.
+/// A Chinese lecture with English terms is mostly CJK and is left alone.
+fn half_translated(text: &str) -> bool {
+    let cjk = text.chars().filter(|c| matches!(*c as u32, 0x3400..=0x9fff | 0xf900..=0xfaff)).count();
+    let latin = text.chars().filter(|c| c.is_ascii_alphabetic()).count();
+    cjk > 0 && latin >= 8 && latin as f64 >= 0.6 * (latin + cjk * 2) as f64
+}
+
 /// The engine names languages ("Chinese", "auto"); transcribe.cpp wants ISO codes.
 fn iso_language(name: &str) -> Option<String> {
     let lower = name.trim().to_lowercase();
@@ -220,7 +243,15 @@ fn flag(args: &[String], name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{iso_language, language_name};
+    use super::{half_translated, iso_language, language_name};
+
+    #[test]
+    fn half_translated_english_is_caught() {
+        assert!(half_translated("Please.你 know，你 know，你 answer， right。"));
+        assert!(!half_translated("今天我们讲 attention 是怎么在 Transformer 里工作的。"));
+        assert!(!half_translated("Remember, Richard has to get it."));
+        assert!(!half_translated("你一问，对吗？"));
+    }
 
     #[test]
     fn languages_go_both_ways() {

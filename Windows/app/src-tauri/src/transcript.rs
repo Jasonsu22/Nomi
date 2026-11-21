@@ -146,7 +146,10 @@ impl TranscriptBuilder {
         let anchor = paragraph.commits.last().map(|c| c.end).unwrap_or(paragraph.opened_at);
         let has_content = !paragraph.commits.is_empty() || !paragraph.tail.is_empty();
         if has_content && start - anchor > Self::PAUSE_GAP {
+            // The grey line belonged to speech that is now being finished in the new paragraph;
+            // left here, it would show twice.
             self.paragraphs[last].closed = true;
+            self.paragraphs[last].tail.clear();
             return self.open_paragraph(start);
         }
         last
@@ -252,6 +255,15 @@ mod tests {
         builder.apply_commit(commit(1, &long, 0.0, 10.0), "下一句");
         assert_eq!(builder.paragraphs.len(), 2);
         assert_eq!(builder.paragraphs[1].tail, "下一句");
+    }
+
+    #[test]
+    fn a_closed_paragraph_keeps_no_grey_line() {
+        let mut builder = TranscriptBuilder::new("en", vec![]);
+        builder.apply_commit(commit(1, "One.", 0.0, 1.0), "and th");
+        builder.apply_commit(commit(2, "And then two.", 5.0, 6.0), "");
+        assert!(builder.paragraphs[0].tail.is_empty());
+        assert_eq!(builder.paragraphs.len(), 2);
     }
 
     #[test]

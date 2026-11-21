@@ -4,8 +4,22 @@
     {
       "name": "leaf-loaders",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["Design/Animations/serve.py", "8765"],
+      "runtimeArgs": [
+        "Design/Animations/serve.py",
+        "8765"
+      ],
       "port": 8765
+    },
+    {
+      "name": "nomi-windows-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "Windows/app",
+        "run",
+        "dev"
+      ],
+      "port": 1420
     }
   ]
 }

@@ -68,7 +68,7 @@ const ParagraphBlock = memo(function ParagraphBlock({ paragraph, sourceLanguage,
             )}
           </div>
         ))}
-        {paragraph.tail && <p className="text-[15.5px] leading-[1.7] text-[var(--text-2)] opacity-70 transition-opacity">{paragraph.tail}</p>}
+        {paragraph.tail && !paragraph.closed && <p className="text-[15.5px] leading-[1.7] text-[var(--text-2)] opacity-70 transition-opacity">{paragraph.tail}</p>}
       </div>
     </div>
   );
@@ -87,6 +87,7 @@ export function Transcript({ paragraphs, sourceLanguage, targetLanguage, names, 
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
+  const lastTop = useRef(0);
   const hiddenSet = new Set(hidden);
 
   // Follow the newest line while the reader is at the bottom.
@@ -106,8 +107,12 @@ export function Transcript({ paragraphs, sourceLanguage, targetLanguage, names, 
         innerRef={ref}
         className="h-full px-6"
         onScroll={(el) => {
+          // Following stops only when the reader scrolls up; new lines growing the page don't stop it.
           const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-          if (atBottom !== following) setFollowing(atBottom);
+          const movedUp = el.scrollTop < lastTop.current - 2;
+          lastTop.current = el.scrollTop;
+          if (atBottom && !following) setFollowing(true);
+          else if (movedUp && !atBottom && following) setFollowing(false);
         }}
       >
         {paragraphs.length === 0 && empty}
