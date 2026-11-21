@@ -72,8 +72,11 @@ jobs:
           if ($LASTEXITCODE) { exit 1 }
           cargo test --release --manifest-path Windows/engine/Cargo.toml --target-dir C:\t\target-asr -p asr-worker
           if ($LASTEXITCODE) { exit 1 }
-          cargo test --manifest-path Windows/app/src-tauri/Cargo.toml
-          if ($LASTEXITCODE) { exit 1 }
+          Push-Location Windows/app/src-tauri
+          cargo test
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code) { exit 1 }
 
       - name: Installer
         working-directory: Windows/app
