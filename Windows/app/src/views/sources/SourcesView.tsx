@@ -1,5 +1,5 @@
 // Pages/SourcesView.swift: the library of course files, grouped by category, and the Add sheet.
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { tr, trf } from "../../i18n";
 import { formatRelativeTime, toDate } from "../../support/format";
 import { CategoryPalette, sameFilter, type CategoryFilter } from "../../models/category";
@@ -345,11 +345,6 @@ function AddSourceSheet({ staged, setStaged, onStage, onCancel, onCommit }: { st
   const pick = async () => onStage(await dialogs.openFiles(sourceFilters()));
   const update = (id: string, change: Partial<KnowledgeSource>) => setStaged((s) => s.map((x) => (x.id === id ? { ...x, ...change } : x)));
   const canAdd = staged.length > 0 && !staged.some((s) => !s.title.trim());
-  const first = useRef(true);
-  useEffect(() => {
-    if (first.current && !staged.length) void pick();
-    first.current = false;
-  }, []);
   return (
     <Sheet width={520} onClose={onCancel}>
       <div ref={ref} className="flex flex-col gap-4 bg-[var(--canvas)] p-6">

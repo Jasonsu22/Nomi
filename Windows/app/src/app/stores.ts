@@ -1,7 +1,7 @@
 // MeetingStore, SourceStore, MeetingSourceLinkStore and ChatStore: the Mac's files, same names and JSON.
 import { fs, paths } from "../platform";
 import { tr } from "../i18n";
-import { newID, nowReference } from "../support/format";
+import { newID, nowReference, referenceOffset } from "../support/format";
 import type { Meeting } from "../models/meeting";
 import type { MeetingCategory } from "../models/category";
 import { safeFileName, type KnowledgeSource } from "../models/knowledgeSource";
@@ -102,7 +102,7 @@ export const SourceStore = {
       await fs.remove(this.directory(id)).catch(() => {});
       throw error;
     }
-    return { id, title: name, fileName: name, categoryID: categoryID ?? null, importedAt: nowReference(), fileModifiedAt: stat.modified, byteCount: stat.size };
+    return { id, title: name, fileName: name, categoryID: categoryID ?? null, importedAt: nowReference(), fileModifiedAt: stat.modified - referenceOffset, byteCount: stat.size };
   },
   remove(source: KnowledgeSource) {
     return fs.remove(this.directory(source.id)).catch(() => {});
