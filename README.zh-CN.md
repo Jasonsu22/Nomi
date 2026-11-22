@@ -104,6 +104,8 @@
 
 Nomi Windows 版支持 64 位 Windows 10 和 11。有 NVIDIA、AMD 或 Intel 显卡时通过 Vulkan 使用显卡，没有时使用处理器。
 
+Windows 版的代码签名由 [SignPath.io](https://about.signpath.io/) 免费提供，证书来自 [SignPath Foundation](https://signpath.org/)。详见[代码签名政策](CODE_SIGNING.md)（英文）。
+
 <details>
 <summary><b>常见问题</b></summary>
 
@@ -280,6 +282,10 @@ cd .. && npm run typecheck
 | [OminiX-MLX](https://github.com/OminiX-ai/OminiX-MLX) | Apple Silicon 上的推理库，固定在 `6aac996`。`Backend/vendor/qwen3-asr-mlx/` 里改过的识别加载器来自这里。 | Apache-2.0。随仓库附带的加载器同时带有 MIT 文本。 |
 | [Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) | 提示词格式，以及识别结果的解析方式。 | Apache-2.0 |
 | [MLX](https://github.com/ml-explore/mlx) | OminiX-MLX 底下的数组计算框架。 | MIT |
+
+## 🔒 隐私
+
+录音、转写和文件都留在你的电脑上。Nomi 没有账号，不做统计，也不追踪。它只在下载模型、检查更新，以及你自己开启 API、联网搜索和链接预览时才联网。详见[隐私政策](PRIVACY.md)（英文）。
 
 ## 📄 许可
 

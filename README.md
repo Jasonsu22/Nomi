@@ -104,6 +104,8 @@ You only do this once. Nomi needs macOS 26 or later on Apple silicon (M1 or newe
 
 Nomi for Windows runs on Windows 10 and 11, 64-bit. It uses an NVIDIA, AMD or Intel graphics card through Vulkan when there is one, and the processor otherwise.
 
+Free code signing on Windows provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). See the [code signing policy](CODE_SIGNING.md).
+
 <details>
 <summary><b>FAQ</b></summary>
 
@@ -280,6 +282,10 @@ The live transcription path began in Moxin-Voice. Thank you. Nomi’s own interf
 | [OminiX-MLX](https://github.com/OminiX-ai/OminiX-MLX) | The Apple Silicon inference crates, pinned at `6aac996`. The patched ASR loader in `Backend/vendor/qwen3-asr-mlx/` comes from this tree. | Apache-2.0. The vendored loader is also shipped with its MIT text. |
 | [Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR) | The prompt format and the way recognition output is parsed. | Apache-2.0 |
 | [MLX](https://github.com/ml-explore/mlx) | The array framework underneath OminiX-MLX. | MIT |
+
+## 🔒 Privacy
+
+Your recordings, transcripts and files stay on your computer, and Nomi has no accounts, analytics or tracking. It goes online only to download models and check for updates, and for the API, web-search and link-preview features you choose to use. Details are in the [privacy policy](PRIVACY.md).
 
 ## 📄 License
 
