@@ -48,12 +48,28 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            if window.label() == "tray-menu" {
+                // The tray menu closes when it loses focus, and is never destroyed by the user.
+                match event {
+                    tauri::WindowEvent::Focused(false) => {
+                        let _ = window.hide();
+                    }
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    _ => {}
+                }
+            } else if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 platform::close_requested(window, api);
             } else if let tauri::WindowEvent::Destroyed = event {
-                let state = window.state::<AppState>();
-                state.recordings.lock().unwrap().clear();
-                drop(state.engine.lock().unwrap().take());
+                if window.label() == "main" {
+                    let state = window.state::<AppState>();
+                    state.recordings.lock().unwrap().clear();
+                    drop(state.engine.lock().unwrap().take());
+                    // The tray menu window would keep the app alive; the main window is the app.
+                    window.app_handle().exit(0);
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -83,7 +99,7 @@ pub fn run() {
             platform::app_version,
             platform::app_quit,
             platform::window_close_choice,
-            platform::tray_labels,
+            platform::tray_show_main,
             platform::diagnostics,
             platform::microphone_access,
             platform::log_line,

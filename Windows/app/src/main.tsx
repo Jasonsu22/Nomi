@@ -3,6 +3,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { initPlatform } from "./platform";
 import { flushPrefs, loadPrefs } from "./support/prefs";
 import "./styles.css";
@@ -23,8 +24,21 @@ function captureLogs() {
   window.addEventListener("unhandledrejection", (e) => send("error", ["unhandled", e.reason]));
 }
 
+/** The system tray's menu window (Windows): only settings and the menu, none of the app. */
+async function startTrayMenu() {
+  await loadPrefs();
+  const { TrayMenu } = await import("./views/shell/TrayMenu");
+  document.documentElement.classList.add("tray-menu-window");
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <TrayMenu />
+    </StrictMode>,
+  );
+}
+
 async function start() {
   captureLogs();
+  if (getCurrentWindow().label === "tray-menu") return startTrayMenu();
   await initPlatform();
   await loadPrefs();
   const [{ Root }, { DeviceInfo, deviceReported }] = await Promise.all([import("./views/Root"), import("./app/onboarding")]);

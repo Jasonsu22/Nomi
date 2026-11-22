@@ -133,6 +133,11 @@
   .window-control:hover { background: var(--surface-inset); color: var(--text); }
   .window-control:active { transform: scale(0.96); }
   .window-control-close:hover { background: var(--danger); color: #fff; }
+  /* The system tray's menu window: a small Nomi card; rows highlight like Nomi's menus. */
+  html.tray-menu-window, html.tray-menu-window body { background: var(--surface); overflow: hidden; }
+  .tray-row { transition: background-color 120ms ease-out, color 120ms ease-out; }
+  .tray-row:hover { background: var(--accent-soft); color: var(--accent); }
+  .tray-row-danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 
   /* Page enter and leave (Motion.pageEnter / keptPage). */
   .page { transition: opacity var(--t-page) var(--ease-smooth), transform var(--t-page) var(--ease-smooth); }

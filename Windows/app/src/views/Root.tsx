@@ -94,7 +94,6 @@ export function Root() {
   const [ready, setReady] = useState(false);
   const [askClose, setAskClose] = useState(false);
   useEffect(() => {
-    void app.trayLabels(tr("显示 Nomi"), tr("退出 Nomi")).catch(() => {});
     const off = listen("nomi://close-asked", () => setAskClose(true));
     return () => void off.then((f) => f());
   }, []);

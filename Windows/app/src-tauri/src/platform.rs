@@ -4,7 +4,7 @@
 use base64::Engine as _;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub type Result<T> = std::result::Result<T, String>;
 pub fn text<E: std::fmt::Display>(error: E) -> String {
@@ -300,10 +300,11 @@ pub fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
-/// Quits by closing the window for good, so the window's clean-up (the engine, open
-/// recordings) runs; the app ends with its last window.
+/// Quits by closing the main window for good, so its clean-up (the engine, open recordings)
+/// runs; the app then exits (see the main window's Destroyed event in lib.rs).
 #[tauri::command]
 pub fn app_quit(app: AppHandle) {
+    hide_tray_menu(&app);
     match app.get_webview_window("main") {
         Some(window) => {
             let _ = window.destroy();
@@ -347,49 +348,83 @@ pub fn window_close_choice(app: AppHandle, choice: String) -> Result<()> {
     }
 }
 
-/// Brings the window back: from the system tray, the taskbar, behind other windows, or when
-/// Nomi is opened a second time.
-/// The system tray icon: a click brings Nomi back; its menu shows or quits it. The window sets
-/// the menu's words in its own language with `tray_labels`.
+/// The system tray icon. A left click brings Nomi back; a right click opens Nomi's own small
+/// menu (the "tray-menu" window) just above the pointer, sized to its two items. Windows' own
+/// tray menu reserves room for shortcuts and submenus, so it is wider than it needs to be.
 pub fn install_tray(app: &tauri::App) -> tauri::Result<()> {
-    use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-    let show = MenuItem::with_id(app, "show", "Show Nomi", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Nomi", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
-    let mut tray = TrayIconBuilder::with_id("main")
-        .tooltip("Nomi")
-        .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => show_main_window(app),
-            "quit" => app_quit(app.clone()),
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                show_main_window(tray.app_handle());
-            }
-        });
+    tauri::WebviewWindowBuilder::new(app, "tray-menu", tauri::WebviewUrl::default())
+        .title("Nomi")
+        .inner_size(TRAY_MENU_SIZE.0, TRAY_MENU_SIZE.1)
+        .resizable(false)
+        .decorations(false)
+        .shadow(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(false)
+        .focused(false)
+        .build()?;
+    let mut tray = TrayIconBuilder::with_id("main").tooltip("Nomi").on_tray_icon_event(|tray, event| match event {
+        TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } => {
+            hide_tray_menu(tray.app_handle());
+            show_main_window(tray.app_handle());
+        }
+        TrayIconEvent::Click { button: MouseButton::Right, button_state: MouseButtonState::Up, position, .. } => {
+            show_tray_menu(tray.app_handle(), position.x, position.y);
+        }
+        _ => {}
+    });
     if let Some(icon) = app.default_window_icon() {
         tray = tray.icon(icon.clone());
     }
     tray.build(app)?;
-    app.manage(TrayItems { show, quit });
     Ok(())
 }
 
-pub struct TrayItems {
-    show: tauri::menu::MenuItem<tauri::Wry>,
-    quit: tauri::menu::MenuItem<tauri::Wry>,
+/// The tray menu's size in logical pixels: two 32-pixel rows inside a 5-pixel inset.
+const TRAY_MENU_SIZE: (f64, f64) = (148.0, 78.0);
+
+/// Opens the menu with its bottom-right corner at the pointer (the tray sits at the bottom right),
+/// kept on the screen the pointer is on.
+fn show_tray_menu(app: &AppHandle, x: f64, y: f64) {
+    let Some(menu) = app.get_webview_window("tray-menu") else { return };
+    let scale = menu
+        .available_monitors()
+        .ok()
+        .and_then(|monitors| {
+            monitors.into_iter().find(|m| {
+                let (p, s) = (m.position(), m.size());
+                x >= p.x as f64 && x < (p.x + s.width as i32) as f64 && y >= p.y as f64 && y < (p.y + s.height as i32) as f64
+            })
+        })
+        .map(|m| (m.scale_factor(), m.position().x as f64, m.position().y as f64))
+        .unwrap_or((1.0, 0.0, 0.0));
+    let (factor, left, top) = scale;
+    let (width, height) = (TRAY_MENU_SIZE.0 * factor, TRAY_MENU_SIZE.1 * factor);
+    let px = (x - width).max(left);
+    let py = (y - height - 6.0 * factor).max(top);
+    let _ = menu.set_size(tauri::LogicalSize::new(TRAY_MENU_SIZE.0, TRAY_MENU_SIZE.1));
+    let _ = menu.set_position(tauri::PhysicalPosition::new(px, py));
+    let _ = menu.emit("nomi://tray-menu-open", ());
+    let _ = menu.show();
+    let _ = menu.set_focus();
 }
 
+pub fn hide_tray_menu(app: &AppHandle) {
+    if let Some(menu) = app.get_webview_window("tray-menu") {
+        let _ = menu.hide();
+    }
+}
+
+/// "Show Nomi" from the tray menu.
 #[tauri::command]
-pub fn tray_labels(items: tauri::State<'_, TrayItems>, show: String, quit: String) -> Result<()> {
-    items.show.set_text(show).map_err(text)?;
-    items.quit.set_text(quit).map_err(text)
+pub fn tray_show_main(app: AppHandle) {
+    hide_tray_menu(&app);
+    show_main_window(&app);
 }
 
+/// Brings the window back: from the system tray, the taskbar, behind other windows, or when
+/// Nomi is opened a second time.
 pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
