@@ -35,7 +35,7 @@ export const EngineTuning = {
     return prefs.string("nomi.windows.asrDevice") ?? "auto";
   },
   get llmDevice(): string {
-    return prefs.string("nomi.windows.llmDevice") ?? "cpu";
+    return prefs.string("nomi.windows.llmDevice") ?? "auto";
   },
   get threads(): number {
     return prefs.number("nomi.windows.threads") ?? 0;

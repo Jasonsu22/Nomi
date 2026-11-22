@@ -196,7 +196,7 @@ export function EngineSection() {
         <PopUp value={prefs.string("nomi.windows.asrDevice") ?? "auto"} onChange={(v) => set("nomi.windows.asrDevice", v)} options={devices} />
       </SettingsRow>
       <SettingsRow title={tr("翻译和本地大模型使用")}>
-        <PopUp value={prefs.string("nomi.windows.llmDevice") ?? "cpu"} onChange={(v) => set("nomi.windows.llmDevice", v)} options={devices} />
+        <PopUp value={prefs.string("nomi.windows.llmDevice") ?? "auto"} onChange={(v) => set("nomi.windows.llmDevice", v)} options={devices} />
       </SettingsRow>
       <SettingsRow title={tr("实时预览")} detail={tr("说话时先显示灰色的预览文字。电脑跟不上时会跳过一些预览，不影响最终的转写。")}>
         <PopUp
