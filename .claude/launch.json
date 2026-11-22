@@ -4,8 +4,23 @@
     {
       "name": "leaf-loaders",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["Design/Animations/serve.py", "8765"],
+      "runtimeArgs": [
+        "Design/Animations/serve.py",
+        "8765"
+      ],
       "port": 8765
+    },
+    {
+      "name": "website",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8766",
+        "--directory",
+        "website"
+      ],
+      "port": 8766
     }
   ]
 }
