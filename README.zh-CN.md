@@ -22,7 +22,7 @@
 
 <p align="center">
   <a href="https://github.com/Jasonsu22/Nomi/releases/latest/download/Nomi-arm64.dmg"><img src="Design/README/download-zh.svg" height="54" alt="下载 Mac 版"></a>
-  <a href="https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.0/Nomi-0.10.0-x64-setup.exe"><img src="Design/README/download-windows-zh.svg" height="54" alt="下载 Windows 版"></a>
+  <a href="https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.1/Nomi-0.10.1-x64-setup.exe"><img src="Design/README/download-windows-zh.svg" height="54" alt="下载 Windows 版"></a>
   <a href="https://nomi.software/?lang=zh#video"><img src="Design/README/watch-zh.svg" height="54" alt="观看介绍视频"></a>
 </p>
 
@@ -98,7 +98,7 @@
 
 ### Windows（预览版）
 
-1. **[下载 Windows 安装程序](https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.0/Nomi-0.10.0-x64-setup.exe)** 并运行。它只安装到你的账户，不需要管理员权限。
+1. **[下载 Windows 安装程序](https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.1/Nomi-0.10.1-x64-setup.exe)** 并运行。它只安装到你的账户，不需要管理员权限。
 2. 如果 Windows 提示「Windows 已保护你的电脑」，点 **更多信息 › 仍要运行**。安装程序暂时还没有签名。
 3. 从开始菜单打开 Nomi。设置向导会下载适合你电脑的模型（1–4 GB）。
 
@@ -119,10 +119,15 @@ Nomi Windows 版支持 64 位 Windows 10 和 11。有 NVIDIA、AMD 或 Intel 显
 
 ## 🛠️ 开发者
 
-界面是 SwiftUI，引擎是 Rust。Swift 模块名是 `LectureNoteApp`。
+Nomi 有两个应用，共用一个 Rust 引擎（`Backend/moxin-engine`）：
+
+- **Mac：** SwiftUI 界面（Swift 模块 `LectureNoteApp`），配 MLX worker。
+- **Windows：** Tauri 2 + React 界面（`Windows/app`），配基于 [llama.cpp](https://github.com/ggml-org/llama.cpp) 和 transcribe.cpp 的 GGUF worker。有显卡时用 Vulkan，没有就用 CPU。
+
+Windows 版在合并进 `main` 之前，代码在 [`windows/demo`](https://github.com/Jasonsu22/Nomi/tree/windows/demo) 分支上。
 
 <details>
-<summary><b>从源码编译</b></summary>
+<summary><b>在 Mac 上编译</b></summary>
 
 需要 Apple Silicon Mac、macOS 26、Xcode（Swift 6.2）和 Rust。首次编译会从网络拉取依赖，其中包括固定版本的 [OminiX-MLX](https://github.com/OminiX-ai/OminiX-MLX)。
 
@@ -154,6 +159,40 @@ bash scripts/make-appcast.sh release-notes.md
 </details>
 
 <details>
+<summary><b>在 Windows 上编译</b></summary>
+
+需要 Windows 10 或 11（x64），以及：
+
+- Visual Studio 2022，勾选 **使用 C++ 的桌面开发**，包括其中的 CMake、Ninja 和 **C++ Clang 工具**（LLVM）
+- [Rust](https://rustup.rs)（MSVC 工具链）
+- [Node.js](https://nodejs.org) 22
+- [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows)
+
+在 **x64 Native Tools Command Prompt for VS 2022** 里，从 `windows/demo` 分支的代码目录运行：
+
+```bat
+set LIBCLANG_PATH=%VCINSTALLDIR%Tools\Llvm\x64\bin
+set CMAKE_GENERATOR=Ninja
+set NOMI_TARGETS=C:\t
+powershell -ExecutionPolicy Bypass -File Windows\scripts\build-engine.ps1
+cd Windows\app
+npm ci
+npx tauri build --bundles nsis
+```
+
+- **引擎和 worker：** `build-engine.ps1` 把 `moxin-engine` 和两个 worker 编译到 `Windows/app/src-tauri/engine`，安装程序会把它们打包进去。只有引擎或 worker 改动时才需要重新运行。
+- **安装程序：** `npx tauri build` 生成 `Windows/app/src-tauri/target/release/bundle/nsis/Nomi_<版本>_x64-setup.exe`，只安装到当前账户。
+- **开发界面时：** 改用 `npx tauri dev`。
+- **`NOMI_TARGETS`：** 让编译目录留在较短的路径下，因为 llama.cpp 的 Vulkan 着色器编译会超过 MSVC 的 260 字符路径限制。
+- **链接错误**（比如 `__std_max_element_f`）：如果你的 Visual Studio 比它自带的标准库新，用 `vcvars64.bat -vcvars_ver=14.44` 打开命令提示符。
+
+发布时，先改 `Windows/app/package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 里的版本号。再把安装程序改名为 `Nomi-<版本>-x64-setup.exe`，附到标签为 `windows-v<版本>` 的 GitHub Release。把它发成预发布版，不要设为 Latest，因为 Mac 的自动更新读取的是 Latest。Windows 版会在 `windows-v*` 的 Release 里找更新的安装程序。
+
+也可以在 Mac 上开发 Windows 版的界面。`bash Windows/scripts/build-engine.sh` 为 macOS 编译引擎和 worker。之后 `cd Windows/app && npx tauri dev` 就能运行。它的数据放在 `~/Library/Application Support/Nomi-Windows-dev`，和 Mac 版的数据分开。
+
+</details>
+
+<details>
 <summary><b>模块</b></summary>
 
 | | 模块 | 在哪里 |
@@ -164,6 +203,9 @@ bash scripts/make-appcast.sh release-notes.md
 | 🗣️ | 语音识别 worker | `Backend/workers/asr-worker/` |
 | 🌐 | 翻译与本机提问 worker | `Backend/workers/llm-worker/` |
 | 📦 | 随仓库提供的 ASR 加载器 | `Backend/vendor/qwen3-asr-mlx/` |
+| 🪟 | Windows 界面（Tauri + React） | `Windows/app/src/` |
+| 🦀 | Windows 平台层：文件、音频、OCR、密钥 | `Windows/app/src-tauri/` |
+| 🧠 | Windows 的 GGUF worker | `Windows/engine/` |
 | 🎨 | 标志、应用图标、DMG 和 README 图片 | `Design/` |
 | 🌍 | 网站 | `website/` |
 
@@ -177,6 +219,8 @@ bash scripts/make-appcast.sh release-notes.md
 
 <details>
 <summary><b>数据保存在哪里</b></summary>
+
+Mac 上：
 
 | 内容 | 位置 |
 | --- | --- |
@@ -192,17 +236,38 @@ bash scripts/make-appcast.sh release-notes.md
 
 界面语言、外观、麦克风权限、所选本机模型和 API 配置保存在应用的 UserDefaults 里。
 
+Windows 上，所有数据都在 `%LOCALAPPDATA%\software.nomi.windows`，和程序本身（`%LOCALAPPDATA%\Nomi`）分开。更新或卸载 Nomi 不会动到你的数据。
+
+| 内容 | 位置 |
+| --- | --- |
+| 会议、资料、提问记录和问答 | `meetings.json`、`sources.json`、`sources/`、`chats/`、`qa/`（和 Mac 上的文件相同） |
+| 设置 | `prefs.json` |
+| 本机模型 | `models\` |
+| API 和联网搜索密钥 | Windows 凭据管理器 |
+| 日志 | `engine.log` 和 `ui.log` |
+
 </details>
 
 <details>
 <summary><b>测试</b></summary>
+
+Mac 上：
 
 ```sh
 swift test
 cargo test --manifest-path Backend/Cargo.toml --locked
 ```
 
-推送到 `main` 或打开拉取请求时，GitHub Actions 会在 macOS 26 上编译并测试 Swift 界面，并在 Linux 上测试不依赖 MLX 的引擎（`voice-core`、`moxin-engine`）。语音识别和翻译 worker 需要 Apple 的 MLX，不在这台 Linux 运行器上编译。
+Windows 上（`windows/demo` 分支）：
+
+```bat
+cargo test --release --manifest-path Backend\Cargo.toml -p moxin-engine -p voice-core
+cargo test --release --manifest-path Windows\engine\Cargo.toml -p asr-worker
+cd Windows\app\src-tauri && cargo test --release --lib
+cd .. && npm run typecheck
+```
+
+推送到 `main` 或打开拉取请求时，GitHub Actions 会在 macOS 26 上编译并测试 Swift 界面，并在 Linux 上测试不依赖 MLX 的引擎（`voice-core`、`moxin-engine`）。语音识别和翻译 worker 需要 Apple 的 MLX，不在这台 Linux 运行器上编译。在 `windows/demo` 分支上，Windows 运行器会编译引擎、两个 worker 和安装程序，再运行上面的测试。
 
 </details>
 

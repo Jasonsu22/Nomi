@@ -22,7 +22,7 @@
 
 <p align="center">
   <a href="https://github.com/Jasonsu22/Nomi/releases/latest/download/Nomi-arm64.dmg"><img src="Design/README/download-en.svg" height="54" alt="Download for Mac"></a>
-  <a href="https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.0/Nomi-0.10.0-x64-setup.exe"><img src="Design/README/download-windows-en.svg" height="54" alt="Download for Windows"></a>
+  <a href="https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.1/Nomi-0.10.1-x64-setup.exe"><img src="Design/README/download-windows-en.svg" height="54" alt="Download for Windows"></a>
   <a href="https://nomi.software/#video"><img src="Design/README/watch-en.svg" height="54" alt="Watch the video"></a>
 </p>
 
@@ -98,7 +98,7 @@ You only do this once. Nomi needs macOS 26 or later on Apple silicon (M1 or newe
 
 ### Windows (preview)
 
-1. **[Download the Windows installer](https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.0/Nomi-0.10.0-x64-setup.exe)** and run it. It installs for your account, so no administrator rights are needed.
+1. **[Download the Windows installer](https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.1/Nomi-0.10.1-x64-setup.exe)** and run it. It installs for your account, so no administrator rights are needed.
 2. If Windows says "Windows protected your PC", choose **More info › Run anyway**. The installer is not signed yet.
 3. Open Nomi from the Start menu. The setup guide downloads the models that suit your PC (1–4 GB).
 
@@ -119,10 +119,15 @@ Nomi for Windows runs on Windows 10 and 11, 64-bit. It uses an NVIDIA, AMD or In
 
 ## 🛠️ For developers
 
-The interface is SwiftUI and the engine is Rust. The Swift module is `LectureNoteApp`.
+Nomi has two apps that share one Rust engine (`Backend/moxin-engine`):
+
+- **Mac:** a SwiftUI interface (Swift module `LectureNoteApp`) with MLX workers.
+- **Windows:** a Tauri 2 + React interface (`Windows/app`) with GGUF workers on [llama.cpp](https://github.com/ggml-org/llama.cpp) and transcribe.cpp. The workers use Vulkan when there is a graphics card and the CPU otherwise.
+
+The Windows app is on the [`windows/demo`](https://github.com/Jasonsu22/Nomi/tree/windows/demo) branch until it is merged into `main`.
 
 <details>
-<summary><b>Build from source</b></summary>
+<summary><b>Build on a Mac</b></summary>
 
 You need an Apple Silicon Mac, macOS 26, Xcode (Swift 6.2), and Rust. The first build downloads dependencies, including a pinned revision of [OminiX-MLX](https://github.com/OminiX-ai/OminiX-MLX).
 
@@ -154,6 +159,40 @@ bash scripts/make-appcast.sh release-notes.md
 </details>
 
 <details>
+<summary><b>Build on Windows</b></summary>
+
+You need Windows 10 or 11 (x64) and:
+
+- Visual Studio 2022 with **Desktop development with C++**, including its CMake, Ninja and **C++ Clang tools** (LLVM)
+- [Rust](https://rustup.rs) (the MSVC toolchain)
+- [Node.js](https://nodejs.org) 22
+- The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows)
+
+Work in an **x64 Native Tools Command Prompt for VS 2022**, from a checkout of `windows/demo`:
+
+```bat
+set LIBCLANG_PATH=%VCINSTALLDIR%Tools\Llvm\x64\bin
+set CMAKE_GENERATOR=Ninja
+set NOMI_TARGETS=C:\t
+powershell -ExecutionPolicy Bypass -File Windows\scripts\build-engine.ps1
+cd Windows\app
+npm ci
+npx tauri build --bundles nsis
+```
+
+- **Engine and workers:** `build-engine.ps1` builds `moxin-engine` and the two workers into `Windows/app/src-tauri/engine`, which the installer bundles. You only need to run it again when the engine or workers change.
+- **The installer:** `npx tauri build` writes `Windows/app/src-tauri/target/release/bundle/nsis/Nomi_<version>_x64-setup.exe`, which installs for the current account.
+- **While you work on the interface:** run `npx tauri dev` instead.
+- **`NOMI_TARGETS`:** keeps the build folders at a short path, because llama.cpp's Vulkan shader build goes past MSVC's 260-character path limit.
+- **Linker errors** such as `__std_max_element_f`: if your Visual Studio is newer than its standard library, open the prompt with `vcvars64.bat -vcvars_ver=14.44`.
+
+To release, bump the version in `Windows/app/package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`. Then attach the installer, renamed `Nomi-<version>-x64-setup.exe`, to a GitHub release tagged `windows-v<version>`. Publish it as a pre-release and not Latest, because Latest is what the Mac updater reads. The Windows app looks for a newer installer among the `windows-v*` releases.
+
+You can also work on the Windows interface on a Mac. `bash Windows/scripts/build-engine.sh` builds the engine and workers for macOS. `cd Windows/app && npx tauri dev` then runs the app, with its data in `~/Library/Application Support/Nomi-Windows-dev`, apart from the Mac app's data.
+
+</details>
+
+<details>
 <summary><b>Modules</b></summary>
 
 | | Module | Where |
@@ -164,6 +203,9 @@ bash scripts/make-appcast.sh release-notes.md
 | 🗣️ | Speech-recognition worker | `Backend/workers/asr-worker/` |
 | 🌐 | Translation and local question worker | `Backend/workers/llm-worker/` |
 | 📦 | ASR loader shipped with this repo | `Backend/vendor/qwen3-asr-mlx/` |
+| 🪟 | Windows interface (Tauri + React) | `Windows/app/src/` |
+| 🦀 | Windows platform layer: files, audio, OCR, secrets | `Windows/app/src-tauri/` |
+| 🧠 | Windows GGUF workers | `Windows/engine/` |
 | 🎨 | Logo, app icon, DMG and README art | `Design/` |
 | 🌍 | Website | `website/` |
 
@@ -177,6 +219,8 @@ Downloaded weights stay in `~/.OminiX/models`. On a Mac without them, download t
 
 <details>
 <summary><b>Where data is stored</b></summary>
+
+On a Mac:
 
 | What | Where |
 | --- | --- |
@@ -192,17 +236,38 @@ Downloaded weights stay in `~/.OminiX/models`. On a Mac without them, download t
 
 Interface language, appearance, microphone permission, the selected local model, and API profiles are stored in the app’s UserDefaults.
 
+On Windows, everything is in `%LOCALAPPDATA%\software.nomi.windows`, apart from the program in `%LOCALAPPDATA%\Nomi`. Updating or uninstalling Nomi does not touch your data.
+
+| What | Where |
+| --- | --- |
+| Meetings, sources, Ask history and Q&A | `meetings.json`, `sources.json`, `sources/`, `chats/`, `qa/` (the same files as on the Mac) |
+| Settings | `prefs.json` |
+| Local models | `models\` |
+| API and web-search keys | Windows Credential Manager |
+| Logs | `engine.log` and `ui.log` |
+
 </details>
 
 <details>
 <summary><b>Tests</b></summary>
+
+On a Mac:
 
 ```sh
 swift test
 cargo test --manifest-path Backend/Cargo.toml --locked
 ```
 
-Pushes to `main` and pull requests run GitHub Actions. Swift is built and tested on macOS 26. The engine crates that do not use MLX (`voice-core` and `moxin-engine`) are tested on Linux. The speech and translation workers need Apple’s MLX, so that Linux runner does not compile them.
+On Windows (the `windows/demo` branch):
+
+```bat
+cargo test --release --manifest-path Backend\Cargo.toml -p moxin-engine -p voice-core
+cargo test --release --manifest-path Windows\engine\Cargo.toml -p asr-worker
+cd Windows\app\src-tauri && cargo test --release --lib
+cd .. && npm run typecheck
+```
+
+Pushes to `main` and pull requests run GitHub Actions. Swift is built and tested on macOS 26. The engine crates that do not use MLX (`voice-core` and `moxin-engine`) are tested on Linux. The speech and translation workers need Apple’s MLX, so that Linux runner does not compile them. On `windows/demo`, a Windows runner builds the engine, both workers and the installer, then runs the tests above.
 
 </details>
 
