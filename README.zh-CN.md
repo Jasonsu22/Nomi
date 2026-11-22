@@ -22,7 +22,7 @@
 
 <p align="center">
   <a href="https://github.com/Jasonsu22/Nomi/releases/latest/download/Nomi-arm64.dmg"><img src="Design/README/download-zh.svg" height="54" alt="下载 Mac 版"></a>
-  <a href="https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.2/Nomi-0.10.2-x64-setup.exe"><img src="Design/README/download-windows-zh.svg" height="54" alt="下载 Windows 版"></a>
+  <a href="https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.3/Nomi-0.10.3-x64-setup.exe"><img src="Design/README/download-windows-zh.svg" height="54" alt="下载 Windows 版"></a>
   <a href="https://nomi.software/?lang=zh#video"><img src="Design/README/watch-zh.svg" height="54" alt="观看介绍视频"></a>
 </p>
 
@@ -98,7 +98,7 @@
 
 ### Windows（预览版）
 
-1. **[下载 Windows 安装程序](https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.2/Nomi-0.10.2-x64-setup.exe)** 并运行。它只安装到你的账户，不需要管理员权限。
+1. **[下载 Windows 安装程序](https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.3/Nomi-0.10.3-x64-setup.exe)** 并运行。它只安装到你的账户，不需要管理员权限。
 2. 如果 Windows 提示「Windows 已保护你的电脑」，点 **更多信息 › 仍要运行**。安装程序暂时还没有签名。
 3. 从开始菜单打开 Nomi。设置向导会下载适合你电脑的模型（1–4 GB）。
 
