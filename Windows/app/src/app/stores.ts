@@ -92,7 +92,10 @@ export const SourceStore = {
   async stage(path: string, categoryID: string | null | undefined): Promise<KnowledgeSource> {
     if (!this.accepts(path)) throw new Error(SourceText.refusal(path));
     const stat = await fs.stat(path);
-    if (!stat) throw new Error(tr("这个文件无法读取。"));
+    if (!stat) {
+      console.error("source stage: no stat for", JSON.stringify(path), await fs.exists(path));
+      throw new Error(tr("这个文件无法读取。"));
+    }
     const id = newID();
     const name = safeFileName(paths.name(path));
     const destination = paths.join(this.directory(id), name);
