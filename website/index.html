@@ -94,7 +94,8 @@ a { color: inherit; }
 .text-link:hover { color: var(--accent); gap: 8px; }
 .text-link svg { width: 16px; height: 16px; }
 @media (max-width: 860px) { .nav-links { display: none; } .lang-toggle { margin-left: auto; } }
-@media (max-width: 420px) { .nav .btn-primary svg { display: none; } .nav .btn-primary { padding: 0 16px; } }
+@media (max-width: 420px) { .nav-inner { gap: 12px; } .nav .gh-link { display: none; } .nav .btn-primary svg { display: none; } .nav .btn-primary { padding: 0 16px; } }
+@media (max-width: 360px) { .nav-inner { gap: 8px; } .nav .btn-primary { padding: 0 12px; } }
 
 .lang-toggle {
   position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 999px;
