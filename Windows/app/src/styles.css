@@ -129,6 +129,10 @@
 
   .press { transition: transform var(--t-tap) var(--ease-snappy), background-color var(--t-fade) ease-out, opacity var(--t-fade) ease-out, color var(--t-fade) ease-out; }
   .press:active { transform: scale(0.97); }
+  /* Nomi's own window buttons on Windows: quiet until hovered; close turns red, as Windows users expect. */
+  .window-control:hover { background: var(--surface-inset); color: var(--text); }
+  .window-control:active { transform: scale(0.96); }
+  .window-control-close:hover { background: var(--danger); color: #fff; }
 
   /* Page enter and leave (Motion.pageEnter / keptPage). */
   .page { transition: opacity var(--t-page) var(--ease-smooth), transform var(--t-page) var(--ease-smooth); }

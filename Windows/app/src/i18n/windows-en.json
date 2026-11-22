@@ -27,5 +27,9 @@
   "最小化后 Nomi 留在系统托盘里继续运行，录音不会中断，点托盘图标就能回来。之后可以在 设置 › 通用 中更改。": "If you minimize, Nomi keeps running in the system tray, so a recording isn't interrupted. Click the tray icon to bring it back. You can change this later in Settings › General.",
   "最小化后 Nomi 留在系统托盘里继续运行，点托盘图标就能回来。按 Ctrl+Q 或在托盘菜单里可以退出。": "When minimized, Nomi keeps running in the system tray; click the tray icon to bring it back. Quit with Ctrl+Q or from the tray menu.",
   "最小化到托盘": "Minimize to Tray",
-  "显示 Nomi": "Show Nomi"
+  "显示 Nomi": "Show Nomi",
+  "最大化": "Maximize",
+  "还原": "Restore Down",
+  "关闭": "Close",
+  "最小化": "Minimize"
 }

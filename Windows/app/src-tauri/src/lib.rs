@@ -122,6 +122,10 @@ fn open_main_window(app: &tauri::App) -> tauri::Result<()> {
         .title("Nomi")
         .inner_size(1240.0, 820.0)
         .min_inner_size(960.0, 640.0)
+        // On Windows Nomi draws its own title bar (logo, name and window buttons in the top bar);
+        // the system keeps the shadow, rounded corners and resizing edges.
+        .decorations(!cfg!(windows))
+        .shadow(true)
         .center();
     builder.build()?;
     Ok(())

@@ -6,6 +6,7 @@ import { BrandLogo } from "../ui/Logos";
 import { StatusChip } from "../ui/controls";
 import { Icon } from "../ui/Icon";
 import { SessionControl } from "./SessionControl";
+import { drawsOwnTitleBar, WindowControls } from "./WindowControls";
 
 export const railWidth = 72;
 
@@ -29,7 +30,7 @@ export function TopBar() {
   const m = useModel();
   const e = m.engine;
   return (
-    <div className="flex h-[52px] shrink-0 items-center pr-4" data-tauri-drag-region>
+    <div className={`flex h-[52px] shrink-0 items-center ${drawsOwnTitleBar() ? "pr-2" : "pr-4"}`} data-tauri-drag-region>
       <div className="flex items-center pr-3" data-tauri-drag-region>
         <div className="flex justify-center pl-2" style={{ width: railWidth - 16 + 8 }} data-tauri-drag-region>
           <BrandLogo side={32} />
@@ -55,6 +56,12 @@ export function TopBar() {
         onTogglePause={() => m.togglePause()}
         onOpen={() => m.openLiveMeeting()}
       />
+      {drawsOwnTitleBar() && (
+        <>
+          <div className="mx-3 h-5 w-px bg-[var(--separator)]" data-tauri-drag-region />
+          <WindowControls />
+        </>
+      )}
     </div>
   );
 }

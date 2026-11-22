@@ -1,4 +1,5 @@
 // Meetings/MeetingDetailView.swift, Meetings/CompactMeetingView.swift and the MeetingsPage switch.
+import { drawsOwnTitleBar, WindowControls } from "../shell/WindowControls";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { tr } from "../../i18n";
 import { formatStartStamp, languageName, toDate } from "../../support/format";
@@ -263,7 +264,12 @@ export function CompactMeetingView({ meetingID }: { meetingID: string }) {
   const category = m.category(meeting.categoryID);
   const popup = m.questionPopup;
   return (
-    <div className="flex h-full flex-col gap-3 bg-[var(--canvas)] p-4" data-tauri-drag-region>
+    <div className="relative flex h-full flex-col gap-3 bg-[var(--canvas)] p-4" data-tauri-drag-region>
+      {drawsOwnTitleBar() && (
+        <div className="absolute top-2 right-2 z-10">
+          <WindowControls compact />
+        </div>
+      )}
       <div className="flex justify-center" data-tauri-drag-region>
         <SessionControl session={m.engine.session} meter={m.engine.level} canStart={m.canStart} startTitle={m.recordingActionTitle} onStart={() => m.performRecordingAction()} onStop={() => m.stopTranscription()} onTogglePause={() => m.togglePause()} />
       </div>
