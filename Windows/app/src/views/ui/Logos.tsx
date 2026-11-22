@@ -12,5 +12,7 @@ export function ProviderLogo({ file, side = 16 }: { file: string | null | undefi
   const url = file ? Object.entries(providers).find(([path]) => path.includes(`/${file}.`))?.[1] : undefined;
   if (!url) return <Icon name="link" size={side * 0.7} className="text-[var(--text-2)]" />;
   const square = !url.includes("search-exa");
-  return <img src={url} height={side} style={{ height: side, maxWidth: side * 4.6, borderRadius: square ? side * 0.22 : 0, objectFit: "contain", boxShadow: square ? "0 0 0 0.5px var(--separator)" : undefined }} draggable={false} alt="" />;
+  // Logos drawn in a dark ink on a transparent ground vanish in dark mode; they sit on white.
+  const onWhite = file === "search-tavily";
+  return <img src={url} height={side} style={{ height: side, maxWidth: side * 4.6, borderRadius: square ? side * 0.22 : 0, objectFit: "contain", background: onWhite ? "#fff" : undefined, boxShadow: square ? "0 0 0 0.5px var(--separator)" : undefined }} draggable={false} alt="" />;
 }
