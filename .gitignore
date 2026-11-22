@@ -8,3 +8,4 @@ DerivedData/
 Backend/target/
 Backend/target-windows/
 Backend/target-windows-dev/
+website/*.zip
