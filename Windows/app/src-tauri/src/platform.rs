@@ -388,8 +388,8 @@ const TRAY_MENU_SIZE: (f64, f64) = (148.0, 76.0);
 /// The language the main window shows ("zh-Hans" or "en"), passed on to the tray menu.
 static TRAY_LANGUAGE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
-/// Opens the menu with its bottom-right corner at the pointer (the tray sits at the bottom right),
-/// kept on the screen the pointer is on.
+/// Opens the menu above the pointer and to its right, like Windows' own tray menus, moved left
+/// only as far as it must to stay on the screen the pointer is on.
 fn show_tray_menu(app: &AppHandle, x: f64, y: f64) {
     let Some(menu) = app.get_webview_window("tray-menu") else { return };
     let scale = menu
@@ -401,14 +401,16 @@ fn show_tray_menu(app: &AppHandle, x: f64, y: f64) {
                 x >= p.x as f64 && x < (p.x + s.width as i32) as f64 && y >= p.y as f64 && y < (p.y + s.height as i32) as f64
             })
         })
-        .map(|m| (m.scale_factor(), m.position().x as f64, m.position().y as f64))
-        .unwrap_or((1.0, 0.0, 0.0));
-    let (factor, left, top) = scale;
+        .map(|m| (m.scale_factor(), m.position().x as f64, m.position().y as f64, (m.position().x + m.size().width as i32) as f64))
+        .unwrap_or((1.0, 0.0, 0.0, f64::MAX));
+    let (factor, left, top, right) = scale;
     let size = menu.outer_size().map(|s| (s.width as f64, s.height as f64)).unwrap_or((TRAY_MENU_SIZE.0 * factor, TRAY_MENU_SIZE.1 * factor));
-    let px = (x - size.0).max(left);
+    let px = x.min(right - size.0).max(left);
     let py = (y - size.1 - 6.0 * factor).max(top);
     let _ = menu.set_position(tauri::PhysicalPosition::new(px, py));
-    let _ = menu.emit("nomi://tray-menu-open", TRAY_LANGUAGE.lock().unwrap().clone());
+    let language = TRAY_LANGUAGE.lock().unwrap().clone();
+    crate::platform::log_line("info".into(), format!("tray menu opens, language '{language}'"));
+    let _ = menu.emit("nomi://tray-menu-open", language);
     let _ = menu.show();
     let _ = menu.set_focus();
 }
@@ -429,6 +431,7 @@ pub fn tray_menu_fit(app: AppHandle, width: f64, height: f64) -> Result<()> {
 /// The main window's interface language, for the tray menu's words.
 #[tauri::command]
 pub fn tray_language(language: String) {
+    crate::platform::log_line("info".into(), format!("tray language set to '{language}'"));
     *TRAY_LANGUAGE.lock().unwrap() = language;
 }
 
