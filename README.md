@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Understand every lecture, in your own language.</b><br>
-  Live transcription and translation on your Mac, with an assistant that knows your classes.
+  Live transcription and translation on your Mac or PC, with an assistant that knows your classes.
 </p>
 
 <p align="center">
@@ -22,6 +22,7 @@
 
 <p align="center">
   <a href="https://github.com/Jasonsu22/Nomi/releases/latest/download/Nomi-arm64.dmg"><img src="Design/README/download-en.svg" height="54" alt="Download for Mac"></a>
+  <a href="https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.0/Nomi-0.10.0-x64-setup.exe"><img src="Design/README/download-windows-en.svg" height="54" alt="Download for Windows"></a>
   <a href="https://nomi.software/#video"><img src="Design/README/watch-en.svg" height="54" alt="Watch the video"></a>
 </p>
 
@@ -30,6 +31,7 @@
   <a href="https://github.com/Jasonsu22/Nomi/releases"><img src="https://img.shields.io/github/downloads/Jasonsu22/Nomi/total?style=flat-square&color=004A77&label=downloads" alt="Downloads"></a>
   <img src="https://img.shields.io/badge/macOS-26%2B-555555?style=flat-square&logo=apple&logoColor=white" alt="macOS 26+">
   <img src="https://img.shields.io/badge/Apple%20silicon-MLX-555555?style=flat-square" alt="Apple silicon">
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011%20(preview)-555555?style=flat-square" alt="Windows 10 and 11 (preview)">
   <img src="https://img.shields.io/badge/license-MIT-20B68A?style=flat-square" alt="MIT License">
 </p>
 
@@ -86,11 +88,21 @@ You can also chat while a lecture is recording. Live transcription always keeps 
 
 ## 🚀 Install
 
+### Mac
+
 1. **[Download Nomi](https://github.com/Jasonsu22/Nomi/releases/latest/download/Nomi-arm64.dmg)**, open the DMG and drag Nomi into Applications.
 2. Open Nomi. Because it is not yet notarized by Apple, macOS says it can't verify it; click **Done**.
 3. Open **System Settings › Privacy & Security** (the DMG has an *Open Settings* shortcut), click **Open Anyway** next to Nomi, and confirm with your password.
 
 You only do this once. Nomi needs macOS 26 or later on Apple silicon (M1 or newer).
+
+### Windows (preview)
+
+1. **[Download the Windows installer](https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.0/Nomi-0.10.0-x64-setup.exe)** and run it. It installs for your account, so no administrator rights are needed.
+2. If Windows says "Windows protected your PC", choose **More info › Run anyway**. The installer is not signed yet.
+3. Open Nomi from the Start menu. The setup guide downloads the models that suit your PC (1–4 GB).
+
+Nomi for Windows runs on Windows 10 and 11, 64-bit. It uses an NVIDIA, AMD or Intel graphics card through Vulkan when there is one, and the processor otherwise.
 
 <details>
 <summary><b>FAQ</b></summary>

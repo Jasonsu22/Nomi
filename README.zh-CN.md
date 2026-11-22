@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>每一节课，都用你的母语听懂。</b><br>
-  在你的 Mac 上实时转写和翻译，还有一个了解你课程的助手。
+  在你的 Mac 或电脑上实时转写和翻译，还有一个了解你课程的助手。
 </p>
 
 <p align="center">
@@ -22,6 +22,7 @@
 
 <p align="center">
   <a href="https://github.com/Jasonsu22/Nomi/releases/latest/download/Nomi-arm64.dmg"><img src="Design/README/download-zh.svg" height="54" alt="下载 Mac 版"></a>
+  <a href="https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.0/Nomi-0.10.0-x64-setup.exe"><img src="Design/README/download-windows-zh.svg" height="54" alt="下载 Windows 版"></a>
   <a href="https://nomi.software/?lang=zh#video"><img src="Design/README/watch-zh.svg" height="54" alt="观看介绍视频"></a>
 </p>
 
@@ -30,6 +31,7 @@
   <a href="https://github.com/Jasonsu22/Nomi/releases"><img src="https://img.shields.io/github/downloads/Jasonsu22/Nomi/total?style=flat-square&color=004A77&label=%E4%B8%8B%E8%BD%BD" alt="下载次数"></a>
   <img src="https://img.shields.io/badge/macOS-26%2B-555555?style=flat-square&logo=apple&logoColor=white" alt="macOS 26+">
   <img src="https://img.shields.io/badge/Apple%20silicon-MLX-555555?style=flat-square" alt="Apple 芯片">
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011%20(%E9%A2%84%E8%A7%88%E7%89%88)-555555?style=flat-square" alt="Windows 10 和 11（预览版）">
   <img src="https://img.shields.io/badge/license-MIT-20B68A?style=flat-square" alt="MIT 许可">
 </p>
 
@@ -86,11 +88,21 @@
 
 ## 🚀 安装
 
+### Mac
+
 1. **[下载 Nomi](https://github.com/Jasonsu22/Nomi/releases/latest/download/Nomi-arm64.dmg)**，打开 DMG，把 Nomi 拖进「应用程序」。
 2. 打开 Nomi。因为还没有经过 Apple 公证，macOS 会提示「无法验证」，点 **完成**。
 3. 打开 **系统设置 › 隐私与安全性**（安装包里有「打开安全设置」快捷入口），在 Nomi 旁边点 **仍要打开**，输入密码确认。
 
 只需要做一次。Nomi 需要 macOS 26 或更高版本，以及 Apple 芯片（M1 或更新）。
+
+### Windows（预览版）
+
+1. **[下载 Windows 安装程序](https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.0/Nomi-0.10.0-x64-setup.exe)** 并运行。它只安装到你的账户，不需要管理员权限。
+2. 如果 Windows 提示「Windows 已保护你的电脑」，点 **更多信息 › 仍要运行**。安装程序暂时还没有签名。
+3. 从开始菜单打开 Nomi。设置向导会下载适合你电脑的模型（1–4 GB）。
+
+Nomi Windows 版支持 64 位 Windows 10 和 11。有 NVIDIA、AMD 或 Intel 显卡时通过 Vulkan 使用显卡，没有时使用处理器。
 
 <details>
 <summary><b>常见问题</b></summary>

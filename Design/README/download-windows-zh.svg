@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="230" height="60" viewBox="0 0 230 60" role="img" aria-label="下载 Windows 版">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0A5C92"/><stop offset="1" stop-color="#004A77"/></linearGradient></defs>
+  <rect width="230" height="60" rx="30" fill="url(#g)"/>
+  <g transform="translate(26 19)" fill="#FFFFFF"><rect x="0" y="0" width="10" height="10" rx="1"/><rect x="12" y="0" width="10" height="10" rx="1"/><rect x="0" y="12" width="10" height="10" rx="1"/><rect x="12" y="12" width="10" height="10" rx="1"/></g>
+  <text x="60" y="28" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="700" fill="#FFFFFF">下载 Windows 版</text>
+  <text x="60" y="45" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11.5" fill="#CFE6F7">Windows 10/11 · 预览版</text>
+</svg>
