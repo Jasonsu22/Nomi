@@ -312,10 +312,12 @@ pub fn app_quit(app: AppHandle) {
     }
 }
 
-/// What the close button does, from Settings: "minimize", "quit", or (not chosen yet) ask.
+/// What the close button does, from Settings: "minimize" (to the system tray), "quit", or (not
+/// chosen yet) ask.
 pub const CLOSE_ACTION_KEY: &str = "nomi.closeAction";
 
-/// The close button (or Alt+F4): minimizes or quits as chosen; the first time, the window asks.
+/// The close button (or Alt+F4): hides Nomi in the system tray or quits, as chosen; the first
+/// time, the window asks.
 pub fn close_requested(window: &tauri::Window, api: &tauri::CloseRequestApi) {
     if window.label() != "main" {
         return;
@@ -325,7 +327,7 @@ pub fn close_requested(window: &tauri::Window, api: &tauri::CloseRequestApi) {
         Some("quit") => {}
         Some("minimize") => {
             api.prevent_close();
-            let _ = window.minimize();
+            let _ = window.hide();
         }
         _ => {
             api.prevent_close();
@@ -341,12 +343,53 @@ pub fn window_close_choice(app: AppHandle, choice: String) -> Result<()> {
     if choice == "quit" {
         window.destroy().map_err(text)
     } else {
-        window.minimize().map_err(text)
+        window.hide().map_err(text)
     }
 }
 
-/// Brings the window back: from the taskbar, from behind other windows, or when Nomi is
-/// opened a second time.
+/// Brings the window back: from the system tray, the taskbar, behind other windows, or when
+/// Nomi is opened a second time.
+/// The system tray icon: a click brings Nomi back; its menu shows or quits it. The window sets
+/// the menu's words in its own language with `tray_labels`.
+pub fn install_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    let show = MenuItem::with_id(app, "show", "Show Nomi", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Nomi", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let mut tray = TrayIconBuilder::with_id("main")
+        .tooltip("Nomi")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => show_main_window(app),
+            "quit" => app_quit(app.clone()),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                show_main_window(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
+    app.manage(TrayItems { show, quit });
+    Ok(())
+}
+
+pub struct TrayItems {
+    show: tauri::menu::MenuItem<tauri::Wry>,
+    quit: tauri::menu::MenuItem<tauri::Wry>,
+}
+
+#[tauri::command]
+pub fn tray_labels(items: tauri::State<'_, TrayItems>, show: String, quit: String) -> Result<()> {
+    items.show.set_text(show).map_err(text)?;
+    items.quit.set_text(quit).map_err(text)
+}
+
 pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();

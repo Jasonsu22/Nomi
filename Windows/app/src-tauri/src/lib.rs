@@ -44,6 +44,7 @@ pub fn run() {
             let state = app.state::<AppState>();
             *state.engine_dir.lock().unwrap() = engine::engine_dir(app.path().resource_dir().ok());
             open_main_window(app)?;
+            platform::install_tray(app)?;
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -82,6 +83,7 @@ pub fn run() {
             platform::app_version,
             platform::app_quit,
             platform::window_close_choice,
+            platform::tray_labels,
             platform::diagnostics,
             platform::microphone_access,
             platform::log_line,

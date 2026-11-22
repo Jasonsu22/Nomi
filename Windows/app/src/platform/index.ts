@@ -106,6 +106,7 @@ export const app = {
   version: () => invoke<string>("app_version"),
   quit: () => invoke<void>("app_quit"),
   closeChoice: (choice: CloseAction) => invoke<void>("window_close_choice", { choice }),
+  trayLabels: (show: string, quit: string) => invoke<void>("tray_labels", { show, quit }),
   setCompact: (compact: boolean) => invoke<void>("window_set_compact", { compact }),
   diagnostics: () => invoke<string>("diagnostics"),
 };

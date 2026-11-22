@@ -77,12 +77,12 @@ function CloseChoiceSheet({ onClose }: { onClose: () => void }) {
     <Sheet width={400} onClose={onClose}>
       <div className="flex flex-col gap-2 p-6">
         <div className="font-section-title">{tr("关闭窗口时")}</div>
-        <div className="font-secondary text-[var(--text-2)]">{tr("最小化后 Nomi 留在任务栏上继续运行，录音不会中断。之后可以在 设置 › 通用 中更改。")}</div>
+        <div className="font-secondary text-[var(--text-2)]">{tr("最小化后 Nomi 留在系统托盘里继续运行，录音不会中断，点托盘图标就能回来。之后可以在 设置 › 通用 中更改。")}</div>
         <div className="mt-4 flex items-center gap-2">
           <PushButton title={tr("取消")} onClick={onClose} />
           <div className="flex-1" />
           <PushButton title={tr("退出 Nomi")} onClick={() => void choose("quit")} />
-          <PushButton prominent title={tr("最小化")} onClick={() => void choose("minimize")} />
+          <PushButton prominent title={tr("最小化到托盘")} onClick={() => void choose("minimize")} />
         </div>
       </div>
     </Sheet>
@@ -94,6 +94,7 @@ export function Root() {
   const [ready, setReady] = useState(false);
   const [askClose, setAskClose] = useState(false);
   useEffect(() => {
+    void app.trayLabels(tr("显示 Nomi"), tr("退出 Nomi")).catch(() => {});
     const off = listen("nomi://close-asked", () => setAskClose(true));
     return () => void off.then((f) => f());
   }, []);

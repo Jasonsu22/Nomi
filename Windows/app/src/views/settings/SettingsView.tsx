@@ -87,7 +87,7 @@ export function SettingsView() {
               />
             </SettingsRow>
             <div className="ml-4 h-px bg-[var(--separator)]" />
-            <SettingsRow title={tr("点关闭按钮时")} detail={tr("最小化后 Nomi 留在任务栏上继续运行。按 Ctrl+Q 可随时退出。")}>
+            <SettingsRow title={tr("点关闭按钮时")} detail={tr("最小化后 Nomi 留在系统托盘里继续运行，点托盘图标就能回来。按 Ctrl+Q 或在托盘菜单里可以退出。")}>
               <PopUp
                 value={closeAction}
                 onChange={(v) => {
@@ -96,7 +96,7 @@ export function SettingsView() {
                 }}
                 options={[
                   { value: "ask", title: tr("每次询问") },
-                  { value: "minimize", title: tr("最小化") },
+                  { value: "minimize", title: tr("最小化到托盘") },
                   { value: "quit", title: tr("退出 Nomi") },
                 ]}
               />
