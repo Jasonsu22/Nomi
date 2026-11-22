@@ -11,6 +11,10 @@ $out = "$root\Windows\app\src-tauri\engine"
 if (-not $env:LIBCLANG_PATH) { $env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin" }
 # llama.cpp's Vulkan shader tool nests deep build folders; MSVC fails past 260 characters
 # ("Cannot open compiler generated file"), so NOMI_TARGETS can put the builds at a short path.
+# MSVC reads source files in the system's code page (GBK on Chinese Windows), which garbles the
+# UTF-8 characters in transcribe.cpp and llama.cpp; /utf-8 makes every machine read them alike.
+$env:CFLAGS = "/utf-8 $env:CFLAGS".Trim()
+$env:CXXFLAGS = "/utf-8 $env:CXXFLAGS".Trim()
 $targets = if ($env:NOMI_TARGETS) { $env:NOMI_TARGETS } else { "$root\Windows\engine" }
 $engineTarget = if ($env:NOMI_TARGETS) { "$env:NOMI_TARGETS\engine" } else { "$root\Backend\target-windows" }
 $asrTarget = "$targets\target-asr"
