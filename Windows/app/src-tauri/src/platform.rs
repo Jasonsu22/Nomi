@@ -409,7 +409,6 @@ fn show_tray_menu(app: &AppHandle, x: f64, y: f64) {
     let py = (y - size.1 - 6.0 * factor).max(top);
     let _ = menu.set_position(tauri::PhysicalPosition::new(px, py));
     let language = TRAY_LANGUAGE.lock().unwrap().clone();
-    crate::platform::log_line("info".into(), format!("tray menu opens, language '{language}'"));
     let _ = menu.emit("nomi://tray-menu-open", language);
     let _ = menu.show();
     let _ = menu.set_focus();
@@ -431,7 +430,6 @@ pub fn tray_menu_fit(app: AppHandle, width: f64, height: f64) -> Result<()> {
 /// The main window's interface language, for the tray menu's words.
 #[tauri::command]
 pub fn tray_language(language: String) {
-    crate::platform::log_line("info".into(), format!("tray language set to '{language}'"));
     *TRAY_LANGUAGE.lock().unwrap() = language;
 }
 

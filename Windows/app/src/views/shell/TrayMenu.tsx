@@ -43,7 +43,6 @@ export function TrayMenu() {
   useEffect(() => {
     Appearance.apply();
     const off = listen<string>("nomi://tray-menu-open", (event) => {
-      console.warn(`tray menu got language '${String(event.payload)}'`);
       if (event.payload === "zh-Hans" || event.payload === "en") setLanguage(event.payload);
       void loadPrefs().then(() => Appearance.apply());
     });
