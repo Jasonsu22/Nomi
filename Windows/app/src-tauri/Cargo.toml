@@ -1,6 +1,6 @@
 [package]
 name = "nomi"
-version = "0.10.2"
+version = "0.10.3"
 description = "Nomi for Windows: live lecture transcription and translation on your PC"
 edition = "2021"
 license = "MIT"
