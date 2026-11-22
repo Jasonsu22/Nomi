@@ -22,7 +22,7 @@
 
 <p align="center">
   <a href="https://github.com/Jasonsu22/Nomi/releases/latest/download/Nomi-arm64.dmg"><img src="Design/README/download-en.svg" height="54" alt="Download for Mac"></a>
-  <a href="https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.1/Nomi-0.10.1-x64-setup.exe"><img src="Design/README/download-windows-en.svg" height="54" alt="Download for Windows"></a>
+  <a href="https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.2/Nomi-0.10.2-x64-setup.exe"><img src="Design/README/download-windows-en.svg" height="54" alt="Download for Windows"></a>
   <a href="https://nomi.software/#video"><img src="Design/README/watch-en.svg" height="54" alt="Watch the video"></a>
 </p>
 
@@ -98,7 +98,7 @@ You only do this once. Nomi needs macOS 26 or later on Apple silicon (M1 or newe
 
 ### Windows (preview)
 
-1. **[Download the Windows installer](https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.1/Nomi-0.10.1-x64-setup.exe)** and run it. It installs for your account, so no administrator rights are needed.
+1. **[Download the Windows installer](https://github.com/Jasonsu22/Nomi/releases/download/windows-v0.10.2/Nomi-0.10.2-x64-setup.exe)** and run it. It installs for your account, so no administrator rights are needed.
 2. If Windows says "Windows protected your PC", choose **More info › Run anyway**. The installer is not signed yet.
 3. Open Nomi from the Start menu. The setup guide downloads the models that suit your PC (1–4 GB).
 
