@@ -8,8 +8,8 @@ const english = { ...(en as Record<string, string>), ...(windowsEn as Record<str
 
 /** The Mac's words for the PC: the strings are shared with the Mac app, so they are adjusted here. */
 const pcWords: [RegExp, string][] = [
-  [/这台 ?Mac/g, "这台电脑"],
-  [/Mac 自带/g, "电脑自带"],
+  [/这台 ?Mac ?/g, "这台电脑"],
+  [/ ?Mac 自带/g, "电脑自带"],
   [/macOS/g, "Windows"],
   [/废纸篓/g, "回收站"],
   [/访达/g, "资源管理器"],
