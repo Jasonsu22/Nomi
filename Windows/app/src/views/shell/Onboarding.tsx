@@ -1,5 +1,5 @@
 // Shell/OnboardingView.swift: welcome, download the models, speakers, microphone, an API, then start.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { tr, trf } from "../../i18n";
 import { formatBytes } from "../../support/format";
@@ -7,7 +7,7 @@ import { prefs } from "../../support/prefs";
 import { findModel, modelBytes, type LocalModelDefinition, type LocalModelRole } from "../../models/localModels";
 import { logoFile, newProfile, providerPresets, type LLMAPIProfile } from "../../models/llmConfiguration";
 import { SpeakerModels, speakerModelKinds, type SpeakerModelKind } from "../../app/voices";
-import { OnboardingPreference } from "../../app/onboarding";
+import { deviceReady, OnboardingPreference } from "../../app/onboarding";
 import { useModel } from "../../app";
 import { paths, shell } from "../../platform";
 import { BrandLogo, ProviderLogo } from "../ui/Logos";
@@ -53,11 +53,23 @@ export function OnboardingView() {
   const [asr, setAsr] = useState<LocalModelDefinition>(() => m.recommendedModel("asr"));
   const [translator, setTranslator] = useState<LocalModelDefinition>(() => m.recommendedModel("translator"));
   const [started, setStarted] = useState(false);
+  const startedRef = useRef(false);
+  startedRef.current = started;
   const [mic, setMic] = useState<Mic>("unknown");
   const [binding, setBinding] = useState<LLMAPIProfile | null>(null);
   const [speakerChoice, setSpeakerChoice] = useState<SpeakerModelKind>(SpeakerModels.chosen);
   useEffect(() => {
     void m.localModels.refresh();
+    // The GPU check takes a moment; suggest again once it is in, unless downloads began.
+    let live = true;
+    void deviceReady.then(() => {
+      if (!live || startedRef.current) return;
+      setAsr(m.recommendedModel("asr"));
+      setTranslator(m.recommendedModel("translator"));
+    });
+    return () => {
+      live = false;
+    };
   }, []);
   const checkMic = () => void invoke<Mic>("microphone_access").then(setMic, () => setMic("unknown"));
   useEffect(checkMic, [step]);

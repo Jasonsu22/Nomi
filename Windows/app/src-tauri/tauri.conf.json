@@ -16,7 +16,7 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$LOCALDATA/Nomi/**",
+          "$LOCALDATA/software.nomi.windows/**",
           "$DATA/Nomi-Windows-dev/**"
         ]
       }

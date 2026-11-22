@@ -15,6 +15,10 @@ export const OnboardingPreference = {
 
 /** Memory and processor, read once at start (device_report). */
 export const DeviceInfo = { memoryGB: 16, cores: 8, gpus: [] as { name: string; kind: string; memoryMB: number }[], cpu: "" };
+let markReady: () => void = () => {};
+/** Resolves once device_report has filled DeviceInfo (it asks the speech worker for GPUs). */
+export const deviceReady = new Promise<void>((resolve) => (markReady = resolve));
+export const deviceReported = () => markReady();
 
 declare module "./model" {
   interface AppModel {

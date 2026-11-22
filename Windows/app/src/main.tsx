@@ -27,13 +27,14 @@ async function start() {
   captureLogs();
   await initPlatform();
   await loadPrefs();
-  const [{ Root }, { DeviceInfo }] = await Promise.all([import("./views/Root"), import("./app/onboarding")]);
+  const [{ Root }, { DeviceInfo, deviceReported }] = await Promise.all([import("./views/Root"), import("./app/onboarding")]);
   void invoke<{ cpu: string; cores: number; memoryGb: number; gpus: { name: string; kind: string; memoryTotalMb: number }[] }>("device_report").then((r) => {
     DeviceInfo.cpu = r.cpu;
     DeviceInfo.cores = r.cores;
     DeviceInfo.memoryGB = r.memoryGb;
     DeviceInfo.gpus = r.gpus.map((g) => ({ name: g.name, kind: g.kind, memoryMB: g.memoryTotalMb }));
-  }, () => {});
+    deviceReported();
+  }, () => deviceReported());
   window.addEventListener("beforeunload", () => void flushPrefs());
   createRoot(document.getElementById("root")!).render(
     <StrictMode>

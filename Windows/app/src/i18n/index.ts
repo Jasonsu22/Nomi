@@ -10,7 +10,6 @@ const english = { ...(en as Record<string, string>), ...(windowsEn as Record<str
 const pcWords: [RegExp, string][] = [
   [/这台 ?Mac/g, "这台电脑"],
   [/Mac 自带/g, "电脑自带"],
-  [/~\/\.OminiX\/models/g, "%LOCALAPPDATA%\\Nomi\\models"],
   [/macOS/g, "Windows"],
   [/废纸篓/g, "回收站"],
   [/访达/g, "资源管理器"],

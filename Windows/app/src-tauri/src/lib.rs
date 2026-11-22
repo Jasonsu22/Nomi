@@ -38,6 +38,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .manage(AppState::default())
         .setup(|app| {
+            paths::migrate();
             let state = app.state::<AppState>();
             *state.engine_dir.lock().unwrap() = engine::engine_dir(app.path().resource_dir().ok());
             open_main_window(app)?;
