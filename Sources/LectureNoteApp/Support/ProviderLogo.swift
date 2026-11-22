@@ -11,6 +11,8 @@ struct ProviderLogo: View {
             let radius = image.size.height * 0.22
             Image(nsImage: image)
                 .interpolation(.high)
+                // Logos drawn in a dark ink on a transparent ground vanish in dark mode; they sit on white.
+                .background(file == "search-tavily" ? Color.white : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: square ? radius : 0, style: .continuous))
                 .overlay {
                     if square {
