@@ -5,6 +5,7 @@ import { prefs } from "../../support/prefs";
 import { Appearance, microphonePromptKey, type InterfaceAppearance } from "../../support/appearance";
 import { ClassroomMicPreference } from "../../engine/audioInputs";
 import { useModel } from "../../app";
+import { closeActionKey } from "../../platform";
 import { Scroll, PopUp, SettingsRow, Switch } from "../ui/controls";
 import { EngineSection, LocalModelsSection, SpeakerModelsSection } from "./LocalModels";
 import { LLMSettingsSection } from "./LLMSettings";
@@ -26,6 +27,7 @@ export function SettingsView() {
   const [language, setLanguage] = useState(prefs.string(interfaceLanguageKey) ?? "system");
   const [appearance, setAppearance] = useState<InterfaceAppearance>(Appearance.choice);
   const [micPrompt, setMicPrompt] = useState(prefs.string(microphonePromptKey) ?? "ask");
+  const [closeAction, setCloseAction] = useState(prefs.string(closeActionKey) ?? "ask");
   const [classroom, setClassroom] = useState(ClassroomMicPreference.isOn);
   const scroller = useRef<HTMLDivElement>(null);
   const reveal = (id: string) => {
@@ -81,6 +83,21 @@ export function SettingsView() {
                   { value: "system", title: tr("跟随系统") },
                   { value: "light", title: tr("白色") },
                   { value: "dark", title: tr("黑色") },
+                ]}
+              />
+            </SettingsRow>
+            <div className="ml-4 h-px bg-[var(--separator)]" />
+            <SettingsRow title={tr("点关闭按钮时")} detail={tr("最小化后 Nomi 留在任务栏上继续运行。按 Ctrl+Q 可随时退出。")}>
+              <PopUp
+                value={closeAction}
+                onChange={(v) => {
+                  setCloseAction(v);
+                  prefs.set(closeActionKey, v === "ask" ? undefined : v);
+                }}
+                options={[
+                  { value: "ask", title: tr("每次询问") },
+                  { value: "minimize", title: tr("最小化") },
+                  { value: "quit", title: tr("退出 Nomi") },
                 ]}
               />
             </SettingsRow>

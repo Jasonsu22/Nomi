@@ -19,5 +19,12 @@
   "语音识别使用": "Speech Recognition Uses",
   "说话时先显示灰色的预览文字。电脑跟不上时会跳过一些预览，不影响最终的转写。": "Shows grey preview text while someone is speaking. A busy PC skips some previews; the final transcript is not affected.",
   "运行方式": "Performance",
-  "重新启动": "Restart"
+  "重新启动": "Restart",
+  "关闭窗口时": "When You Close the Window",
+  "最小化后 Nomi 留在任务栏上继续运行，录音不会中断。之后可以在 设置 › 通用 中更改。": "If you minimize, Nomi stays on the taskbar and keeps running, so a recording isn't interrupted. You can change this later in Settings › General.",
+  "退出 Nomi": "Quit Nomi",
+  "最小化": "Minimize",
+  "点关闭按钮时": "Close Button",
+  "最小化后 Nomi 留在任务栏上继续运行。按 Ctrl+Q 可随时退出。": "When minimized, Nomi stays on the taskbar and keeps running. Press Ctrl+Q to quit at any time.",
+  "每次询问": "Ask Each Time"
 }

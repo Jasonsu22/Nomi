@@ -98,9 +98,14 @@ export const dialogs = {
   save: async (defaultPath: string, filters?: { name: string; extensions: string[] }[]): Promise<string | null> => (await saveDialog({ defaultPath, filters })) ?? null,
 };
 
+/** What the window's close button does; unset means ask the first time. */
+export type CloseAction = "minimize" | "quit";
+export const closeActionKey = "nomi.closeAction";
+
 export const app = {
   version: () => invoke<string>("app_version"),
   quit: () => invoke<void>("app_quit"),
+  closeChoice: (choice: CloseAction) => invoke<void>("window_close_choice", { choice }),
   setCompact: (compact: boolean) => invoke<void>("window_set_compact", { compact }),
   diagnostics: () => invoke<string>("diagnostics"),
 };

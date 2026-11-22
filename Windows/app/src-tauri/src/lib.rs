@@ -34,6 +34,8 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // One copy at a time: opening Nomi again brings the running window forward instead.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| platform::show_main_window(app)))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .manage(AppState::default())
@@ -45,7 +47,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                platform::close_requested(window, api);
+            } else if let tauri::WindowEvent::Destroyed = event {
                 let state = window.state::<AppState>();
                 state.recordings.lock().unwrap().clear();
                 drop(state.engine.lock().unwrap().take());
@@ -77,6 +81,7 @@ pub fn run() {
             platform::window_set_compact,
             platform::app_version,
             platform::app_quit,
+            platform::window_close_choice,
             platform::diagnostics,
             platform::microphone_access,
             platform::log_line,

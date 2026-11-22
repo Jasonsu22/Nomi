@@ -300,9 +300,59 @@ pub fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/// Quits by closing the window for good, so the window's clean-up (the engine, open
+/// recordings) runs; the app ends with its last window.
 #[tauri::command]
 pub fn app_quit(app: AppHandle) {
-    app.exit(0);
+    match app.get_webview_window("main") {
+        Some(window) => {
+            let _ = window.destroy();
+        }
+        None => app.exit(0),
+    }
+}
+
+/// What the close button does, from Settings: "minimize", "quit", or (not chosen yet) ask.
+pub const CLOSE_ACTION_KEY: &str = "nomi.closeAction";
+
+/// The close button (or Alt+F4): minimizes or quits as chosen; the first time, the window asks.
+pub fn close_requested(window: &tauri::Window, api: &tauri::CloseRequestApi) {
+    if window.label() != "main" {
+        return;
+    }
+    let choice = prefs_load().get(CLOSE_ACTION_KEY).and_then(|v| v.as_str()).map(str::to_string);
+    match choice.as_deref() {
+        Some("quit") => {}
+        Some("minimize") => {
+            api.prevent_close();
+            let _ = window.minimize();
+        }
+        _ => {
+            api.prevent_close();
+            let _ = tauri::Emitter::emit(window, "nomi://close-asked", ());
+        }
+    }
+}
+
+/// The answer to the first-close question (already saved in prefs by the window).
+#[tauri::command]
+pub fn window_close_choice(app: AppHandle, choice: String) -> Result<()> {
+    let window = app.get_webview_window("main").ok_or("no window")?;
+    if choice == "quit" {
+        window.destroy().map_err(text)
+    } else {
+        window.minimize().map_err(text)
+    }
+}
+
+/// Brings the window back: from the taskbar, from behind other windows, or when Nomi is
+/// opened a second time.
+pub fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 /// One line for a bug report: the system and the processor.
