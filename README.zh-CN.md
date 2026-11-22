@@ -124,8 +124,6 @@ Nomi 有两个应用，共用一个 Rust 引擎（`Backend/moxin-engine`）：
 - **Mac：** SwiftUI 界面（Swift 模块 `LectureNoteApp`），配 MLX worker。
 - **Windows：** Tauri 2 + React 界面（`Windows/app`），配基于 [llama.cpp](https://github.com/ggml-org/llama.cpp) 和 transcribe.cpp 的 GGUF worker。有显卡时用 Vulkan，没有就用 CPU。
 
-Windows 版在合并进 `main` 之前，代码在 [`windows/demo`](https://github.com/Jasonsu22/Nomi/tree/windows/demo) 分支上。
-
 <details>
 <summary><b>在 Mac 上编译</b></summary>
 
@@ -168,7 +166,7 @@ bash scripts/make-appcast.sh release-notes.md
 - [Node.js](https://nodejs.org) 22
 - [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows)
 
-在 **x64 Native Tools Command Prompt for VS 2022** 里，从 `windows/demo` 分支的代码目录运行：
+在 **x64 Native Tools Command Prompt for VS 2022** 里，在仓库目录下运行：
 
 ```bat
 set LIBCLANG_PATH=%VCINSTALLDIR%Tools\Llvm\x64\bin
@@ -258,7 +256,7 @@ swift test
 cargo test --manifest-path Backend/Cargo.toml --locked
 ```
 
-Windows 上（`windows/demo` 分支）：
+Windows 上：
 
 ```bat
 cargo test --release --manifest-path Backend\Cargo.toml -p moxin-engine -p voice-core
@@ -267,7 +265,7 @@ cd Windows\app\src-tauri && cargo test --release --lib
 cd .. && npm run typecheck
 ```
 
-推送到 `main` 或打开拉取请求时，GitHub Actions 会在 macOS 26 上编译并测试 Swift 界面，并在 Linux 上测试不依赖 MLX 的引擎（`voice-core`、`moxin-engine`）。语音识别和翻译 worker 需要 Apple 的 MLX，不在这台 Linux 运行器上编译。在 `windows/demo` 分支上，Windows 运行器会编译引擎、两个 worker 和安装程序，再运行上面的测试。
+推送到 `main` 或打开拉取请求时，GitHub Actions 会在 macOS 26 上编译并测试 Swift 界面，并在 Linux 上测试不依赖 MLX 的引擎（`voice-core`、`moxin-engine`）。语音识别和翻译 worker 需要 Apple 的 MLX，不在这台 Linux 运行器上编译。Windows 版或共用引擎有改动时，Windows 运行器会编译引擎、两个 worker 和安装程序，再运行上面的测试。
 
 </details>
 

@@ -114,10 +114,17 @@ async fn cancel_assistant(State(app): State<App>, headers: HeaderMap, body: axum
     StatusCode::NO_CONTENT.into_response()
 }
 
+#[cfg(unix)]
 fn cancel_reply(pid: u32) {
     unsafe {
         libc::kill(pid as libc::pid_t, libc::SIGUSR1);
     }
+}
+
+/// Windows has no SIGUSR1. The worker watches a cancel file named after its pid.
+#[cfg(not(unix))]
+fn cancel_reply(pid: u32) {
+    let _ = std::fs::write(std::env::temp_dir().join(format!("nomi-cancel-{pid}")), b"");
 }
 
 /// Live transcription comes first. During a recording the chat worker runs in the
@@ -152,6 +159,7 @@ async fn main() -> Result<()> {
 
 // The app owns stdin's write end. EOF also covers an app crash or forced quit.
 // Use a private process group so only this engine and its workers are terminated.
+#[cfg(unix)]
 fn manage_app_lifetime() -> Result<()> {
     if unsafe { libc::setpgid(0, 0) } != 0 {
         return Err(io::Error::last_os_error().into());
@@ -167,6 +175,25 @@ fn manage_app_lifetime() -> Result<()> {
             }
         }
         unsafe { libc::kill(0, libc::SIGTERM); }
+    });
+    Ok(())
+}
+
+// On Windows the app puts the engine in a job object that ends it and its workers with the app.
+// EOF on stdin still ends the engine; each worker then sees EOF on its own stdin and exits.
+#[cfg(not(unix))]
+fn manage_app_lifetime() -> Result<()> {
+    std::thread::spawn(|| {
+        let mut buffer = [0u8; 64];
+        loop {
+            match io::stdin().read(&mut buffer) {
+                Ok(0) => break,
+                Ok(_) => {},
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
+        }
+        std::process::exit(0);
     });
     Ok(())
 }
@@ -595,7 +622,7 @@ fn model_path(explicit: Option<String>, folder: &str) -> PathBuf {
     if let Some(path) = explicit {
         return PathBuf::from(path);
     }
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| ".".into());
     PathBuf::from(home).join(".OminiX/models").join(folder)
 }
 
@@ -614,6 +641,14 @@ fn random_token() -> String {
     if let Ok(mut file) = std::fs::File::open("/dev/urandom") {
         use std::io::Read;
         let _ = file.read_exact(&mut bytes);
+    } else {
+        // No /dev/urandom (Windows): RandomState is seeded from the system's random source.
+        use std::hash::{BuildHasher, Hasher};
+        for half in bytes.chunks_mut(8) {
+            let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+            hasher.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
+            half.copy_from_slice(&hasher.finish().to_le_bytes());
+        }
     }
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }

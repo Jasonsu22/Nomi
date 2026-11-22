@@ -124,8 +124,6 @@ Nomi has two apps that share one Rust engine (`Backend/moxin-engine`):
 - **Mac:** a SwiftUI interface (Swift module `LectureNoteApp`) with MLX workers.
 - **Windows:** a Tauri 2 + React interface (`Windows/app`) with GGUF workers on [llama.cpp](https://github.com/ggml-org/llama.cpp) and transcribe.cpp. The workers use Vulkan when there is a graphics card and the CPU otherwise.
 
-The Windows app is on the [`windows/demo`](https://github.com/Jasonsu22/Nomi/tree/windows/demo) branch until it is merged into `main`.
-
 <details>
 <summary><b>Build on a Mac</b></summary>
 
@@ -168,7 +166,7 @@ You need Windows 10 or 11 (x64) and:
 - [Node.js](https://nodejs.org) 22
 - The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows)
 
-Work in an **x64 Native Tools Command Prompt for VS 2022**, from a checkout of `windows/demo`:
+Work in an **x64 Native Tools Command Prompt for VS 2022**, from the repository folder:
 
 ```bat
 set LIBCLANG_PATH=%VCINSTALLDIR%Tools\Llvm\x64\bin
@@ -258,7 +256,7 @@ swift test
 cargo test --manifest-path Backend/Cargo.toml --locked
 ```
 
-On Windows (the `windows/demo` branch):
+On Windows:
 
 ```bat
 cargo test --release --manifest-path Backend\Cargo.toml -p moxin-engine -p voice-core
@@ -267,7 +265,7 @@ cd Windows\app\src-tauri && cargo test --release --lib
 cd .. && npm run typecheck
 ```
 
-Pushes to `main` and pull requests run GitHub Actions. Swift is built and tested on macOS 26. The engine crates that do not use MLX (`voice-core` and `moxin-engine`) are tested on Linux. The speech and translation workers need Apple’s MLX, so that Linux runner does not compile them. On `windows/demo`, a Windows runner builds the engine, both workers and the installer, then runs the tests above.
+Pushes to `main` and pull requests run GitHub Actions. Swift is built and tested on macOS 26. The engine crates that do not use MLX (`voice-core` and `moxin-engine`) are tested on Linux. The speech and translation workers need Apple’s MLX, so that Linux runner does not compile them. When the Windows app or the shared engine changes, a Windows runner builds the engine, both workers and the installer, then runs the tests above.
 
 </details>
 

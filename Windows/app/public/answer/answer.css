@@ -1,0 +1,96 @@
+/* The app's own colors and type (DesignSystem/Colors.swift, Typography.swift). The page is
+   transparent so it sits on the chat like the rest of the text. */
+:root {
+  --text: #111418; --text-2: #5E6670; --accent: #004A77; --inset: #EBF0F6; --separator: #D5DCE6;
+  --accent-soft: #E3F3FF; --selection: #C2E8FF;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+:root[data-scheme="dark"] {
+  --text: #E6E8EB; --text-2: #9AA3AD; --accent: #7CC4F2; --inset: #1F242B; --separator: #2A3038;
+  --accent-soft: #1A2C3A; --selection: #1D3A50;
+  color-scheme: dark;
+}
+html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+body {
+  color: var(--text);
+  font: 15px/1.65 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-wrap: anywhere;
+}
+#answer { max-width: 680px; }
+/* Marks the end of everything drawn; the page's height is measured down to it. */
+#end { height: 0; clear: both; }
+#answer > :first-child { margin-top: 0; }
+#answer > :last-child { margin-bottom: 0; }
+
+p { margin: 0 0 0.8em; }
+h1, h2, h3, h4 { font-weight: 600; line-height: 1.35; margin: 1.15em 0 0.45em; }
+h1 { font-size: 19px; } h2 { font-size: 17px; } h3 { font-size: 15.5px; } h4 { font-size: 15px; }
+ul, ol { margin: 0 0 0.8em; padding-left: 1.55em; }
+li { margin: 0.3em 0; }
+li > p { margin: 0 0 0.4em; }
+li::marker { color: var(--text-2); }
+blockquote { margin: 0 0 0.8em; padding: 0 0 0 12px; border-left: 3px solid var(--separator); color: var(--text-2); }
+hr { border: 0; border-top: 1px solid var(--separator); margin: 1.2em 0; }
+strong { font-weight: 600; }
+
+a { color: var(--accent); text-decoration: none; cursor: pointer; }
+a:hover { text-decoration: underline; }
+
+code { font-family: var(--mono); font-size: 0.87em; background: var(--inset); border-radius: 5px; padding: 0.1em 0.35em; }
+pre { background: var(--inset); border-radius: 10px; padding: 10px 12px; margin: 0 0 0.9em; overflow-x: auto; }
+pre code { background: none; padding: 0; font-size: 13px; line-height: 1.55; white-space: pre; overflow-wrap: normal; }
+
+.table { overflow-x: auto; margin: 0 0 0.9em; }
+table { border-collapse: collapse; font-size: 14px; line-height: 1.5; }
+th, td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--separator); text-align: left; vertical-align: top; }
+th { font-weight: 600; }
+
+/* Formulas a little larger than the text around them, so fractions and indices stay readable. */
+.katex { font-size: 1.12em; }
+/* Lines holding a formula are taller, so stacked fractions on neighbouring lines never touch.
+   Line height rather than margins: a selection then stays one solid block. */
+:is(p, li, td, th):has(.katex) { line-height: 2.15; }
+.katex-display { margin: 0.5em 0 0.9em; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.katex.selected { background: Highlight; box-shadow: 0 -0.75em 0 0 Highlight, 0 0.5em 0 0 Highlight; }
+.math-error { font-family: var(--mono); font-size: 0.87em; color: var(--text-2); }
+
+img.remote { display: block; max-width: 100%; border-radius: 16px; margin: 0 0 0.9em; cursor: zoom-in; }
+
+/* A source after a sentence: a capsule with an icon for its kind (the lecture moment, file, page,
+   site or chat it came from). The icon is drawn by CSS, so copied text keeps only the label. */
+a.cite { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent); font-size: 12.5px; font-weight: 500; line-height: 1.75;
+  white-space: nowrap; vertical-align: 1px; text-decoration: none; transition: background-color 0.12s ease; }
+a.cite:hover { background: var(--selection); text-decoration: none; }
+a.cite::before { content: ""; flex: none; width: 12px; height: 12px; background: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat; }
+a.cite[data-kind="lecture"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='6.2'/%3E%3Cpath d='M8 4.6V8l2.3 1.5'/%3E%3C/svg%3E"); }
+a.cite[data-kind="summary"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='black'%3E%3Cpath d='M8 1.5l1.4 4.1 4.1 1.4-4.1 1.4L8 12.5 6.6 8.4 2.5 7l4.1-1.4z'/%3E%3C/svg%3E"); }
+a.cite[data-kind="doc"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.8h5.2L12.5 5v9.2H4z'/%3E%3Cpath d='M9 1.8V5h3.4M6 8h4.5M6 10.6h4.5'/%3E%3C/svg%3E"); }
+a.cite[data-kind="slides"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.8' y='3' width='12.4' height='8.4' rx='1.2'/%3E%3Cpath d='M8 11.4V14M5.5 14h5'/%3E%3C/svg%3E"); }
+a.cite[data-kind="photo"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.8' y='2.8' width='12.4' height='10.4' rx='1.5'/%3E%3Ccircle cx='5.6' cy='6.3' r='1.2'/%3E%3Cpath d='M2.5 12l3.8-3.6 2.6 2.4 2-1.8 2.6 2.4'/%3E%3C/svg%3E"); }
+a.cite[data-kind="web"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='6.2'/%3E%3Cpath d='M1.8 8h12.4M8 1.8c2 2 2 10.4 0 12.4M8 1.8c-2 2-2 10.4 0 12.4'/%3E%3C/svg%3E"); }
+a.cite[data-kind="chat"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.2 3.2h11.6v7.6H7.4L4.2 13.4v-2.6h-2z'/%3E%3C/svg%3E"); }
+a.cite[data-kind="chat"] { background: var(--inset); color: var(--text-2); }
+
+/* "Found in 3 sources": each source once, above the answer, in the same capsules a little larger.
+   Kept out of copied text. */
+#sources { display: flex; flex-direction: column; gap: 8px; margin: 0 0 14px; user-select: none; -webkit-user-select: none; }
+#sources .label { font-size: 12.5px; color: var(--text-2); }
+#sources .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+#sources a.cite { font-size: 13px; padding: 4px 12px; gap: 6px; line-height: 1.4; max-width: 260px; vertical-align: 0; }
+#sources a.cite span { overflow: hidden; text-overflow: ellipsis; }
+a.file { font-family: var(--mono); font-size: 0.87em; font-weight: 500; }
+
+.card { margin: 0.2em 0 1em; }
+.card-title { font-size: 15px; margin-bottom: 4px; }
+/* Demos are written for a whole page; shown at 82% they fit the chat column. A transform rather than
+   CSS zoom: WebKit drew hover effects inside a zoomed frame in the wrong place. The frame keeps its
+   full size and is scaled from its top-left corner; the box around it takes the scaled height. */
+.card-frame { border-radius: 16px; overflow: hidden; background: var(--inset); height: 131px; }
+.card-frame iframe { display: block; border: 0; width: calc(100% / 0.82); height: 160px; transform: scale(0.82); transform-origin: 0 0; background: var(--inset); }
+.preparing { color: var(--text-2); font-size: 13px; display: flex; align-items: center; gap: 8px; margin: 0.2em 0 1em; }
+.preparing::before { content: ""; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--separator); border-top-color: var(--text-2); animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

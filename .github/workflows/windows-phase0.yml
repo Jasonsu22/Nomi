@@ -1,0 +1,99 @@
+# Builds the Phase 0 measurement kit for Windows x64 (CPU + Vulkan), then runs a short CPU-only
+# check on the runner, which has no GPU: one more "PC without a graphics card" data point.
+# Only runs on the Windows branches, never on main.
+name: Windows phase 0
+
+on:
+  push:
+    branches: ["windows/**"]
+    paths: ["Windows/phase0/**", "Backend/crates/voice-core/**", ".github/workflows/windows-phase0.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: latest
+          install_runtime: true
+          cache: true
+          stripdown: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # llama.cpp's Vulkan shader tool fails to build under the Visual Studio generator
+      # ("Not a file: …vulkan-shaders-gen-build/cmake_install.cmake"); Ninja in the MSVC
+      # environment builds it.
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: seanmiddleditch/gha-setup-ninja@v6
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: Windows/phase0 -> target-asr
+          key: phase0
+
+      # Two target folders: transcribe.cpp and llama.cpp each build their own ggml DLLs with
+      # the same names, so the two programs must not share a folder.
+      - name: Build asr-bench
+        working-directory: Windows/phase0
+        env:
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CMAKE_GENERATOR: Ninja
+        run: cargo build --release -p asr-bench --target-dir target-asr
+
+      - name: Build llm-bench
+        working-directory: Windows/phase0
+        env:
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CMAKE_GENERATOR: Ninja
+        run: cargo build --release -p llm-bench --target-dir target-llm
+
+      - name: Package
+        working-directory: Windows/phase0
+        shell: pwsh
+        run: |
+          $kit = "dist\nomi-phase0-windows-x64"
+          New-Item -ItemType Directory -Force "$kit\asr", "$kit\llm", "$kit\clips", "$kit\models" | Out-Null
+          Copy-Item target-asr\release\asr-bench.exe "$kit\asr\"
+          Get-ChildItem target-asr\release\build -Recurse -Filter *.dll | Where-Object { $_.FullName -match 'transcribe-cpp-sys' } | Copy-Item -Destination "$kit\asr\" -Force
+          Copy-Item target-llm\release\llm-bench.exe "$kit\llm\"
+          Get-ChildItem target-llm\release -Filter *.dll | Copy-Item -Destination "$kit\llm\" -Force
+          Get-ChildItem target-llm\release\build -Recurse -Filter *.dll | Where-Object { $_.FullName -match 'llama-cpp-sys-2' } | Copy-Item -Destination "$kit\llm\" -Force
+          Copy-Item run-phase0.ps1, run-phase0.cmd, models.json, sentences-en.txt, sentences-zh.txt, README.md $kit
+          Get-ChildItem -Recurse $kit | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Devices on the runner
+        working-directory: Windows/phase0/dist/nomi-phase0-windows-x64
+        run: |
+          .\asr\asr-bench.exe devices
+          .\llm\llm-bench.exe devices
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nomi-phase0-windows-x64
+          path: Windows/phase0/dist/nomi-phase0-windows-x64
+          retention-days: 30
+
+  cpu-check:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nomi-phase0-windows-x64
+          path: kit
+      - name: Quick run on a PC with no GPU
+        working-directory: kit
+        shell: pwsh
+        run: .\run-phase0.ps1 -Quick -CpuOnly
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase0-results-github-runner
+          path: kit/results

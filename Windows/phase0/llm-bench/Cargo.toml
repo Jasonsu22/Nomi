@@ -1,0 +1,26 @@
+[package]
+name = "llm-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Measures a translation model the way Nomi uses it during a lecture"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+# The chat template is rendered exactly as the Mac's llm-worker does, with thinking off.
+minijinja = "2.12"
+minijinja-contrib = { version = "2.12", features = ["pycompat"] }
+
+# Same backend posture as asr-bench: Vulkan plus runtime-chosen CPU builds on Windows and
+# Linux, Metal on macOS. Its ggml libraries differ from transcribe.cpp's, so the two programs
+# ship in separate folders.
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
+llama-cpp-2 = { version = "0.1.161", default-features = false, features = ["dynamic-backends", "vulkan"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+llama-cpp-2 = { version = "0.1.161", default-features = false, features = ["dynamic-backends", "vulkan"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { version = "0.1.161", default-features = false, features = ["metal"] }

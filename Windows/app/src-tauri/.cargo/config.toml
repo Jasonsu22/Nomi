@@ -1,0 +1,4 @@
+# ONNX Runtime, linked statically through sherpa-rs for the speaker models, logs through Windows'
+# event tracing and reads the registry; both live in advapi32, which sherpa-rs does not link.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=advapi32.lib"]
