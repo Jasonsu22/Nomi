@@ -381,8 +381,12 @@ pub fn install_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// The tray menu's size in logical pixels: two 32-pixel rows inside a 5-pixel inset.
-const TRAY_MENU_SIZE: (f64, f64) = (148.0, 78.0);
+/// The tray menu's starting size in logical pixels; the menu then fits the window to its rows
+/// (`tray_menu_fit`), so there is no empty space below them.
+const TRAY_MENU_SIZE: (f64, f64) = (148.0, 76.0);
+
+/// The language the main window shows ("zh-Hans" or "en"), passed on to the tray menu.
+static TRAY_LANGUAGE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
 /// Opens the menu with its bottom-right corner at the pointer (the tray sits at the bottom right),
 /// kept on the screen the pointer is on.
@@ -400,12 +404,11 @@ fn show_tray_menu(app: &AppHandle, x: f64, y: f64) {
         .map(|m| (m.scale_factor(), m.position().x as f64, m.position().y as f64))
         .unwrap_or((1.0, 0.0, 0.0));
     let (factor, left, top) = scale;
-    let (width, height) = (TRAY_MENU_SIZE.0 * factor, TRAY_MENU_SIZE.1 * factor);
-    let px = (x - width).max(left);
-    let py = (y - height - 6.0 * factor).max(top);
-    let _ = menu.set_size(tauri::LogicalSize::new(TRAY_MENU_SIZE.0, TRAY_MENU_SIZE.1));
+    let size = menu.outer_size().map(|s| (s.width as f64, s.height as f64)).unwrap_or((TRAY_MENU_SIZE.0 * factor, TRAY_MENU_SIZE.1 * factor));
+    let px = (x - size.0).max(left);
+    let py = (y - size.1 - 6.0 * factor).max(top);
     let _ = menu.set_position(tauri::PhysicalPosition::new(px, py));
-    let _ = menu.emit("nomi://tray-menu-open", ());
+    let _ = menu.emit("nomi://tray-menu-open", TRAY_LANGUAGE.lock().unwrap().clone());
     let _ = menu.show();
     let _ = menu.set_focus();
 }
@@ -414,6 +417,19 @@ pub fn hide_tray_menu(app: &AppHandle) {
     if let Some(menu) = app.get_webview_window("tray-menu") {
         let _ = menu.hide();
     }
+}
+
+/// The tray menu window sizes itself to its rows, in logical pixels.
+#[tauri::command]
+pub fn tray_menu_fit(app: AppHandle, width: f64, height: f64) -> Result<()> {
+    let menu = app.get_webview_window("tray-menu").ok_or("no tray menu")?;
+    menu.set_size(tauri::LogicalSize::new(width.ceil(), height.ceil())).map_err(text)
+}
+
+/// The main window's interface language, for the tray menu's words.
+#[tauri::command]
+pub fn tray_language(language: String) {
+    *TRAY_LANGUAGE.lock().unwrap() = language;
 }
 
 /// "Show Nomi" from the tray menu.

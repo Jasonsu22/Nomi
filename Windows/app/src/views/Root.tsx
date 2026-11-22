@@ -2,7 +2,8 @@
 // sheets, alerts, picture viewer and the teacher's-question pop-up over everything.
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { tr } from "../i18n";
+import { invoke } from "@tauri-apps/api/core";
+import { resolvedLanguage, tr } from "../i18n";
 import { keptAlive, type AppPage } from "../app/model";
 import { model, useModel } from "../app";
 import { OnboardingPreference } from "../app/onboarding";
@@ -94,6 +95,7 @@ export function Root() {
   const [ready, setReady] = useState(false);
   const [askClose, setAskClose] = useState(false);
   useEffect(() => {
+    void invoke("tray_language", { language: resolvedLanguage() }).catch(() => {});
     const off = listen("nomi://close-asked", () => setAskClose(true));
     return () => void off.then((f) => f());
   }, []);

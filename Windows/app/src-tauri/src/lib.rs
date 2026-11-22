@@ -100,6 +100,8 @@ pub fn run() {
             platform::app_quit,
             platform::window_close_choice,
             platform::tray_show_main,
+            platform::tray_menu_fit,
+            platform::tray_language,
             platform::diagnostics,
             platform::microphone_access,
             platform::log_line,

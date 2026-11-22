@@ -1,10 +1,9 @@
 // Windows: the menu that opens from Nomi's icon in the system tray. It is its own small window
 // (label "tray-menu"), drawn in Nomi's style and sized to its two rows; Rust places and hides it.
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { tr } from "../../i18n";
 import { loadPrefs } from "../../support/prefs";
 import { Appearance } from "../../support/appearance";
 import { BrandLogo } from "../ui/Logos";
@@ -27,17 +26,25 @@ function Row({ icon, title, danger, onClick }: { icon: ReactNode; title: string;
   );
 }
 
+const words = {
+  "zh-Hans": { show: "显示 Nomi", quit: "退出 Nomi" },
+  en: { show: "Show Nomi", quit: "Quit Nomi" },
+};
+
 export function TrayMenu() {
-  // Re-read the settings each time the menu opens, so its language and light or dark look follow
-  // the main window's.
-  const [, refresh] = useState(0);
+  // Each time the menu opens it re-reads the settings (for light or dark) and takes the language
+  // the main window is showing, so the two always match.
+  const [language, setLanguage] = useState<keyof typeof words>(navigator.language.toLowerCase().startsWith("zh") ? "zh-Hans" : "en");
+  const card = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = card.current;
+    if (el) void invoke("tray_menu_fit", { width: el.offsetWidth, height: el.offsetHeight }).catch(() => {});
+  }, [language]);
   useEffect(() => {
     Appearance.apply();
-    const off = listen("nomi://tray-menu-open", () => {
-      void loadPrefs().then(() => {
-        Appearance.apply();
-        refresh((n) => n + 1);
-      });
+    const off = listen<string>("nomi://tray-menu-open", (event) => {
+      if (event.payload === "zh-Hans" || event.payload === "en") setLanguage(event.payload);
+      void loadPrefs().then(() => Appearance.apply());
     });
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") void getCurrentWindow().hide();
@@ -49,9 +56,9 @@ export function TrayMenu() {
     };
   }, []);
   return (
-    <div className="tray-menu flex h-full flex-col gap-0.5 p-[5px] text-[var(--text)] select-none">
-      <Row icon={<BrandLogo side={15} />} title={tr("显示 Nomi")} onClick={() => void invoke("tray_show_main")} />
-      <Row icon={<PowerIcon />} title={tr("退出 Nomi")} danger onClick={() => void invoke("app_quit")} />
+    <div ref={card} className="tray-menu flex w-[148px] flex-col gap-0.5 p-[5px] text-[var(--text)] select-none">
+      <Row icon={<BrandLogo side={15} />} title={words[language].show} onClick={() => void invoke("tray_show_main")} />
+      <Row icon={<PowerIcon />} title={words[language].quit} danger onClick={() => void invoke("app_quit")} />
     </div>
   );
 }
